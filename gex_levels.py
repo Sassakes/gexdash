@@ -124,6 +124,7 @@ def run_live(args):
         top_n=args.top_n,
         basis_override=args.basis,
         mode="snapshot",
+        em_bands=tuple(float(x) for x in args.em_bands.split(",") if x.strip()),
     )
     levels_out = payload["levels"]
     nq_price = payload["nq_price"]
@@ -241,6 +242,19 @@ def selftest():
     assert abs(rng - 216.7) < 1.0, f"1D range: {rng}"
     print(f"cw0={cw0} pw0={pw0} max_pain={mp} iv={iv} 1D=+/-{rng:.1f}")
 
+    # ---- bandes EM fractionnées ----
+    from api._gex_core import em_bands_levels, em_band_stats
+    blv, bmeta = em_bands_levels(spot, 200.0, (0.5, 1.0, 1.5))
+    assert len(blv) == 4, blv  # 1.0 exclue (= EM principal)
+    d = {l: p for p, l, k in blv}
+    assert d["EM +50%"] == spot + 100 and d["EM -50%"] == spot - 100
+    assert d["EM +150%"] == spot + 300 and d["EM -150%"] == spot - 300
+    i50, t50 = em_band_stats(0.5)
+    i100, t100 = em_band_stats(1.0)
+    i150, t150 = em_band_stats(1.5)
+    assert abs(i50 - 31.0) < 1 and abs(i100 - 57.5) < 1 and abs(i150 - 76.9) < 1, (i50, i100, i150)
+    print(f"bandes EM: 50% inside={i50}% touch/side={t50}% · 100% inside={i100}% · 150% inside={i150}%")
+
     pine = to_pine_string(levels, basis=12.5)  # fake basis
     print("PINE:", pine)
     assert pine.count(";") == len(levels) - 1
@@ -253,6 +267,8 @@ def main():
     ap.add_argument("--symbol", default="_NDX", help="_NDX (index) or QQQ")
     ap.add_argument("--n-expiries", type=int, default=10)
     ap.add_argument("--top-n", type=int, default=4, help="extra gamma strikes")
+    ap.add_argument("--em-bands", default="0.5,1.5",
+                    help="fractions du straddle en bandes EM, ex: 0.5,0.75,1.5")
     ap.add_argument("--basis", type=float, default=None,
                     help="manual NQ-NDX basis override (skips Yahoo)")
     ap.add_argument("--out", default=".")

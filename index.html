@@ -67,6 +67,7 @@
   .k-emh,.k-eml{color:var(--text); opacity:.85}
   .k-res0{color:var(--teal); opacity:.8} .k-sup0{color:var(--red); opacity:.8}
   .k-ivh,.k-ivl{color:var(--muted)} .k-mpain{color:var(--gold); opacity:.8}
+  .k-emb{color:var(--text); opacity:.6}
   /* EM */
   .em-band{display:flex; justify-content:space-between; align-items:center}
   .em-band .v{font-size:16px; font-weight:600}
@@ -141,7 +142,7 @@ const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#7A7A85",
            border:"#222228", text:"#E8E6E1"};
 const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold,
                     gpos:C.teal, gneg:C.red, emh:C.text, eml:C.text,
-                    ivh:C.muted, ivl:C.muted, mpain:C.gold};
+                    ivh:C.muted, ivl:C.muted, mpain:C.gold, emb:C.text};
 const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip",
                emh:"EM+", eml:"EM−", mpain:"MP"};
 const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
@@ -210,7 +211,8 @@ function show(d){
   $("hdrDate").textContent = d.date + " · " + d.symbol;
   const live = d.mode === "live";
   const mb = $("modeBadge");
-  mb.textContent = (live ? "LIVE " : "SNAPSHOT ") + d.generated_utc.slice(11,16) + " UTC";
+  mb.textContent = (live ? "LIVE " : "SNAPSHOT ") + d.generated_utc.slice(11,16) + " UTC"
+    + (d.published === false ? " · NON PUBLIÉ" : "");
   mb.classList.toggle("live", live);
 
   const badges = [
@@ -294,12 +296,18 @@ function renderEM(d){
   if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">Straddle indisponible.</span>`; $("emNote").textContent=""; return; }
   const hi = d.levels.find(L=>L.kind==="emh"), lo = d.levels.find(L=>L.kind==="eml");
   $("emNote").textContent = em.expiry;
+  const bands = (em.bands||[]).map(b =>
+    `<div class="em-sub">EM ±${b.pct}% : <span class="dn">${fmt(b.low)}</span> / <span class="up">${fmt(b.high)}</span>` +
+    ` · clôture dedans ${fmt(b.prob_inside,0)}% · touch/côté ${fmt(b.prob_touch_side,0)}%</div>`).join("");
+  const p100 = em.prob_inside != null
+    ? `<div class="em-sub">EM ±100% : clôture dedans ${fmt(em.prob_inside,0)}% · touch/côté ${fmt(em.prob_touch_side,0)}%</div>` : "";
   $("emCard").innerHTML = `
     <div class="em-band">
       <span class="v dn">${lo?fmt(lo.price_nq):"—"}</span>
       <span class="em-mid">±${fmt(em.straddle)} pts<b>${fmt(em.em_pct,2)} %</b></span>
       <span class="v up">${hi?fmt(hi.price_nq):"—"}</span>
     </div>
+    ${p100}${bands}
     <div class="em-sub">ATM ${fmt(em.strike,0)} · call ${fmt(em.call_mid,2)} / put ${fmt(em.put_mid,2)}</div>`;
 }
 

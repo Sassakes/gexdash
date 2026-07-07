@@ -99,7 +99,8 @@ l'échelle NQ via la basis future/indice, et en extrait les niveaux clés.</p>
   <tr><td class="n dn">Put Wall</td><td>Strike au GEX net négatif max. Support majeur ; en dessous, le hedging accélère les baisses.</td></tr>
   <tr><td class="n up">CW / PW 0DTE</td><td>Mêmes walls, calculés sur l'expiry du jour uniquement. Les niveaux intraday les plus réactifs pour le scalp.</td></tr>
   <tr><td class="n lv">Gamma Flip</td><td>Spot où le GEX total change de signe. Au-dessus : régime mean-reverting. En dessous : régime momentum, ranges élargis.</td></tr>
-  <tr><td class="n">EM High / Low</td><td>Expected move du jour via le straddle ATM 0DTE (prix réel payé par le marché pour la journée).</td></tr>
+  <tr><td class="n">EM High / Low</td><td>Expected move du jour via le straddle ATM 0DTE (prix réel payé par le marché pour la journée). Clôture à l'intérieur ~57% des jours ; chaque borne est touchée ~42% des jours.</td></tr>
+  <tr><td class="n">EM ±50% / ±150%</td><td>Bandes fractionnées du straddle. Le ±50% est touché ~69% des jours par côté — premier target intraday statistique ; le ±150% (~23% de touch) délimite les extensions.</td></tr>
   <tr><td class="n">1D Min / Max</td><td>Range quotidien théorique via l'IV ATM annualisée (IV/√252). Complémentaire de l'EM straddle.</td></tr>
   <tr><td class="n lv">Max Pain</td><td>Strike qui minimise la valeur totale des options à l'expiry la plus proche. Aimant classique en fin de séance.</td></tr>
   <tr><td class="n">G+ / G−</td><td>Top strikes par |GEX| net hors niveaux déjà listés. Zones de friction secondaires.</td></tr>

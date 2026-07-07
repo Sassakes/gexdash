@@ -5,7 +5,8 @@ indicator("GEX Daily Levels", overlay = true, max_lines_count = 64, max_labels_c
 // GEX Daily Levels — coller la string du dashboard (bouton "Copier la string
 // Pine"). Format: prix,label,kind;prix,label,kind;...
 // kinds: res/sup (Call/Put Wall) · res0/sup0 (walls 0DTE) · flip (Gamma Flip)
-//        emh/eml (Expected Move straddle) · ivh/ivl (1D Min/Max IV-based)
+//        emh/eml (Expected Move straddle) · emb (bandes EM fractionnées ±50%...)
+//        ivh/ivl (1D Min/Max IV-based)
 //        mpain (Max Pain) · gpos/gneg (top gamma strikes)
 // Chaque famille de niveaux est customisable: visibilité, couleur, épaisseur,
 // style de ligne.
@@ -48,6 +49,10 @@ bool   shEM = input.bool(true, "Expected Move  ", group = GN, inline = "em")
 color  cEM  = input.color(#E8E6E1, "", group = GN, inline = "em")
 int    wEM  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "em")
 string sEM  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "em")
+bool   shEMB = input.bool(true, "EM Bands ±x%   ", group = GN, inline = "emb")
+color  cEMB  = input.color(#E8E6E180, "", group = GN, inline = "emb")
+int    wEMB  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "emb")
+string sEMB  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "emb")
 bool   shIV = input.bool(true, "1D Min/Max (IV)", group = GN, inline = "iv")
 color  cIV  = input.color(#7A7A85, "", group = GN, inline = "iv")
 int    wIV  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "iv")
@@ -75,6 +80,7 @@ f_show(string k) =>
         "flip"  => shFlip
         "emh"   => shEM
         "eml"   => shEM
+        "emb"   => shEMB
         "ivh"   => shIV
         "ivl"   => shIV
         "mpain" => shMP
@@ -91,6 +97,7 @@ f_col(string k) =>
         "flip"  => cFlip
         "emh"   => cEM
         "eml"   => cEM
+        "emb"   => cEMB
         "ivh"   => cIV
         "ivl"   => cIV
         "mpain" => cMP
@@ -107,6 +114,7 @@ f_w(string k) =>
         "flip"  => wFlip
         "emh"   => wEM
         "eml"   => wEM
+        "emb"   => wEMB
         "ivh"   => wIV
         "ivl"   => wIV
         "mpain" => wMP
@@ -126,6 +134,7 @@ f_style(string k) =>
         "flip"  => sFlip
         "emh"   => sEM
         "eml"   => sEM
+        "emb"   => sEMB
         "ivh"   => sIV
         "ivl"   => sIV
         "mpain" => sMP

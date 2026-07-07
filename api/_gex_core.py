@@ -162,6 +162,39 @@ def atm_straddle(data, spot, today=None):
     return None
 
 
+STRADDLE_SIGMA = 0.7979  # ATM straddle ~= 0.8 * sigma_daily * spot (BS)
+
+
+def _phi(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def em_band_stats(fraction):
+    """Theoretical stats for a +/- fraction*straddle band (normal, no drift).
+    prob_inside: close inside the band; prob_touch: touch of ONE side."""
+    z = fraction * STRADDLE_SIGMA
+    inside = 2.0 * _phi(z) - 1.0
+    touch = 2.0 * (1.0 - _phi(z))
+    return round(100 * inside, 1), round(100 * min(touch, 1.0), 1)
+
+
+def em_bands_levels(spot, straddle, fractions):
+    """Extra levels for fractional straddle bands, kind 'emb'.
+    Returns (levels, bands_meta)."""
+    levels, meta = [], []
+    for f in fractions:
+        if f <= 0 or abs(f - 1.0) < 1e-9:  # 1.0 = the main EM, already plotted
+            continue
+        d = straddle * f
+        pct = int(round(f * 100))
+        levels.append((spot + d, f"EM +{pct}%", "emb"))
+        levels.append((spot - d, f"EM -{pct}%", "emb"))
+        inside, touch = em_band_stats(f)
+        meta.append({"pct": pct, "high": None, "low": None,
+                     "prob_inside": inside, "prob_touch_side": touch})
+    return levels, meta
+
+
 # --------------------------------------------------------------------------- #
 # GEX computation                                                              #
 # --------------------------------------------------------------------------- #
@@ -331,7 +364,8 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
     ]
 
 
-def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None, mode="snapshot"):
+def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None,
+                  mode="snapshot", em_bands=(0.5, 1.5)):
     """Full pipeline: fetch -> compute -> JSON-ready payload dict.
     Raises on fetch/parse failure; caller handles errors.
     n_expiries=10 by default: wide enough that main walls approach the
@@ -360,6 +394,10 @@ def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None, mo
         rng = spot * iv / math.sqrt(252)
         extras.append((spot + rng, "1D Max", "ivh"))
         extras.append((spot - rng, "1D Min", "ivl"))
+    bands_meta = []
+    if em is not None and em_bands:
+        band_lv, bands_meta = em_bands_levels(spot, em["straddle"], em_bands)
+        extras.extend(band_lv)
 
     levels = extract_levels(spot, strikes, net, flip, em=em, extras=extras, top_n=top_n)
     basis, nq_price, basis_source = nq_basis(spot, override=basis_override)
@@ -372,6 +410,14 @@ def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None, mo
         {"price_nq": round(p + basis, 1), "label": l, "kind": k}
         for p, l, k in sorted(levels, key=lambda x: -x[0])
     ]
+    if em is not None:
+        inside100, touch100 = em_band_stats(1.0)
+        em["prob_inside"] = inside100
+        em["prob_touch_side"] = touch100
+        for b in bands_meta:
+            b["high"] = round(spot + em["straddle"] * b["pct"] / 100 + basis, 1)
+            b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
+        em["bands"] = bands_meta
     return {
         "date": today.isoformat(),
         "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),

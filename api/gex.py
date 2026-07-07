@@ -33,10 +33,73 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
-    "/nq_levels.json": ("nq_levels.json", "application/json"),
     "/history.json": ("history.json", "application/json"),
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
 }
+
+UPSTASH_KEY = "gex:latest"
+
+
+def _upstash_conf():
+    url = os.environ.get("UPSTASH_REDIS_REST_URL")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    return (url.rstrip("/"), token) if url and token else (None, None)
+
+
+def _upstash_get():
+    """Latest published payload from Redis, or None (never raises)."""
+    url, token = _upstash_conf()
+    if not url:
+        return None
+    try:
+        import requests
+
+        r = requests.get(f"{url}/get/{UPSTASH_KEY}",
+                         headers={"Authorization": f"Bearer {token}"}, timeout=5)
+        r.raise_for_status()
+        v = r.json().get("result")
+        return json.loads(v) if v else None
+    except Exception:
+        traceback.print_exc()
+        return None
+
+
+def _upstash_set(payload):
+    """Publish payload to Redis. Returns True on success (never raises)."""
+    url, token = _upstash_conf()
+    if not url:
+        return False
+    try:
+        import requests
+
+        r = requests.post(f"{url}/set/{UPSTASH_KEY}",
+                          headers={"Authorization": f"Bearer {token}"},
+                          data=json.dumps(payload), timeout=5)
+        r.raise_for_status()
+        return True
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
+def _load_file_payload():
+    p = ROOT / "nq_levels.json"
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def _latest_payload():
+    """Newest of: committed daily snapshot vs last published live refresh.
+    ISO timestamps compare correctly as strings."""
+    file_p = _load_file_payload()
+    up_p = _upstash_get()
+    if file_p and up_p:
+        return up_p if up_p.get("generated_utc", "") >= file_p.get("generated_utc", "") else file_p
+    return up_p or file_p
 
 
 class handler(BaseHTTPRequestHandler):
@@ -51,6 +114,17 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+
+        # ---- official levels: newest of committed snapshot vs published refresh ----
+        if path == "/nq_levels.json":
+            payload = _latest_payload()
+            if payload is None:
+                self._send(404, json.dumps(
+                    {"error": "no levels yet - run the GitHub Action or a refresh"}).encode(),
+                    "application/json")
+            else:
+                self._send(200, json.dumps(payload).encode(), "application/json")
+            return
 
         # ---- static: dashboard + committed daily files ----
         if path in STATIC:
@@ -89,10 +163,15 @@ class handler(BaseHTTPRequestHandler):
                 symbol = q("symbol", "_NDX")
                 if symbol not in ("_NDX", "QQQ"):
                     raise ValueError("symbol must be _NDX or QQQ")
+                bands = tuple(
+                    float(x) for x in q("em_bands", "0.5,1.5").split(",") if x.strip()
+                )
 
                 payload = build_payload(
-                    symbol=symbol, n_expiries=n, basis_override=basis, mode="live"
+                    symbol=symbol, n_expiries=n, basis_override=basis, mode="live",
+                    em_bands=bands
                 )
+                payload["published"] = _upstash_set(payload)
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()
