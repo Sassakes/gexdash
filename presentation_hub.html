@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NQ GEX Terminal — niveaux gamma quotidiens gratuits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
+    --text:#E8E6E1; --muted:#7A7A85; --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:14px; line-height:1.65;
+  }
+  main{max-width:780px; margin:0 auto; padding:40px 20px 64px}
+  .kicker{color:var(--gold); font-size:11px; letter-spacing:.22em; text-transform:uppercase}
+  h1{font-size:26px; font-weight:600; margin:8px 0 4px; letter-spacing:.02em}
+  h1 .dim{color:var(--muted); font-weight:400}
+  .lede{color:var(--muted); margin-bottom:28px}
+  .cta{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:36px}
+  .cta a{
+    text-decoration:none; font-size:13px; padding:9px 18px;
+    border:1px solid var(--gold); color:var(--gold); background:rgba(240,185,11,.12);
+  }
+  .cta a:hover{background:rgba(240,185,11,.24)}
+  .cta a.ghost{border-color:var(--border); color:var(--text); background:var(--panel)}
+  h2{
+    font-size:12px; font-weight:600; letter-spacing:.16em; color:var(--gold);
+    text-transform:uppercase; margin:36px 0 12px; padding-top:20px;
+    border-top:1px solid var(--border);
+  }
+  p{margin-bottom:12px}
+  p.muted{color:var(--muted)}
+  strong{font-weight:600; color:var(--text)}
+  .lv{color:var(--gold)} .up{color:var(--teal)} .dn{color:var(--red)}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:13px}
+  th{
+    text-align:left; color:var(--muted); font-weight:500; font-size:11px;
+    text-transform:uppercase; letter-spacing:.1em;
+    padding:8px 12px; border-bottom:1px solid var(--border);
+  }
+  td{padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.n{white-space:nowrap; font-weight:600}
+  .steps{counter-reset:s; margin:14px 0}
+  .step{
+    display:flex; gap:14px; background:var(--panel); border:1px solid var(--border);
+    padding:14px 16px; margin-bottom:10px;
+  }
+  .step::before{
+    counter-increment:s; content:counter(s);
+    color:var(--gold); font-weight:600; font-size:16px; min-width:20px;
+  }
+  .step b{display:block; margin-bottom:2px}
+  .step span{color:var(--muted); font-size:13px}
+  code{
+    background:var(--panel2); border:1px solid var(--border);
+    padding:1px 6px; font-size:12px; color:var(--gold);
+  }
+  .note{
+    background:var(--panel); border:1px solid var(--border);
+    border-left:2px solid var(--gold); padding:12px 16px; margin:16px 0;
+    font-size:13px; color:var(--muted);
+  }
+  footer{margin-top:44px; color:var(--muted); font-size:11.5px; border-top:1px solid var(--border); padding-top:16px}
+</style>
+</head>
+<body>
+<main>
+
+<div class="kicker">The Hub · outil communautaire</div>
+<h1>NQ <span class="dim">/</span> GEX TERMINAL</h1>
+<p class="lede">Les niveaux gamma du jour sur NQ — walls, flip, expected move — calculés
+automatiquement chaque matin avant l'open US depuis la chaîne d'options NDX.
+Gratuit, sans inscription, avec l'indicateur TradingView qui va avec.</p>
+
+<div class="cta">
+  <a href="https://gexdash.vercel.app/" target="_blank" rel="noopener">→ Ouvrir le dashboard</a>
+  <a class="ghost" href="https://github.com/Sassakes/gexdash" target="_blank" rel="noopener">Code source (GitHub)</a>
+</div>
+
+<h2>C'est quoi</h2>
+<p>Les dealers d'options couvrent leur exposition gamma en achetant et vendant le
+sous-jacent. Là où l'open interest s'empile, leurs flux de hedging créent des zones
+d'aimantation ou de rejet — les fameux <strong>walls</strong>. Le terminal calcule
+l'exposition gamma nette par strike sur la chaîne NDX (données CBOE, convention
+« naive » à la SpotGamma : dealers long calls, short puts), la convertit à
+l'échelle NQ via la basis future/indice, et en extrait les niveaux clés.</p>
+
+<h2>Les niveaux</h2>
+<table>
+  <tr><th>Niveau</th><th>Lecture</th></tr>
+  <tr><td class="n up">Call Wall</td><td>Strike au GEX net positif max, toutes expiries. Résistance / zone de pin en gamma positif.</td></tr>
+  <tr><td class="n dn">Put Wall</td><td>Strike au GEX net négatif max. Support majeur ; en dessous, le hedging accélère les baisses.</td></tr>
+  <tr><td class="n up">CW / PW 0DTE</td><td>Mêmes walls, calculés sur l'expiry du jour uniquement. Les niveaux intraday les plus réactifs pour le scalp.</td></tr>
+  <tr><td class="n lv">Gamma Flip</td><td>Spot où le GEX total change de signe. Au-dessus : régime mean-reverting. En dessous : régime momentum, ranges élargis.</td></tr>
+  <tr><td class="n">EM High / Low</td><td>Expected move du jour via le straddle ATM 0DTE (prix réel payé par le marché pour la journée).</td></tr>
+  <tr><td class="n">1D Min / Max</td><td>Range quotidien théorique via l'IV ATM annualisée (IV/√252). Complémentaire de l'EM straddle.</td></tr>
+  <tr><td class="n lv">Max Pain</td><td>Strike qui minimise la valeur totale des options à l'expiry la plus proche. Aimant classique en fin de séance.</td></tr>
+  <tr><td class="n">G+ / G−</td><td>Top strikes par |GEX| net hors niveaux déjà listés. Zones de friction secondaires.</td></tr>
+</table>
+<p class="muted">En bonus dans le header : GEX net total ($Bn/1% de move), régime
+gamma, ratio Put/Call OI et IV ATM.</p>
+
+<h2>Le workflow quotidien</h2>
+<div class="steps">
+  <div class="step"><div><b>14:45 Paris — snapshot automatique</b>
+    <span>Le calcul tourne tout seul (GitHub Actions) ~45 min avant l'open US.
+    Les walls sont figés pour la journée (l'open interest ne bouge qu'overnight).</span></div></div>
+  <div class="step"><div><b>À l'open — refresh optionnel</b>
+    <span>Un clic sur <code>⟳ Refresh</code> recalcule flip, EM et basis au spot courant.
+    Champ basis manuel si tu calibres toi-même au RTH open.</span></div></div>
+  <div class="step"><div><b>Copier → coller dans TradingView</b>
+    <span>Bouton <code>Copier la string Pine</code>, puis colle dans le champ de
+    l'indicateur <strong>GEX Daily Levels</strong>. Tous les niveaux se tracent sur ton chart.</span></div></div>
+</div>
+
+<h2>L'indicateur TradingView</h2>
+<p>Pine Script v6, open source. Il parse la string du dashboard et trace chaque
+niveau en ligne horizontale étendue. <strong>Tout est customisable par famille de
+niveaux</strong> : visibilité, couleur, épaisseur (1–5), style (solide / tirets /
+points), taille et décalage des labels, affichage du prix dans le label.</p>
+<div class="steps">
+  <div class="step"><div><b>Installer</b>
+    <span>TradingView → Pine Editor → coller le code de <code>gex_levels.pine</code>
+    (dans le repo GitHub) → « Ajouter au graphique ».</span></div></div>
+  <div class="step"><div><b>Configurer</b>
+    <span>Settings de l'indicateur → colle la string du jour dans
+    <code>String GEX du jour</code>. C'est tout. À refaire chaque matin (10 secondes).</span></div></div>
+</div>
+
+<h2>Fiabilité &amp; limites</h2>
+<p>La méthodologie est celle des outils payants du marché (SpotGamma, Menthor Q…) :
+GEX par strike depuis l'OI et le gamma de chaîne, flip par re-calcul Black-Scholes
+sur une grille de spots. Les walls principaux agrègent les ~10 expiries les plus
+proches ; les walls 0DTE isolent l'expiry du jour.</p>
+<div class="note">Données CBOE <strong>delayed ~15 min</strong> — les niveaux sont
+un snapshot, pas du temps réel. L'OI étant figé en intraday, les walls ne changent
+pas dans la journée : c'est normal. Le flip peut être absent en régime gamma
+fortement positif (aucun croisement de zéro) : c'est une information, pas un bug.
+Outil éducatif, pas un conseil financier.</div>
+
+<footer>NQ GEX Terminal · The Hub (wBg × wBa) · données CBOE delayed &amp; Yahoo Finance ·
+code open source sous licence libre — construit par la communauté, pour la communauté.</footer>
+
+</main>
+</body>
+</html>

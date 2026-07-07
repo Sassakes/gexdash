@@ -228,6 +228,19 @@ def selftest():
     eml = next(p for p, t, k in levels if k == "eml")
     assert emh == spot + 200 and eml == spot - 200
 
+    # ---- nouveaux niveaux ----
+    from api._gex_core import zero_dte_walls, max_pain, atm_iv
+    import math as _m
+    cw0, pw0, dte0 = zero_dte_walls(spot, opts)
+    assert cw0 == 22000.0 and pw0 == 21000.0, f"0DTE walls: {cw0}/{pw0}"
+    mp = max_pain(opts)
+    assert 21000.0 <= mp <= 22000.0, f"max pain out of range: {mp}"
+    iv = atm_iv(spot, opts)
+    assert abs(iv - 0.16) < 1e-9, f"atm iv: {iv}"
+    rng = spot * iv / _m.sqrt(252)
+    assert abs(rng - 216.7) < 1.0, f"1D range: {rng}"
+    print(f"cw0={cw0} pw0={pw0} max_pain={mp} iv={iv} 1D=+/-{rng:.1f}")
+
     pine = to_pine_string(levels, basis=12.5)  # fake basis
     print("PINE:", pine)
     assert pine.count(";") == len(levels) - 1
@@ -238,7 +251,7 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="_NDX", help="_NDX (index) or QQQ")
-    ap.add_argument("--n-expiries", type=int, default=4)
+    ap.add_argument("--n-expiries", type=int, default=10)
     ap.add_argument("--top-n", type=int, default=4, help="extra gamma strikes")
     ap.add_argument("--basis", type=float, default=None,
                     help="manual NQ-NDX basis override (skips Yahoo)")

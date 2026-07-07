@@ -65,6 +65,8 @@
   .k-res{color:var(--teal)} .k-sup{color:var(--red)} .k-flip{color:var(--gold)}
   .k-gpos{color:var(--teal); opacity:.6} .k-gneg{color:var(--red); opacity:.6}
   .k-emh,.k-eml{color:var(--text); opacity:.85}
+  .k-res0{color:var(--teal); opacity:.8} .k-sup0{color:var(--red); opacity:.8}
+  .k-ivh,.k-ivl{color:var(--muted)} .k-mpain{color:var(--gold); opacity:.8}
   /* EM */
   .em-band{display:flex; justify-content:space-between; align-items:center}
   .em-band .v{font-size:16px; font-weight:600}
@@ -137,9 +139,11 @@ const $ = id => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
 const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#7A7A85",
            border:"#222228", text:"#E8E6E1"};
-const KIND_COLOR = {res:C.teal, sup:C.red, flip:C.gold, gpos:C.teal, gneg:C.red,
-                    emh:C.text, eml:C.text};
-const SHORT = {res:"CW", sup:"PW", flip:"Flip", emh:"EM+", eml:"EM−"};
+const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold,
+                    gpos:C.teal, gneg:C.red, emh:C.text, eml:C.text,
+                    ivh:C.muted, ivl:C.muted, mpain:C.gold};
+const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip",
+               emh:"EM+", eml:"EM−", mpain:"MP"};
 const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
                 {minimumFractionDigits:d, maximumFractionDigits:d});
 
@@ -202,6 +206,8 @@ function show(d){
     ["basis", (d.basis>=0?"+":"") + fmt(d.basis) + " (" + d.basis_source + ")", ""],
     ["net GEX", (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2) + " $Bn/1%", d.net_gex_bn>=0?"pos":"neg"],
     ["régime", d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
+    ["P/C OI", d.pc_oi != null ? fmt(d.pc_oi,2) : "—", d.pc_oi > 1 ? "neg" : "pos"],
+    ["IV ATM", d.iv_atm != null ? fmt(d.iv_atm*100,1) + " %" : "—", ""],
   ];
   $("badges").innerHTML = badges.map(([k,v,c]) =>
     `<span class="badge ${c}">${k} <b>${v}</b></span>`).join("");
@@ -220,7 +226,7 @@ function renderRail(d){
   const marks = d.levels
     .filter(L => SHORT[L.kind])
     .map(L => ({p:L.price_nq, tag:SHORT[L.kind], color:KIND_COLOR[L.kind],
-                dash:L.kind==="flip"||L.kind==="emh"||L.kind==="eml"}));
+                dash:["flip","emh","eml","res0","sup0","mpain"].includes(L.kind)}));
   if (d.nq_price != null)
     marks.push({p:d.nq_price, tag:"NQ", color:C.gold, nq:true});
   if (marks.length < 2){ $("rail").textContent = "—"; return; }

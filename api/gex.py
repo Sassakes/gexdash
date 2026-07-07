@@ -15,7 +15,7 @@ path lands here. We therefore route explicitly:
 /api/gex query params:
   ?basis=145.5   manual NQ-NDX basis override (skips Yahoo)
   ?symbol=_NDX   _NDX (default) or QQQ
-  ?n=4           number of nearest expiries (1-8)
+  ?n=10          number of nearest expiries (1-16)
 """
 
 import json
@@ -75,7 +75,7 @@ class handler(BaseHTTPRequestHandler):
             try:
                 basis = q("basis")
                 basis = float(basis) if basis is not None else None
-                n = max(1, min(int(q("n", 4)), 8))
+                n = max(1, min(int(q("n", 10)), 16))
                 symbol = q("symbol", "_NDX")
                 if symbol not in ("_NDX", "QQQ"):
                     raise ValueError("symbol must be _NDX or QQQ")

@@ -1,32 +1,143 @@
 //@version=6
-indicator("GEX Daily Levels", overlay = true, max_lines_count = 32, max_labels_count = 32)
+indicator("GEX Daily Levels", overlay = true, max_lines_count = 64, max_labels_count = 64)
 
 // ============================================================================
 // GEX Daily Levels — coller la string du dashboard (bouton "Copier la string
-// Pine") dans le champ ci-dessous. Format: prix,label,kind;prix,label,kind;...
-// kinds: res (Call Wall) / sup (Put Wall) / flip (Gamma Flip) /
-//        emh, eml (Expected Move) / gpos, gneg (top gamma strikes)
+// Pine"). Format: prix,label,kind;prix,label,kind;...
+// kinds: res/sup (Call/Put Wall) · res0/sup0 (walls 0DTE) · flip (Gamma Flip)
+//        emh/eml (Expected Move straddle) · ivh/ivl (1D Min/Max IV-based)
+//        mpain (Max Pain) · gpos/gneg (top gamma strikes)
+// Chaque famille de niveaux est customisable: visibilité, couleur, épaisseur,
+// style de ligne.
 // ============================================================================
 
-string src     = input.text_area(defval = "", title = "String GEX du jour")
-bool   showLbl = input.bool(true, "Labels")
-bool   showG   = input.bool(true, "Afficher G+/G- (top gamma strikes)")
-int    lblOff  = input.int(8, "Décalage labels (barres)", minval = 0, maxval = 100)
+string src = input.text_area(defval = "", title = "String GEX du jour")
 
-f_color(string kind) =>
-    switch kind
-        "res"  => #26A69A
-        "sup"  => #EF5350
-        "flip" => #F0B90B
-        "gpos" => color.new(#26A69A, 45)
-        "gneg" => color.new(#EF5350, 45)
-        "emh"  => color.new(#E8E6E1, 35)
-        "eml"  => color.new(#E8E6E1, 35)
-        =>        color.new(#7A7A85, 30)
+// ---- global ----------------------------------------------------------------
+const string GG = "Global"
+bool   gShowLbl = input.bool(true, "Labels", group = GG, inline = "g1")
+string gSize    = input.string("Tiny", "", options = ["Tiny", "Small", "Normal"], group = GG, inline = "g1")
+int    gOff     = input.int(8, "Décalage (barres)", minval = 0, maxval = 200, group = GG, inline = "g1")
+bool   gPrice   = input.bool(true, "Prix dans le label", group = GG, inline = "g2")
 
-f_dashed(string kind) =>
-    kind == "flip" or kind == "emh" or kind == "eml"
+// ---- par famille: [visible] [couleur] [épaisseur] [style] -------------------
+const string GN = "Niveaux"
+const string SOL = "Solide", DSH = "Tirets", DOT = "Points"
 
+bool   shRes = input.bool(true, "Call Wall      ", group = GN, inline = "res")
+color  cRes  = input.color(#26A69A, "", group = GN, inline = "res")
+int    wRes  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "res")
+string sRes  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "res")
+bool   shRes0 = input.bool(true, "Call Wall 0DTE ", group = GN, inline = "res0")
+color  cRes0  = input.color(#26A69A, "", group = GN, inline = "res0")
+int    wRes0  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "res0")
+string sRes0  = input.string(DSH, "", options = [SOL, DSH, DOT], group = GN, inline = "res0")
+bool   shSup = input.bool(true, "Put Wall       ", group = GN, inline = "sup")
+color  cSup  = input.color(#EF5350, "", group = GN, inline = "sup")
+int    wSup  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "sup")
+string sSup  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "sup")
+bool   shSup0 = input.bool(true, "Put Wall 0DTE  ", group = GN, inline = "sup0")
+color  cSup0  = input.color(#EF5350, "", group = GN, inline = "sup0")
+int    wSup0  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "sup0")
+string sSup0  = input.string(DSH, "", options = [SOL, DSH, DOT], group = GN, inline = "sup0")
+bool   shFlip = input.bool(true, "Gamma Flip     ", group = GN, inline = "flip")
+color  cFlip  = input.color(#F0B90B, "", group = GN, inline = "flip")
+int    wFlip  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "flip")
+string sFlip  = input.string(DSH, "", options = [SOL, DSH, DOT], group = GN, inline = "flip")
+bool   shEM = input.bool(true, "Expected Move  ", group = GN, inline = "em")
+color  cEM  = input.color(#E8E6E1, "", group = GN, inline = "em")
+int    wEM  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "em")
+string sEM  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "em")
+bool   shIV = input.bool(true, "1D Min/Max (IV)", group = GN, inline = "iv")
+color  cIV  = input.color(#7A7A85, "", group = GN, inline = "iv")
+int    wIV  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "iv")
+string sIV  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "iv")
+bool   shMP = input.bool(true, "Max Pain       ", group = GN, inline = "mp")
+color  cMP  = input.color(#F0B90B80, "", group = GN, inline = "mp")
+int    wMP  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "mp")
+string sMP  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "mp")
+bool   shGp = input.bool(true, "G+ (top gamma) ", group = GN, inline = "gp")
+color  cGp  = input.color(#26A69A80, "", group = GN, inline = "gp")
+int    wGp  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gp")
+string sGp  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "gp")
+bool   shGn = input.bool(true, "G- (top gamma) ", group = GN, inline = "gn")
+color  cGn  = input.color(#EF535080, "", group = GN, inline = "gn")
+int    wGn  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gn")
+string sGn  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "gn")
+
+// ---- lookups -----------------------------------------------------------------
+f_show(string k) =>
+    switch k
+        "res"   => shRes
+        "res0"  => shRes0
+        "sup"   => shSup
+        "sup0"  => shSup0
+        "flip"  => shFlip
+        "emh"   => shEM
+        "eml"   => shEM
+        "ivh"   => shIV
+        "ivl"   => shIV
+        "mpain" => shMP
+        "gpos"  => shGp
+        "gneg"  => shGn
+        => true
+
+f_col(string k) =>
+    switch k
+        "res"   => cRes
+        "res0"  => cRes0
+        "sup"   => cSup
+        "sup0"  => cSup0
+        "flip"  => cFlip
+        "emh"   => cEM
+        "eml"   => cEM
+        "ivh"   => cIV
+        "ivl"   => cIV
+        "mpain" => cMP
+        "gpos"  => cGp
+        "gneg"  => cGn
+        => color.new(#7A7A85, 30)
+
+f_w(string k) =>
+    switch k
+        "res"   => wRes
+        "res0"  => wRes0
+        "sup"   => wSup
+        "sup0"  => wSup0
+        "flip"  => wFlip
+        "emh"   => wEM
+        "eml"   => wEM
+        "ivh"   => wIV
+        "ivl"   => wIV
+        "mpain" => wMP
+        "gpos"  => wGp
+        "gneg"  => wGn
+        => 1
+
+f_ls(string s) =>
+    s == DSH ? line.style_dashed : s == DOT ? line.style_dotted : line.style_solid
+
+f_style(string k) =>
+    string s = switch k
+        "res"   => sRes
+        "res0"  => sRes0
+        "sup"   => sSup
+        "sup0"  => sSup0
+        "flip"  => sFlip
+        "emh"   => sEM
+        "eml"   => sEM
+        "ivh"   => sIV
+        "ivl"   => sIV
+        "mpain" => sMP
+        "gpos"  => sGp
+        "gneg"  => sGn
+        => SOL
+    f_ls(s)
+
+f_size(string s) =>
+    s == "Small" ? size.small : s == "Normal" ? size.normal : size.tiny
+
+// ---- draw --------------------------------------------------------------------
 var array<line>  lns = array.new<line>()
 var array<label> lbs = array.new<label>()
 
@@ -46,9 +157,9 @@ if barstate.islast
                 float  p    = str.tonumber(array.get(f, 0))
                 string tag  = array.get(f, 1)
                 string kind = array.get(f, 2)
-                bool   isG  = kind == "gpos" or kind == "gneg"
-                if not na(p) and (showG or not isG)
-                    color c = f_color(kind)
-                    array.push(lns, line.new(bar_index - 1, p, bar_index, p, extend = extend.both, color = c, width = 1, style = f_dashed(kind) ? line.style_dashed : line.style_solid))
-                    if showLbl
-                        array.push(lbs, label.new(bar_index + lblOff, p, tag + "  " + str.tostring(p, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = size.tiny))
+                if not na(p) and f_show(kind)
+                    color c = f_col(kind)
+                    array.push(lns, line.new(bar_index - 1, p, bar_index, p, extend = extend.both, color = c, width = f_w(kind), style = f_style(kind)))
+                    if gShowLbl
+                        string txt = gPrice ? tag + "  " + str.tostring(p, format.mintick) : tag
+                        array.push(lbs, label.new(bar_index + gOff, p, txt, style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = f_size(gSize)))

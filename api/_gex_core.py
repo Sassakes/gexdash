@@ -206,7 +206,53 @@ def zero_gamma_flip(opts, lo, hi, n=300):
     return float(x0 - y0 * (x1 - x0) / (y1 - y0))
 
 
-def extract_levels(spot, strikes, net, flip, em=None, top_n=4):
+def zero_dte_walls(spot, opts):
+    """Call/Put walls computed on the nearest expiry only (0DTE on a trading
+    day). Returns (cw, pw, expiry_dte) — any element may be None."""
+    if not opts:
+        return None, None, None
+    min_dte = min(o.dte for o in opts)
+    sub = [o for o in opts if o.dte == min_dte]
+    strikes, net = per_strike_gex(spot, sub)
+    cw = float(strikes[int(np.argmax(net))]) if len(net) and net.max() > 0 else None
+    pw = float(strikes[int(np.argmin(net))]) if len(net) and net.min() < 0 else None
+    return cw, pw, min_dte
+
+
+def max_pain(opts):
+    """Classic max pain on the nearest expiry: strike minimizing total
+    intrinsic payout to option holders."""
+    if not opts:
+        return None
+    min_dte = min(o.dte for o in opts)
+    sub = [o for o in opts if o.dte == min_dte]
+    ks = np.array(sorted({o.K for o in sub}))
+    if not len(ks):
+        return None
+    K = np.array([o.K for o in sub])
+    OI = np.array([o.OI for o in sub])
+    is_call = np.array([o.is_call for o in sub])
+    pay = np.array([
+        np.sum(np.where(is_call, OI * np.maximum(0.0, S - K), OI * np.maximum(0.0, K - S)))
+        for S in ks
+    ])
+    return float(ks[int(np.argmin(pay))])
+
+
+def atm_iv(spot, opts):
+    """ATM implied vol from the nearest expiry with dte >= 1 (0DTE IV decays
+    intraday and is a poor daily-range proxy). Falls back to any expiry."""
+    cands = [o for o in opts if o.dte >= 1 and o.iv > 0] or [o for o in opts if o.iv > 0]
+    if not cands:
+        return None
+    min_dte = min(o.dte for o in cands)
+    sub = [o for o in cands if o.dte == min_dte]
+    K = min({o.K for o in sub}, key=lambda k: abs(k - spot))
+    ivs = [o.iv for o in sub if o.K == K]
+    return sum(ivs) / len(ivs)
+
+
+def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
     """Return ordered list of (price, label, kind) on the INDEX scale."""
     levels = []
 
@@ -225,6 +271,9 @@ def extract_levels(spot, strikes, net, flip, em=None, top_n=4):
     if em is not None:
         levels.append((spot + em["straddle"], "EM High", "emh"))
         levels.append((spot - em["straddle"], "EM Low", "eml"))
+
+    if extras:
+        levels.extend(extras)
 
     chosen = {round(p, 2) for p, _, _ in levels}
     order = np.argsort(-np.abs(net))
@@ -282,9 +331,11 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
     ]
 
 
-def build_payload(symbol="_NDX", n_expiries=4, top_n=4, basis_override=None, mode="snapshot"):
+def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None, mode="snapshot"):
     """Full pipeline: fetch -> compute -> JSON-ready payload dict.
-    Raises on fetch/parse failure; caller handles errors."""
+    Raises on fetch/parse failure; caller handles errors.
+    n_expiries=10 by default: wide enough that main walls approach the
+    aggregate (MenthorQ-style) view while 0DTE walls give the intraday one."""
     today = et_today()
     data = fetch_cboe(symbol)
     spot, opts, exps = parse_chain(data, n_expiries, today=today)
@@ -293,9 +344,29 @@ def build_payload(symbol="_NDX", n_expiries=4, top_n=4, basis_override=None, mod
     strikes, net = per_strike_gex(spot, opts)
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
     em = atm_straddle(data, spot, today=today)
-    levels = extract_levels(spot, strikes, net, flip, em=em, top_n=top_n)
+
+    # ---- extra levels: 0DTE walls, max pain, IV-based 1D range ----
+    extras = []
+    cw0, pw0, dte0 = zero_dte_walls(spot, opts)
+    if cw0 is not None:
+        extras.append((cw0, "CW 0DTE", "res0"))
+    if pw0 is not None:
+        extras.append((pw0, "PW 0DTE", "sup0"))
+    mp = max_pain(opts)
+    if mp is not None:
+        extras.append((mp, "Max Pain", "mpain"))
+    iv = atm_iv(spot, opts)
+    if iv is not None:
+        rng = spot * iv / math.sqrt(252)
+        extras.append((spot + rng, "1D Max", "ivh"))
+        extras.append((spot - rng, "1D Min", "ivl"))
+
+    levels = extract_levels(spot, strikes, net, flip, em=em, extras=extras, top_n=top_n)
     basis, nq_price, basis_source = nq_basis(spot, override=basis_override)
     net_total_bn = float(net.sum()) / 1e9
+    call_oi = sum(o.OI for o in opts if o.is_call)
+    put_oi = sum(o.OI for o in opts if not o.is_call)
+    pc_oi = round(put_oi / call_oi, 2) if call_oi > 0 else None
 
     levels_out = [
         {"price_nq": round(p + basis, 1), "label": l, "kind": k}
@@ -312,6 +383,10 @@ def build_payload(symbol="_NDX", n_expiries=4, top_n=4, basis_override=None, mod
         "basis_source": basis_source,
         "net_gex_bn": round(net_total_bn, 2),
         "regime": "positive" if net_total_bn > 0 else "negative",
+        "pc_oi": pc_oi,
+        "iv_atm": round(iv, 4) if iv is not None else None,
+        "zero_dte": {"dte": dte0, "call_wall": cw0, "put_wall": pw0},
+        "max_pain_index": mp,
         "expected_move": em,
         "expiries": [str(e) for e in exps],
         "levels": levels_out,
