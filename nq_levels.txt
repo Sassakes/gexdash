@@ -1,0 +1,1 @@
+30086.9,Call Wall,res;29736.9,G+,gpos;29636.9,G-,gneg;29631.0,EM High,emh;29626.9,G-,gneg;29616.9,Put Wall,sup;29566.9,G+,gpos;29557.0,Gamma Flip,flip;29454.5,EM Low,eml
