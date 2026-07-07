@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NQ · GEX Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
+    --text:#E8E6E1; --muted:#7A7A85; --gold:#F0B90B; --teal:#26A69A;
+    --red:#EF5350; --dim-gold:rgba(240,185,11,.14);
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:13px; line-height:1.5; padding:20px 24px 48px;
+  }
+  a{color:var(--gold)}
+  /* ---------- header ---------- */
+  header{
+    display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px;
+    padding-bottom:14px; border-bottom:1px solid var(--border); margin-bottom:18px;
+  }
+  h1{font-size:15px; font-weight:600; letter-spacing:.12em; color:var(--gold)}
+  h1 .tick{color:var(--muted); font-weight:400}
+  #hdrDate{color:var(--muted)}
+  #modeBadge{font-size:11px; padding:2px 8px; border:1px solid var(--border); color:var(--muted)}
+  #modeBadge.live{border-color:var(--gold); color:var(--gold)}
+  .badges{display:flex; gap:8px; flex-wrap:wrap}
+  .badge{
+    border:1px solid var(--border); background:var(--panel);
+    padding:3px 10px; font-size:12px; white-space:nowrap;
+  }
+  .badge b{font-weight:600}
+  .badge.pos b{color:var(--teal)} .badge.neg b{color:var(--red)}
+  .badge.gold b{color:var(--gold)}
+  .refresh{display:flex; gap:8px; margin-left:auto; align-items:center}
+  .refresh input{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    font:inherit; font-size:12px; padding:5px 8px; width:110px;
+  }
+  .refresh input:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
+  .refresh input::placeholder{color:var(--muted)}
+  button{
+    background:var(--dim-gold); color:var(--gold); border:1px solid var(--gold);
+    font:inherit; font-size:12px; padding:5px 14px; cursor:pointer;
+  }
+  button:hover{background:rgba(240,185,11,.24)}
+  button:disabled{opacity:.5; cursor:wait}
+  button:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  /* ---------- layout ---------- */
+  .grid{display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:16px}
+  @media(max-width:940px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel); border:1px solid var(--border)}
+  .panel h2{
+    font-size:11px; font-weight:600; letter-spacing:.14em; color:var(--muted);
+    text-transform:uppercase; padding:10px 14px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+  }
+  .panel h2 span.note{letter-spacing:0; text-transform:none; font-weight:400}
+  .pad{padding:14px}
+  /* ---------- ladder ---------- */
+  #ladder svg{display:block; width:100%; height:auto}
+  /* ---------- levels table ---------- */
+  table{width:100%; border-collapse:collapse}
+  td{padding:6px 14px; border-bottom:1px solid var(--border); font-size:12.5px}
+  tr:last-child td{border-bottom:none}
+  td.price{font-weight:600; text-align:right; white-space:nowrap}
+  td.dist{color:var(--muted); text-align:right; white-space:nowrap}
+  .k-res{color:var(--teal)} .k-sup{color:var(--red)} .k-flip{color:var(--gold)}
+  .k-gpos{color:var(--teal); opacity:.75} .k-gneg{color:var(--red); opacity:.75}
+  .k-emh,.k-eml{color:var(--text); opacity:.85}
+  /* ---------- EM card ---------- */
+  .em-band{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--panel2); border:1px solid var(--border); padding:10px 14px; margin-bottom:10px;
+  }
+  .em-band .v{font-size:16px; font-weight:600}
+  .em-band .up{color:var(--teal)} .em-band .dn{color:var(--red)}
+  .em-mid{text-align:center; color:var(--muted); font-size:11.5px}
+  .em-mid b{color:var(--gold); font-size:14px; display:block}
+  .kv{display:flex; justify-content:space-between; padding:3px 0; font-size:12px; color:var(--muted)}
+  .kv b{color:var(--text); font-weight:500}
+  /* ---------- pine ---------- */
+  #pineStr{
+    background:var(--panel2); border:1px solid var(--border); padding:10px;
+    font-size:11px; color:var(--muted); word-break:break-all; max-height:96px;
+    overflow:auto; margin-bottom:10px;
+  }
+  #copyBtn{width:100%}
+  /* ---------- history ---------- */
+  #history{margin-top:16px}
+  #history svg{display:block; width:100%; height:auto}
+  .legend{display:flex; gap:16px; padding:0 14px 12px; font-size:11.5px; color:var(--muted); flex-wrap:wrap}
+  .legend i{display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:6px}
+  /* ---------- states ---------- */
+  #status{color:var(--muted); padding:24px 0}
+  #liveErr{color:var(--red); font-size:12px; padding:6px 0 0; display:none; width:100%}
+  footer{margin-top:22px; color:var(--muted); font-size:11px}
+  @media(prefers-reduced-motion:no-preference){
+    .panel{animation:fade .25s ease-out}
+    @keyframes fade{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NQ <span class="tick">/</span> GEX TERMINAL</h1>
+  <span id="hdrDate">—</span>
+  <span id="modeBadge">SNAPSHOT</span>
+  <div class="refresh">
+    <input id="basisIn" inputmode="decimal" placeholder="basis (opt.)"
+           title="Basis NQ-NDX manuelle, ex: 145.5 — vide = basis Yahoo live">
+    <button id="refreshBtn">⟳ Refresh live</button>
+  </div>
+  <span id="liveErr"></span>
+</header>
+
+<div class="badges" id="badges" style="margin-bottom:16px"></div>
+
+<div id="status">Chargement des niveaux…</div>
+
+<div id="app" style="display:none">
+  <div class="grid">
+    <section class="panel">
+      <h2>Profil GEX net par strike <span class="note" id="ladderNote"></span></h2>
+      <div class="pad" id="ladder"></div>
+    </section>
+
+    <div style="display:flex; flex-direction:column; gap:16px">
+      <section class="panel">
+        <h2>Niveaux (échelle NQ)</h2>
+        <table><tbody id="levelsBody"></tbody></table>
+      </section>
+
+      <section class="panel">
+        <h2>Expected move · straddle ATM</h2>
+        <div class="pad" id="emCard"></div>
+      </section>
+
+      <section class="panel">
+        <h2>String Pine</h2>
+        <div class="pad">
+          <div id="pineStr"></div>
+          <button id="copyBtn">Copier la string Pine</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel" id="history">
+    <h2>Historique · walls, flip &amp; NQ <span class="note" id="histNote"></span></h2>
+    <div class="legend">
+      <span><i style="background:var(--gold)"></i>NQ</span>
+      <span><i style="background:var(--teal)"></i>Call Wall</span>
+      <span><i style="background:var(--red)"></i>Put Wall</span>
+      <span><i style="background:#8888a0"></i>Gamma Flip</span>
+    </div>
+    <div class="pad" id="histChart"></div>
+  </section>
+</div>
+
+<footer id="footer"></footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#7A7A85",
+           border:"#222228", grey:"#8888a0", text:"#E8E6E1"};
+const KIND_COLOR = {res:C.teal, sup:C.red, flip:C.gold, gpos:C.teal, gneg:C.red,
+                    emh:C.text, eml:C.text};
+const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
+                {minimumFractionDigits:d, maximumFractionDigits:d});
+let HIST = [];
+
+function el(tag, attrs, parent){
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+async function load(){
+  let data;
+  try{
+    data = await (await fetch("nq_levels.json?t=" + Date.now())).json();
+  }catch(e){
+    $("status").textContent =
+      "Aucun snapshot (nq_levels.json introuvable). Lance le workflow « GEX daily levels » " +
+      "dans l'onglet Actions du repo GitHub, ou clique « Refresh live » ci-dessus.";
+  }
+  try{ HIST = await (await fetch("history.json?t=" + Date.now())).json(); }catch(e){}
+
+  if (data) show(data);
+  $("refreshBtn").onclick = refreshLive;
+  $("basisIn").addEventListener("keydown", e => { if (e.key === "Enter") refreshLive(); });
+}
+
+async function refreshLive(){
+  const btn = $("refreshBtn"), err = $("liveErr");
+  btn.disabled = true; btn.textContent = "⟳ Calcul…";
+  err.style.display = "none";
+  const b = $("basisIn").value.trim().replace(",", ".");
+  if (b !== "" && !isFinite(parseFloat(b))){
+    err.textContent = "Basis invalide : entre un nombre (ex: 145.5) ou laisse vide.";
+    err.style.display = "block";
+    btn.disabled = false; btn.textContent = "⟳ Refresh live";
+    return;
+  }
+  const url = "/api/gex" + (b !== "" ? "?basis=" + encodeURIComponent(b) : "");
+  try{
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
+    show(d);
+  }catch(e){
+    err.textContent = "Refresh live indisponible : " + e.message +
+      " (l'API /api/gex n'existe que sur le déploiement Vercel).";
+    err.style.display = "block";
+  }finally{
+    btn.disabled = false; btn.textContent = "⟳ Refresh live";
+  }
+}
+
+function show(data){
+  $("status").style.display = "none";
+  $("app").style.display = "block";
+  render(data, HIST);
+}
+
+function render(d, hist){
+  $("hdrDate").textContent = d.date + " · " + d.symbol;
+  const live = d.mode === "live";
+  const mb = $("modeBadge");
+  mb.textContent = live
+    ? "LIVE " + d.generated_utc.slice(11,16) + " UTC"
+    : "SNAPSHOT " + d.generated_utc.slice(11,16) + " UTC";
+  mb.classList.toggle("live", live);
+
+  const badges = [
+    ["NQ", fmt(d.nq_price), "gold"],
+    ["basis", (d.basis>=0?"+":"") + fmt(d.basis) + " (" + d.basis_source + ")", ""],
+    ["net GEX", (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2) + " $Bn/1%", d.net_gex_bn>=0?"pos":"neg"],
+    ["régime", d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
+  ];
+  $("badges").innerHTML = badges.map(([k,v,c]) =>
+    `<span class="badge ${c}">${k} <b>${v}</b></span>`).join("");
+
+  renderLevels(d);
+  renderEM(d);
+  renderPine(d);
+  renderLadder(d);
+  renderHistory(hist);
+  $("footer").textContent = "Généré " + d.generated_utc.replace("T"," ").slice(0,16) +
+    " UTC (" + d.mode + ") · expiries: " + d.expiries.join(", ") +
+    " · données CBOE delayed (~15 min), usage éducatif — pas un conseil financier.";
+}
+
+function renderLevels(d){
+  const nq = d.nq_price;
+  $("levelsBody").innerHTML = d.levels.map(L => {
+    const dist = nq==null ? null : L.price_nq - nq;
+    return `<tr>
+      <td class="k-${L.kind}">${L.label}</td>
+      <td class="price k-${L.kind}">${fmt(L.price_nq)}</td>
+      <td class="dist">${dist==null ? "" : (dist>=0?"+":"") + fmt(dist,0) + " pts"}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderEM(d){
+  const em = d.expected_move;
+  if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">Straddle indisponible sur cette chaîne.</span>`; return; }
+  const hi = d.levels.find(L=>L.kind==="emh"), lo = d.levels.find(L=>L.kind==="eml");
+  $("emCard").innerHTML = `
+    <div class="em-band">
+      <span class="v dn">${lo?fmt(lo.price_nq):"—"}</span>
+      <span class="em-mid">±${fmt(em.straddle)} pts<b>${fmt(em.em_pct,2)} %</b></span>
+      <span class="v up">${hi?fmt(hi.price_nq):"—"}</span>
+    </div>
+    <div class="kv"><span>Expiry</span><b>${em.expiry}</b></div>
+    <div class="kv"><span>Strike ATM</span><b>${fmt(em.strike,0)}</b></div>
+    <div class="kv"><span>Call mid / Put mid</span><b>${fmt(em.call_mid,2)} / ${fmt(em.put_mid,2)}</b></div>`;
+}
+
+function renderPine(d){
+  $("pineStr").textContent = d.pine;
+  $("copyBtn").onclick = async () => {
+    try{
+      await navigator.clipboard.writeText(d.pine);
+      $("copyBtn").textContent = "Copiée ✓";
+      setTimeout(()=>$("copyBtn").textContent = "Copier la string Pine", 1600);
+    }catch(e){ $("copyBtn").textContent = "Sélectionne et copie manuellement"; }
+  };
+}
+
+/* ---- ladder: profil GEX horizontal, axe de prix vertical partagé ---- */
+function renderLadder(d){
+  const prof = (d.profile||[]).filter(p=>Number.isFinite(p.gex_bn));
+  if (!prof.length){ $("ladder").textContent = "Profil indisponible."; return; }
+
+  const keyLv = d.levels.filter(L=>["res","sup","flip","emh","eml"].includes(L.kind));
+  const prices = prof.map(p=>p.k_nq).concat(keyLv.map(L=>L.price_nq));
+  if (d.nq_price!=null) prices.push(d.nq_price);
+  const pMin = Math.min(...prices), pMax = Math.max(...prices);
+  const padP = (pMax-pMin)*0.03 || 50;
+
+  const W = 640, H = Math.max(420, prof.length*11), mL = 8, mR = 118, mT = 10, mB = 10;
+  const y = p => mT + (1 - (p - (pMin-padP)) / ((pMax+padP)-(pMin-padP))) * (H-mT-mB);
+  const zeroX = mL + (W-mL-mR)*0.5;
+  const maxG = Math.max(...prof.map(p=>Math.abs(p.gex_bn))) || 1;
+  const x = g => zeroX + (g/maxG) * (W-mL-mR)*0.48;
+
+  const svg = el("svg", {viewBox:`0 0 ${W} ${H}`, role:"img",
+    "aria-label":"Profil GEX net par strike avec niveaux clés"});
+
+  el("line",{x1:zeroX,y1:mT,x2:zeroX,y2:H-mB,stroke:C.border,"stroke-width":1},svg);
+
+  const barH = Math.max(3, Math.min(8, (H-mT-mB)/prof.length*0.62));
+  for (const p of prof){
+    const gx = x(p.gex_bn);
+    el("rect",{
+      x:Math.min(zeroX,gx), y:y(p.k_nq)-barH/2,
+      width:Math.max(1,Math.abs(gx-zeroX)), height:barH,
+      fill:p.gex_bn>=0?C.teal:C.red, opacity:.85
+    },svg);
+  }
+
+  const lines = keyLv.map(L=>({p:L.price_nq, label:L.label,
+      color:KIND_COLOR[L.kind]||C.text, dash:L.kind==="flip"||L.kind==="emh"||L.kind==="eml"}));
+  if (d.nq_price!=null) lines.push({p:d.nq_price, label:"NQ", color:C.gold, dash:false, bold:true});
+
+  for (const L of lines){
+    const ly = y(L.p);
+    el("line",{x1:mL,y1:ly,x2:W-mR+4,y2:ly,stroke:L.color,
+      "stroke-width":L.bold?1.6:1, "stroke-dasharray":L.dash?"4 4":"none",
+      opacity:L.bold?1:.9},svg);
+    const t = el("text",{x:W-mR+10,y:ly+3.5,fill:L.color,"font-size":10.5,
+      "font-family":"inherit","font-weight":L.bold?600:400},svg);
+    t.textContent = `${L.label} ${fmt(L.p,0)}`;
+  }
+
+  $("ladder").innerHTML = "";
+  $("ladder").appendChild(svg);
+  $("ladderNote").textContent = `échelle: $Bn GEX / 1% move · max |${fmt(maxG,2)}|`;
+}
+
+/* ---- historique (toujours issu du snapshot quotidien commité) ---- */
+function renderHistory(hist){
+  if (!hist || hist.length < 2){
+    $("histChart").innerHTML =
+      `<span style="color:var(--muted)">L'historique se construit au fil des runs quotidiens (${hist?hist.length:0} jour(s) pour l'instant).</span>`;
+    $("histNote").textContent = "";
+    return;
+  }
+  const series = [
+    {key:"nq_price",   color:C.gold, w:1.8},
+    {key:"call_wall",  color:C.teal, w:1.2},
+    {key:"put_wall",   color:C.red,  w:1.2},
+    {key:"gamma_flip", color:C.grey, w:1.2, dash:"4 4"},
+  ];
+  const vals = hist.flatMap(h=>series.map(s=>h[s.key]).filter(v=>v!=null && isFinite(v)));
+  const vMin = Math.min(...vals), vMax = Math.max(...vals), pad=(vMax-vMin)*0.05||50;
+  const W=980, H=260, mL=64, mR=14, mT=12, mB=26;
+  const X = i => mL + (hist.length===1?0:(i/(hist.length-1))*(W-mL-mR));
+  const Y = v => mT + (1-(v-(vMin-pad))/((vMax+pad)-(vMin-pad)))*(H-mT-mB);
+
+  const svg = el("svg",{viewBox:`0 0 ${W} ${H}`, role:"img",
+    "aria-label":"Historique des walls, du flip et du prix NQ"});
+
+  for (let g=0; g<=4; g++){
+    const v = (vMin-pad) + g/4*((vMax+pad)-(vMin-pad));
+    el("line",{x1:mL,y1:Y(v),x2:W-mR,y2:Y(v),stroke:C.border,"stroke-width":1},svg);
+    const t = el("text",{x:mL-8,y:Y(v)+3,fill:C.muted,"font-size":10,"text-anchor":"end"},svg);
+    t.textContent = fmt(v,0);
+  }
+  const step = Math.max(1, Math.ceil(hist.length/8));
+  hist.forEach((h,i)=>{
+    if (i%step!==0 && i!==hist.length-1) return;
+    const t = el("text",{x:X(i),y:H-8,fill:C.muted,"font-size":10,"text-anchor":"middle"},svg);
+    t.textContent = h.date.slice(5);
+  });
+
+  for (const s of series){
+    let dPath="", started=false;
+    hist.forEach((h,i)=>{
+      const v=h[s.key];
+      if (v==null || !isFinite(v)){ started=false; return; }
+      dPath += (started?"L":"M") + X(i).toFixed(1) + " " + Y(v).toFixed(1);
+      started=true;
+    });
+    if (dPath) el("path",{d:dPath, fill:"none", stroke:s.color,
+      "stroke-width":s.w, "stroke-dasharray":s.dash||"none"},svg);
+  }
+
+  $("histChart").innerHTML = "";
+  $("histChart").appendChild(svg);
+  $("histNote").textContent = hist.length + " jours";
+}
+
+load();
+</script>
+</body>
+</html>

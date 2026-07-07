@@ -1,0 +1,54 @@
+name: GEX daily levels
+
+on:
+  schedule:
+    # Crons GitHub = UTC fixe (pas de DST). Deux runs pour couvrir été/hiver :
+    # 12:45 UTC = 14:45 Paris été · 13:45 UTC = 14:45 Paris hiver
+    # (~45 min avant l'open US). Le 2e run écrase le 1er avec du plus frais.
+    - cron: "45 12 * * 1-5"
+    - cron: "45 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      basis:
+        description: "Basis NQ-NDX manuelle (optionnel, ex: 145.5)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gex-daily
+  cancel-in-progress: false
+
+jobs:
+  gex:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install numpy requests
+
+      - name: Compute GEX levels
+        env:
+          # Optionnel : décommente pour pousser aussi vers Supabase
+          # SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BASIS_INPUT: ${{ github.event.inputs.basis }}
+        run: |
+          ARGS="--symbol _NDX --n-expiries 4 --top-n 4 --out ."
+          if [ -n "$BASIS_INPUT" ]; then ARGS="$ARGS --basis $BASIS_INPUT"; fi
+          python gex_levels.py $ARGS
+
+      - name: Commit results
+        run: |
+          git config user.name "gex-bot"
+          git config user.email "gex-bot@users.noreply.github.com"
+          git add nq_levels.txt nq_levels.json history.json
+          git diff --staged --quiet || git commit -m "GEX levels $(date -u +%F)"
+          git push

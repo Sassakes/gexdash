@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/gex.py": { "maxDuration": 60, "memory": 1024 }
+  }
+}
