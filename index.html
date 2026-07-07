@@ -178,10 +178,22 @@ async function refreshLive(){
     btn.disabled = false; btn.textContent = "⟳ Refresh";
     return;
   }
+  let key = "";
+  try{ key = localStorage.getItem("gexKey") || ""; }catch(_){}
+  if (!key){
+    key = (prompt("Mot de passe refresh :") || "").trim();
+    if (!key){ btn.disabled = false; btn.textContent = "⟳ Refresh"; return; }
+  }
   try{
-    const r = await fetch("/api/gex" + (b !== "" ? "?basis=" + encodeURIComponent(b) : ""));
+    const r = await fetch("/api/gex" + (b !== "" ? "?basis=" + encodeURIComponent(b) : ""),
+                          {headers: {"x-gex-key": key}});
+    if (r.status === 401){
+      try{ localStorage.removeItem("gexKey"); }catch(_){}
+      throw new Error("mot de passe invalide");
+    }
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
+    try{ localStorage.setItem("gexKey", key); }catch(_){}
     show(d);
   }catch(e){
     err.textContent = "Refresh live indisponible : " + e.message;

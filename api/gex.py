@@ -18,7 +18,9 @@ path lands here. We therefore route explicitly:
   ?n=10          number of nearest expiries (1-16)
 """
 
+import hmac
 import json
+import os
 import traceback
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -64,13 +66,21 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, fpath.read_bytes(), ctype)
             return
 
-        # ---- API: live recompute ----
+        # ---- API: live recompute (protected by GEX_REFRESH_KEY if set) ----
         if path == "/api/gex":
             qs = parse_qs(parsed.query)
 
             def q(name, default=None):
                 v = qs.get(name, [None])[0]
                 return v if v not in (None, "") else default
+
+            secret = os.environ.get("GEX_REFRESH_KEY")
+            if secret:
+                given = self.headers.get("x-gex-key") or q("key") or ""
+                if not hmac.compare_digest(given, secret):
+                    self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                               "application/json")
+                    return
 
             try:
                 basis = q("basis")
