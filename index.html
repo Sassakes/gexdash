@@ -196,6 +196,10 @@ async function refreshLive(){
     if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
     try{ localStorage.setItem("gexKey", key); }catch(_){}
     show(d);
+    if (d.published === false){
+      err.textContent = "Calcul OK mais publication échouée → " + (d.publish_info || "raison inconnue");
+      err.style.display = "block";
+    }
   }catch(e){
     err.textContent = "Refresh live indisponible : " + e.message;
     err.style.display = "block";

@@ -41,8 +41,10 @@ UPSTASH_KEY = "gex:latest"
 
 
 def _upstash_conf():
-    url = os.environ.get("UPSTASH_REDIS_REST_URL")
-    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    """Accept both naming schemes: direct Upstash vars and Vercel
+    Marketplace/KV aliases (KV_REST_API_*)."""
+    url = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN")
     return (url.rstrip("/"), token) if url and token else (None, None)
 
 
@@ -65,10 +67,10 @@ def _upstash_get():
 
 
 def _upstash_set(payload):
-    """Publish payload to Redis. Returns True on success (never raises)."""
+    """Publish payload to Redis. Returns (ok, reason) — never raises."""
     url, token = _upstash_conf()
     if not url:
-        return False
+        return False, "no-credentials (variables KV_/UPSTASH_ absentes du déploiement)"
     try:
         import requests
 
@@ -76,10 +78,10 @@ def _upstash_set(payload):
                           headers={"Authorization": f"Bearer {token}"},
                           data=json.dumps(payload), timeout=5)
         r.raise_for_status()
-        return True
-    except Exception:
+        return True, "ok"
+    except Exception as e:
         traceback.print_exc()
-        return False
+        return False, f"{type(e).__name__}: {e}"
 
 
 def _load_file_payload():
@@ -171,7 +173,9 @@ class handler(BaseHTTPRequestHandler):
                     symbol=symbol, n_expiries=n, basis_override=basis, mode="live",
                     em_bands=bands
                 )
-                payload["published"] = _upstash_set(payload)
+                ok, why = _upstash_set(payload)
+                payload["published"] = ok
+                payload["publish_info"] = why
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()
