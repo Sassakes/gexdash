@@ -1,0 +1,54 @@
+//@version=6
+indicator("GEX Daily Levels", overlay = true, max_lines_count = 32, max_labels_count = 32)
+
+// ============================================================================
+// GEX Daily Levels — coller la string du dashboard (bouton "Copier la string
+// Pine") dans le champ ci-dessous. Format: prix,label,kind;prix,label,kind;...
+// kinds: res (Call Wall) / sup (Put Wall) / flip (Gamma Flip) /
+//        emh, eml (Expected Move) / gpos, gneg (top gamma strikes)
+// ============================================================================
+
+string src     = input.text_area(defval = "", title = "String GEX du jour")
+bool   showLbl = input.bool(true, "Labels")
+bool   showG   = input.bool(true, "Afficher G+/G- (top gamma strikes)")
+int    lblOff  = input.int(8, "Décalage labels (barres)", minval = 0, maxval = 100)
+
+f_color(string kind) =>
+    switch kind
+        "res"  => #26A69A
+        "sup"  => #EF5350
+        "flip" => #F0B90B
+        "gpos" => color.new(#26A69A, 45)
+        "gneg" => color.new(#EF5350, 45)
+        "emh"  => color.new(#E8E6E1, 35)
+        "eml"  => color.new(#E8E6E1, 35)
+        =>        color.new(#7A7A85, 30)
+
+f_dashed(string kind) =>
+    kind == "flip" or kind == "emh" or kind == "eml"
+
+var array<line>  lns = array.new<line>()
+var array<label> lbs = array.new<label>()
+
+if barstate.islast
+    for l in lns
+        line.delete(l)
+    array.clear(lns)
+    for lb in lbs
+        label.delete(lb)
+    array.clear(lbs)
+
+    if str.length(src) > 0
+        array<string> rows = str.split(src, ";")
+        for r in rows
+            array<string> f = str.split(r, ",")
+            if array.size(f) == 3
+                float  p    = str.tonumber(array.get(f, 0))
+                string tag  = array.get(f, 1)
+                string kind = array.get(f, 2)
+                bool   isG  = kind == "gpos" or kind == "gneg"
+                if not na(p) and (showG or not isG)
+                    color c = f_color(kind)
+                    array.push(lns, line.new(bar_index - 1, p, bar_index, p, extend = extend.both, color = c, width = 1, style = f_dashed(kind) ? line.style_dashed : line.style_solid))
+                    if showLbl
+                        array.push(lbs, label.new(bar_index + lblOff, p, tag + "  " + str.tostring(p, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = c, size = size.tiny))
