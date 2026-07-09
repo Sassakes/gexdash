@@ -19,6 +19,7 @@ import sys
 
 from api._gex_core import (
     Opt,
+    discord_notify,
     atm_straddle,
     bs_gamma,
     build_payload,
@@ -180,6 +181,9 @@ def run_live(args):
 
     if args.push_supabase:
         push_supabase(payload["date"], nq_price, levels_out)
+
+    if discord_notify(payload):
+        print("[ok] niveaux postés sur Discord")
 
 
 # --------------------------------------------------------------------------- #

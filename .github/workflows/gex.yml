@@ -40,6 +40,7 @@ jobs:
           # SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           # SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           BASIS_INPUT: ${{ github.event.inputs.basis }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           ARGS="--symbol _NDX --n-expiries 10 --top-n 4 --out ."
           if [ -n "$BASIS_INPUT" ]; then ARGS="$ARGS --basis $BASIS_INPUT"; fi

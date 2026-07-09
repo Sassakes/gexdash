@@ -346,6 +346,59 @@ def nq_basis(ndx_spot, override=None):
 
 
 # --------------------------------------------------------------------------- #
+# Discord notification                                                         #
+# --------------------------------------------------------------------------- #
+def discord_notify(payload, dashboard_url="https://gexdash.wealthbuilders.group"):
+    """Post the published levels to a Discord webhook (env DISCORD_WEBHOOK_URL).
+    No-op when unset. Never raises. Returns True on success."""
+    import os
+    import traceback as tb
+
+    url = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not url:
+        return False
+    try:
+        import requests
+
+        def find(kind):
+            for L in payload.get("levels", []):
+                if L["kind"] == kind:
+                    return L["price_nq"]
+            return None
+
+        def f(v):
+            return f"{v:,.1f}".replace(",", " ") if v is not None else "—"
+
+        em = payload.get("expected_move") or {}
+        live = payload.get("mode") == "live"
+        regime = payload.get("regime")
+        fields = [
+            {"name": "Call Wall", "value": f(find("res")), "inline": True},
+            {"name": "Put Wall", "value": f(find("sup")), "inline": True},
+            {"name": "Gamma Flip", "value": f(find("flip")), "inline": True},
+            {"name": "CW 0DTE", "value": f(find("res0")), "inline": True},
+            {"name": "PW 0DTE", "value": f(find("sup0")), "inline": True},
+            {"name": "Max Pain", "value": f(find("mpain")), "inline": True},
+            {"name": "EM ±", "value": f"{em.get('straddle', '—')} pts ({em.get('em_pct', '—')}%)", "inline": True},
+            {"name": "Net GEX", "value": f"{payload.get('net_gex_bn', '—')} $Bn/1%", "inline": True},
+            {"name": "P/C OI", "value": str(payload.get("pc_oi", "—")), "inline": True},
+        ]
+        embed = {
+            "title": f"GEX NQ — {payload.get('date')} · {'LIVE (publié)' if live else 'SNAPSHOT auto'}",
+            "url": dashboard_url,
+            "color": 0x26A69A if regime == "positive" else 0xEF5350,
+            "fields": fields,
+            "footer": {"text": f"NQ {f(payload.get('nq_price'))} · basis {payload.get('basis')} ({payload.get('basis_source')}) · régime GAMMA {'+' if regime == 'positive' else '−'}"},
+        }
+        r = requests.post(url, json={"embeds": [embed]}, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception:
+        tb.print_exc()
+        return False
+
+
+# --------------------------------------------------------------------------- #
 # Output helpers                                                               #
 # --------------------------------------------------------------------------- #
 def to_pine_string(levels, basis):
