@@ -383,8 +383,11 @@ def discord_notify(payload, dashboard_url="https://gexdash.wealthbuilders.group"
             {"name": "Net GEX", "value": f"{payload.get('net_gex_bn', '—')} $Bn/1%", "inline": True},
             {"name": "P/C OI", "value": str(payload.get("pc_oi", "—")), "inline": True},
         ]
+        pine = payload.get("pine", "")
+        desc = f"**String Pine — coller dans l'indicateur GEX Daily Levels :**\n```{pine}```" if pine else ""
         embed = {
             "title": f"GEX NQ — {payload.get('date')} · {'LIVE (publié)' if live else 'SNAPSHOT auto'}",
+            "description": desc[:4000],
             "url": dashboard_url,
             "color": 0x26A69A if regime == "positive" else 0xEF5350,
             "fields": fields,
