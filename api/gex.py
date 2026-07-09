@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from api._gex_core import build_payload
+from api._gex_core import build_payload, discord_notify, et_today
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -142,6 +142,45 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, fpath.read_bytes(), ctype)
             return
 
+        # ---- CRON fallback: compute+publish only if today's snapshot is missing ----
+        if path == "/api/cron":
+            qs = parse_qs(parsed.query)
+            cron_secret = os.environ.get("CRON_SECRET")
+            gex_key = os.environ.get("GEX_REFRESH_KEY")
+            auth = self.headers.get("Authorization", "")
+            given_key = self.headers.get("x-gex-key") or (qs.get("key", [None])[0] or "")
+            ok_cron = cron_secret and hmac.compare_digest(auth, f"Bearer {cron_secret}")
+            ok_key = gex_key and hmac.compare_digest(given_key, gex_key)
+            if (cron_secret or gex_key) and not (ok_cron or ok_key):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            try:
+                today = et_today().isoformat()
+                latest = _latest_payload()
+                fresh = (latest is not None
+                         and latest.get("date") == today
+                         and latest.get("generated_utc", "") >= f"{today}T11:30:00")
+                if fresh and "force" not in qs:
+                    self._send(200, json.dumps({
+                        "skipped": True,
+                        "reason": "snapshot du jour déjà présent",
+                        "latest_generated_utc": latest.get("generated_utc"),
+                    }).encode(), "application/json")
+                    return
+                payload = build_payload(mode="snapshot")
+                ok, why = _upstash_set(payload)
+                notified = discord_notify(payload) if ok else False
+                self._send(200, json.dumps({
+                    "skipped": False, "published": ok, "publish_info": why,
+                    "discord": notified, "date": payload["date"],
+                    "generated_utc": payload["generated_utc"],
+                }).encode(), "application/json")
+            except Exception as e:
+                traceback.print_exc()
+                self._send(500, json.dumps({"error": str(e)}).encode(), "application/json")
+            return
+
         # ---- API: live recompute (protected by GEX_REFRESH_KEY if set) ----
         if path == "/api/gex":
             qs = parse_qs(parsed.query)
@@ -176,6 +215,8 @@ class handler(BaseHTTPRequestHandler):
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
                 payload["publish_info"] = why
+                if ok:
+                    payload["discord"] = discord_notify(payload)
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()

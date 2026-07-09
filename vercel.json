@@ -1,5 +1,14 @@
 {
   "functions": {
-    "api/gex.py": { "maxDuration": 60, "memory": 1024 }
-  }
+    "api/gex.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "10 13 * * 1-5"
+    }
+  ]
 }
