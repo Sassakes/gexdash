@@ -42,7 +42,7 @@ jobs:
           BASIS_INPUT: ${{ github.event.inputs.basis }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          ARGS="--symbol _NDX --n-expiries 10 --top-n 4 --out ."
+          ARGS="--targets NQ,ES,SPX --n-expiries 10 --top-n 4 --out ."
           if [ -n "$BASIS_INPUT" ]; then ARGS="$ARGS --basis $BASIS_INPUT"; fi
           python gex_levels.py $ARGS
 
@@ -50,6 +50,6 @@ jobs:
         run: |
           git config user.name "gex-bot"
           git config user.email "gex-bot@users.noreply.github.com"
-          git add nq_levels.txt nq_levels.json history.json
+          git add -A
           git diff --staged --quiet || git commit -m "GEX levels $(date -u +%F)"
           git push

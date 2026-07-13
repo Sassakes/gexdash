@@ -1,4 +1,4 @@
-# NQ GEX Terminal
+# NQ · ES · SPX — GEX Terminal
 
 Niveaux gamma (call/put walls, gamma flip, top strikes, expected move straddle ATM)
 depuis la chaîne d'options NDX (CBOE delayed, gratuit), convertis à l'échelle NQ,

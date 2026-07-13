@@ -57,9 +57,9 @@ def validate_output(nq_price, levels_out):
             )
 
 
-def append_history(out_dir, record):
-    """Append/replace today's record in history.json (keyed by date)."""
-    path = f"{out_dir}/history.json"
+def append_history(out_dir, target, record):
+    """Append/replace today's record in history_{target}.json (keyed by date)."""
+    path = f"{out_dir}/history_{target}.json"
     try:
         with open(path) as f:
             hist = json.load(f)
@@ -119,20 +119,30 @@ def push_supabase(date_str, nq_price, levels_out):
 
 
 def run_live(args):
+    targets = [t.strip().upper() for t in args.targets.split(",") if t.strip()]
+    cache, done = {}, []
+    for target in targets:
+        done.append(run_target(args, target, cache))
+    if done and discord_notify(done):
+        print("[ok] niveaux postés sur Discord (" + ", ".join(p["target"] for p in done) + ")")
+
+
+def run_target(args, target, cache):
     payload = build_payload(
-        symbol=args.symbol,
+        target=target,
         n_expiries=args.n_expiries,
         top_n=args.top_n,
-        basis_override=args.basis,
+        basis_override=args.basis if target != "SPX" else None,
         mode="snapshot",
         em_bands=tuple(float(x) for x in args.em_bands.split(",") if x.strip()),
+        chain_cache=cache,
     )
     levels_out = payload["levels"]
     nq_price = payload["nq_price"]
     em = payload["expected_move"]
 
     print(
-        f"# {payload['symbol']} spot={payload['index_spot']:.1f}  NQ={nq_price}  "
+        f"# [{target}] {payload['symbol']} spot={payload['index_spot']:.1f}  px={nq_price}  "
         f"basis={payload['basis']:+.1f} ({payload['basis_source']})"
     )
     print(f"# expiries: {', '.join(payload['expiries'])}")
@@ -152,9 +162,9 @@ def run_live(args):
     )
 
     out = args.out.rstrip("/")
-    with open(f"{out}/nq_levels.txt", "w") as f:
+    with open(f"{out}/levels_{target}.txt", "w") as f:
         f.write(payload["pine"] + "\n")
-    with open(f"{out}/nq_levels.json", "w") as f:
+    with open(f"{out}/levels_{target}.json", "w") as f:
         json.dump(payload, f, indent=2)
 
     def find(kind):
@@ -164,7 +174,7 @@ def run_live(args):
         return None
 
     n_hist = append_history(
-        out,
+        out, target,
         {
             "date": payload["date"],
             "nq_price": nq_price,
@@ -177,13 +187,11 @@ def run_live(args):
             "basis": payload["basis"],
         },
     )
-    print(f"\nWrote {out}/nq_levels.txt, nq_levels.json, history.json ({n_hist} days)")
+    print(f"\nWrote {out}/levels_{target}.txt/.json, history_{target}.json ({n_hist} days)")
 
     if args.push_supabase:
         push_supabase(payload["date"], nq_price, levels_out)
-
-    if discord_notify(payload):
-        print("[ok] niveaux postés sur Discord")
+    return payload
 
 
 # --------------------------------------------------------------------------- #
@@ -268,7 +276,8 @@ def selftest():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbol", default="_NDX", help="_NDX (index) or QQQ")
+    ap.add_argument("--targets", default="NQ,ES,SPX",
+                    help="cibles à calculer, ex: NQ,ES,SPX ou NQ seul")
     ap.add_argument("--n-expiries", type=int, default=10)
     ap.add_argument("--top-n", type=int, default=4, help="extra gamma strikes")
     ap.add_argument("--em-bands", default="0.5,1.5",

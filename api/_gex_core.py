@@ -18,7 +18,14 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json"
-YAHOO_NQ = "https://query1.finance.yahoo.com/v8/finance/chart/NQ=F?interval=1m&range=1d"
+YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m&range=1d"
+
+# target -> (CBOE option chain, Yahoo future for the basis; None = index scale)
+TARGETS = {
+    "NQ":  {"chain": "_NDX", "future": "NQ=F"},
+    "ES":  {"chain": "_SPX", "future": "ES=F"},
+    "SPX": {"chain": "_SPX", "future": None},
+}
 CONTRACT_MULT = 100
 RISK_FREE = 0.04
 OCC_RE = re.compile(r"^([A-Z\^_]+?)(\d{6})([CP])(\d{8})$")
@@ -329,18 +336,21 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 # --------------------------------------------------------------------------- #
 # NQ basis (direct Yahoo HTTP, no yfinance dependency)                         #
 # --------------------------------------------------------------------------- #
-def nq_basis(ndx_spot, override=None):
-    """basis = NQ front future - NDX spot.
-    Returns (basis, nq_price_or_None, source)."""
+def future_basis(index_spot, yahoo_future, override=None):
+    """basis = front future - index spot. yahoo_future=None -> index scale (0).
+    Returns (basis, target_price_or_None, source)."""
     if override is not None:
-        return float(override), float(ndx_spot) + float(override), "manual"
+        return float(override), float(index_spot) + float(override), "manual"
+    if yahoo_future is None:
+        return 0.0, float(index_spot), "index"
     try:
         import requests
 
-        r = requests.get(YAHOO_NQ, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(YAHOO_URL.format(sym=yahoo_future), timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0"})
         r.raise_for_status()
-        nq = float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
-        return nq - float(ndx_spot), nq, "yahoo"
+        fut = float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
+        return fut - float(index_spot), fut, "yahoo"
     except Exception:
         return 0.0, None, "none"
 
@@ -348,8 +358,9 @@ def nq_basis(ndx_spot, override=None):
 # --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
-def discord_notify(payload, dashboard_url="https://gexdash.wealthbuilders.group"):
-    """Post the published levels to a Discord webhook (env DISCORD_WEBHOOK_URL).
+def discord_notify(payloads, dashboard_url="https://gexdash.wealthbuilders.group"):
+    """Post published levels to a Discord webhook (env DISCORD_WEBHOOK_URL).
+    Accepts one payload dict or a list (one embed per target, single message).
     No-op when unset. Never raises. Returns True on success."""
     import os
     import traceback as tb
@@ -357,21 +368,36 @@ def discord_notify(payload, dashboard_url="https://gexdash.wealthbuilders.group"
     url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not url:
         return False
+    if isinstance(payloads, dict):
+        payloads = [payloads]
     try:
         import requests
 
-        def find(kind):
-            for L in payload.get("levels", []):
-                if L["kind"] == kind:
-                    return L["price_nq"]
-            return None
+        embeds = []
+        for payload in payloads[:10]:
+            embeds.append(_discord_embed(payload, dashboard_url))
+        r = requests.post(url, json={"embeds": embeds}, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception:
+        tb.print_exc()
+        return False
 
-        def f(v):
-            return f"{v:,.1f}".replace(",", " ") if v is not None else "—"
 
-        em = payload.get("expected_move") or {}
-        live = payload.get("mode") == "live"
-        regime = payload.get("regime")
+def _discord_embed(payload, dashboard_url):
+    def find(kind):
+        for L in payload.get("levels", []):
+            if L["kind"] == kind:
+                return L["price_nq"]
+        return None
+
+    def f(v):
+        return f"{v:,.1f}".replace(",", " ") if v is not None else "—"
+
+    em = payload.get("expected_move") or {}
+    live = payload.get("mode") == "live"
+    regime = payload.get("regime")
+    if True:
         fields = [
             {"name": "Call Wall", "value": f(find("res")), "inline": True},
             {"name": "Put Wall", "value": f(find("sup")), "inline": True},
@@ -384,21 +410,16 @@ def discord_notify(payload, dashboard_url="https://gexdash.wealthbuilders.group"
             {"name": "P/C OI", "value": str(payload.get("pc_oi", "—")), "inline": True},
         ]
         pine = payload.get("pine", "")
-        desc = f"**String Pine — coller dans l'indicateur GEX Daily Levels :**\n```{pine}```" if pine else ""
-        embed = {
-            "title": f"GEX NQ — {payload.get('date')} · {'LIVE (publié)' if live else 'SNAPSHOT auto'}",
-            "description": desc[:4000],
+        tgt = payload.get("target", "NQ")
+        desc = f"**String Pine — coller dans la zone {tgt} de l'indicateur :**\n```{pine}```" if pine else ""
+        return {
+            "title": f"GEX {tgt} — {payload.get('date')} · {'LIVE (publié)' if live else 'SNAPSHOT auto'}",
+            "description": desc[:1800],
             "url": dashboard_url,
             "color": 0x26A69A if regime == "positive" else 0xEF5350,
             "fields": fields,
-            "footer": {"text": f"NQ {f(payload.get('nq_price'))} · basis {payload.get('basis')} ({payload.get('basis_source')}) · régime GAMMA {'+' if regime == 'positive' else '−'}"},
+            "footer": {"text": f"{tgt} {f(payload.get('nq_price'))} · basis {payload.get('basis')} ({payload.get('basis_source')}) · régime GAMMA {'+' if regime == 'positive' else '−'}"},
         }
-        r = requests.post(url, json={"embeds": [embed]}, timeout=10)
-        r.raise_for_status()
-        return True
-    except Exception:
-        tb.print_exc()
-        return False
 
 
 # --------------------------------------------------------------------------- #
@@ -420,14 +441,23 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
     ]
 
 
-def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None,
-                  mode="snapshot", em_bands=(0.5, 1.5)):
+def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
+                  mode="snapshot", em_bands=(0.5, 1.5), chain_cache=None):
     """Full pipeline: fetch -> compute -> JSON-ready payload dict.
     Raises on fetch/parse failure; caller handles errors.
     n_expiries=10 by default: wide enough that main walls approach the
     aggregate (MenthorQ-style) view while 0DTE walls give the intraday one."""
+    if target not in TARGETS:
+        raise ValueError(f"target must be one of {sorted(TARGETS)}")
+    cfg = TARGETS[target]
+    symbol = cfg["chain"]
     today = et_today()
-    data = fetch_cboe(symbol)
+    if chain_cache is not None and symbol in chain_cache:
+        data = chain_cache[symbol]
+    else:
+        data = fetch_cboe(symbol)
+        if chain_cache is not None:
+            chain_cache[symbol] = data
     spot, opts, exps = parse_chain(data, n_expiries, today=today)
     if not opts:
         raise ValueError("no options parsed from CBOE chain")
@@ -456,7 +486,7 @@ def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None,
         extras.extend(band_lv)
 
     levels = extract_levels(spot, strikes, net, flip, em=em, extras=extras, top_n=top_n)
-    basis, nq_price, basis_source = nq_basis(spot, override=basis_override)
+    basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
     net_total_bn = float(net.sum()) / 1e9
     call_oi = sum(o.OI for o in opts if o.is_call)
     put_oi = sum(o.OI for o in opts if not o.is_call)
@@ -478,6 +508,7 @@ def build_payload(symbol="_NDX", n_expiries=10, top_n=4, basis_override=None,
         "date": today.isoformat(),
         "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "mode": mode,
+        "target": target,
         "symbol": symbol,
         "index_spot": spot,
         "nq_price": nq_price,

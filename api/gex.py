@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from api._gex_core import build_payload, discord_notify, et_today
+from api._gex_core import TARGETS, build_payload, discord_notify, et_today
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,7 +37,8 @@ STATIC = {
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
 }
 
-UPSTASH_KEY = "gex:latest"
+def _upstash_key(target):
+    return f"gex:latest:{target}"
 
 
 def _upstash_conf():
@@ -48,33 +49,38 @@ def _upstash_conf():
     return (url.rstrip("/"), token) if url and token else (None, None)
 
 
-def _upstash_get():
-    """Latest published payload from Redis, or None (never raises)."""
+def _upstash_get(target="NQ"):
+    """Latest published payload for a target from Redis, or None (never raises)."""
     url, token = _upstash_conf()
     if not url:
         return None
     try:
         import requests
 
-        r = requests.get(f"{url}/get/{UPSTASH_KEY}",
-                         headers={"Authorization": f"Bearer {token}"}, timeout=5)
-        r.raise_for_status()
-        v = r.json().get("result")
-        return json.loads(v) if v else None
+        for key in ((_upstash_key(target), "gex:latest") if target == "NQ"
+                    else (_upstash_key(target),)):
+            r = requests.get(f"{url}/get/{key}",
+                             headers={"Authorization": f"Bearer {token}"}, timeout=5)
+            r.raise_for_status()
+            v = r.json().get("result")
+            if v:
+                return json.loads(v)
+        return None
     except Exception:
         traceback.print_exc()
         return None
 
 
 def _upstash_set(payload):
-    """Publish payload to Redis. Returns (ok, reason) — never raises."""
+    """Publish payload to Redis under its target key. Returns (ok, reason)."""
     url, token = _upstash_conf()
     if not url:
         return False, "no-credentials (variables KV_/UPSTASH_ absentes du déploiement)"
     try:
         import requests
 
-        r = requests.post(f"{url}/set/{UPSTASH_KEY}",
+        key = _upstash_key(payload.get("target", "NQ"))
+        r = requests.post(f"{url}/set/{key}",
                           headers={"Authorization": f"Bearer {token}"},
                           data=json.dumps(payload), timeout=5)
         r.raise_for_status()
@@ -84,24 +90,31 @@ def _upstash_set(payload):
         return False, f"{type(e).__name__}: {e}"
 
 
-def _load_file_payload():
-    p = ROOT / "nq_levels.json"
-    if not p.is_file():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except Exception:
-        return None
+def _load_file_payload(target="NQ"):
+    names = [f"levels_{target}.json"] + (["nq_levels.json"] if target == "NQ" else [])
+    for name in names:
+        p = ROOT / name
+        if p.is_file():
+            try:
+                return json.loads(p.read_text())
+            except Exception:
+                continue
+    return None
 
 
-def _latest_payload():
+def _latest_payload(target="NQ"):
     """Newest of: committed daily snapshot vs last published live refresh.
     ISO timestamps compare correctly as strings."""
-    file_p = _load_file_payload()
-    up_p = _upstash_get()
+    file_p = _load_file_payload(target)
+    up_p = _upstash_get(target)
     if file_p and up_p:
         return up_p if up_p.get("generated_utc", "") >= file_p.get("generated_utc", "") else file_p
     return up_p or file_p
+
+
+def _q_target(qs):
+    t = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+    return t if t in TARGETS else None
 
 
 class handler(BaseHTTPRequestHandler):
@@ -118,8 +131,14 @@ class handler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
 
         # ---- official levels: newest of committed snapshot vs published refresh ----
-        if path == "/nq_levels.json":
-            payload = _latest_payload()
+        if path in ("/levels.json", "/nq_levels.json"):
+            qs0 = parse_qs(parsed.query)
+            target = "NQ" if path == "/nq_levels.json" else _q_target(qs0)
+            if target is None:
+                self._send(400, json.dumps({"error": "target must be NQ, ES or SPX"}).encode(),
+                           "application/json")
+                return
+            payload = _latest_payload(target)
             if payload is None:
                 self._send(404, json.dumps(
                     {"error": "no levels yet - run the GitHub Action or a refresh"}).encode(),
@@ -157,24 +176,27 @@ class handler(BaseHTTPRequestHandler):
                 return
             try:
                 today = et_today().isoformat()
-                latest = _latest_payload()
-                fresh = (latest is not None
-                         and latest.get("date") == today
-                         and latest.get("generated_utc", "") >= f"{today}T11:30:00")
-                if fresh and "force" not in qs:
-                    self._send(200, json.dumps({
-                        "skipped": True,
-                        "reason": "snapshot du jour déjà présent",
-                        "latest_generated_utc": latest.get("generated_utc"),
-                    }).encode(), "application/json")
-                    return
-                payload = build_payload(mode="snapshot")
-                ok, why = _upstash_set(payload)
-                notified = discord_notify(payload) if ok else False
+                force = "force" in qs
+                results, computed, cache = {}, [], {}
+                for target in TARGETS:
+                    latest = _latest_payload(target)
+                    fresh = (latest is not None
+                             and latest.get("date") == today
+                             and latest.get("generated_utc", "") >= f"{today}T11:30:00")
+                    if fresh and not force:
+                        results[target] = {"skipped": True}
+                        continue
+                    payload = build_payload(target=target, mode="snapshot",
+                                            chain_cache=cache)
+                    ok, why = _upstash_set(payload)
+                    results[target] = {"skipped": False, "published": ok,
+                                       "publish_info": why,
+                                       "generated_utc": payload["generated_utc"]}
+                    if ok:
+                        computed.append(payload)
+                notified = discord_notify(computed) if computed else False
                 self._send(200, json.dumps({
-                    "skipped": False, "published": ok, "publish_info": why,
-                    "discord": notified, "date": payload["date"],
-                    "generated_utc": payload["generated_utc"],
+                    "date": today, "discord": notified, "targets": results,
                 }).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()
@@ -201,15 +223,15 @@ class handler(BaseHTTPRequestHandler):
                 basis = q("basis")
                 basis = float(basis) if basis is not None else None
                 n = max(1, min(int(q("n", 10)), 16))
-                symbol = q("symbol", "_NDX")
-                if symbol not in ("_NDX", "QQQ"):
-                    raise ValueError("symbol must be _NDX or QQQ")
+                target = (q("target", "NQ") or "NQ").upper()
+                if target not in TARGETS:
+                    raise ValueError("target must be NQ, ES or SPX")
                 bands = tuple(
                     float(x) for x in q("em_bands", "0.5,1.5").split(",") if x.strip()
                 )
 
                 payload = build_payload(
-                    symbol=symbol, n_expiries=n, basis_override=basis, mode="live",
+                    target=target, n_expiries=n, basis_override=basis, mode="live",
                     em_bands=bands
                 )
                 ok, why = _upstash_set(payload)

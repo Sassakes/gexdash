@@ -42,6 +42,13 @@
   button:hover{background:rgba(240,185,11,.24)}
   button:disabled{opacity:.5; cursor:wait}
   button:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .tabs{display:flex; gap:0; margin-bottom:14px; border:1px solid var(--border); width:fit-content}
+  .tabs button{
+    background:var(--panel); color:var(--muted); border:none; border-right:1px solid var(--border);
+    padding:6px 22px; font:inherit; font-size:12.5px; cursor:pointer; width:auto;
+  }
+  .tabs button:last-child{border-right:none}
+  .tabs button.on{background:var(--dim-gold); color:var(--gold); font-weight:600}
   .badges{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px}
   .badge{border:1px solid var(--border); background:var(--panel); padding:3px 10px; font-size:12px; white-space:nowrap}
   .badge b{font-weight:600}
@@ -102,6 +109,12 @@
   <span id="liveErr"></span>
 </header>
 
+<div class="tabs" id="tabs">
+  <button data-t="NQ">NQ</button>
+  <button data-t="ES">ES</button>
+  <button data-t="SPX">SPX</button>
+</div>
+
 <div class="badges" id="badges"></div>
 
 <div id="status">Chargement…</div>
@@ -113,7 +126,7 @@
   </section>
 
   <section class="panel">
-    <h2>Niveaux du jour · échelle NQ</h2>
+    <h2 id="levelsTitle">Niveaux du jour</h2>
     <table><tbody id="levelsBody"></tbody></table>
   </section>
 
@@ -147,6 +160,9 @@ const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip",
                emh:"EM+", eml:"EM−", mpain:"MP"};
 const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
                 {minimumFractionDigits:d, maximumFractionDigits:d});
+let TARGET = "NQ";
+try{ TARGET = localStorage.getItem("gexTarget") || "NQ"; }catch(_){}
+if (!["NQ","ES","SPX"].includes(TARGET)) TARGET = "NQ";
 
 function el(tag, attrs, parent){
   const e = document.createElementNS(NS, tag);
@@ -155,15 +171,34 @@ function el(tag, attrs, parent){
   return e;
 }
 
-async function load(){
+function paintTabs(){
+  document.querySelectorAll("#tabs button").forEach(b =>
+    b.classList.toggle("on", b.dataset.t === TARGET));
+}
+
+async function loadTarget(){
+  paintTabs();
+  $("status").style.display = "block";
+  $("status").textContent = "Chargement " + TARGET + "…";
+  $("app").style.display = "none";
   let data;
   try{
-    data = await (await fetch("nq_levels.json?t=" + Date.now())).json();
-  }catch(e){
-    $("status").textContent =
-      "Aucun snapshot. Lance le workflow GitHub Actions, ou clique « ⟳ Refresh ».";
+    data = await (await fetch("levels.json?target=" + TARGET + "&t=" + Date.now())).json();
+  }catch(e){}
+  if (data && !data.error){ show(data); }
+  else {
+    $("status").textContent = "Aucun snapshot " + TARGET +
+      " pour l'instant. Lance le workflow GitHub Actions, ou clique « ⟳ Refresh ».";
   }
-  if (data && !data.error) show(data);
+}
+
+async function load(){
+  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+    TARGET = b.dataset.t;
+    try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
+    loadTarget();
+  });
+  await loadTarget();
   $("refreshBtn").onclick = refreshLive;
   $("basisIn").addEventListener("keydown", e => { if (e.key === "Enter") refreshLive(); });
 }
@@ -186,7 +221,7 @@ async function refreshLive(){
     if (!key){ btn.disabled = false; btn.textContent = "⟳ Refresh"; return; }
   }
   try{
-    const r = await fetch("/api/gex" + (b !== "" ? "?basis=" + encodeURIComponent(b) : ""),
+    const r = await fetch("/api/gex?target=" + TARGET + (b !== "" ? "&basis=" + encodeURIComponent(b) : ""),
                           {headers: {"x-gex-key": key}});
     if (r.status === 401){
       try{ localStorage.removeItem("gexKey"); }catch(_){}
@@ -212,7 +247,8 @@ function show(d){
   $("status").style.display = "none";
   $("app").style.display = "block";
 
-  $("hdrDate").textContent = d.date + " · " + d.symbol;
+  $("hdrDate").textContent = d.date + " · " + (d.target || "NQ") + " (" + d.symbol + ")";
+  $("levelsTitle").textContent = "Niveaux du jour · échelle " + (d.target || "NQ");
   const live = d.mode === "live";
   const mb = $("modeBadge");
   mb.textContent = (live ? "LIVE " : "SNAPSHOT ") + d.generated_utc.slice(11,16) + " UTC"
@@ -220,7 +256,7 @@ function show(d){
   mb.classList.toggle("live", live);
 
   const badges = [
-    ["NQ", fmt(d.nq_price), "gold"],
+    [d.target || "NQ", fmt(d.nq_price), "gold"],
     ["basis", (d.basis>=0?"+":"") + fmt(d.basis) + " (" + d.basis_source + ")", ""],
     ["net GEX", (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2) + " $Bn/1%", d.net_gex_bn>=0?"pos":"neg"],
     ["régime", d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
@@ -246,7 +282,7 @@ function renderRail(d){
     .map(L => ({p:L.price_nq, tag:SHORT[L.kind], color:KIND_COLOR[L.kind],
                 dash:["flip","emh","eml","res0","sup0","mpain"].includes(L.kind)}));
   if (d.nq_price != null)
-    marks.push({p:d.nq_price, tag:"NQ", color:C.gold, nq:true});
+    marks.push({p:d.nq_price, tag:(d.target||"NQ"), color:C.gold, nq:true});
   if (marks.length < 2){ $("rail").textContent = "—"; return; }
 
   marks.sort((a,b)=>a.p-b.p);
@@ -320,7 +356,7 @@ function renderPine(d){
   $("copyBtn").onclick = async () => {
     try{
       await navigator.clipboard.writeText(d.pine);
-      $("copyBtn").textContent = "Copiée ✓";
+      $("copyBtn").textContent = "Copiée ✓ — zone " + (d.target||"NQ") + " de l'indicateur";
       setTimeout(()=>$("copyBtn").textContent = "Copier la string Pine", 1600);
     }catch(e){ $("copyBtn").textContent = "Sélectionne et copie manuellement"; }
   };

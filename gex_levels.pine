@@ -2,17 +2,29 @@
 indicator("GEX Daily Levels", overlay = true, max_lines_count = 64, max_labels_count = 64)
 
 // ============================================================================
-// GEX Daily Levels — coller la string du dashboard (bouton "Copier la string
-// Pine"). Format: prix,label,kind;prix,label,kind;...
-// kinds: res/sup (Call/Put Wall) · res0/sup0 (walls 0DTE) · flip (Gamma Flip)
-//        emh/eml (Expected Move straddle) · emb (bandes EM fractionnées ±50%...)
-//        ivh/ivl (1D Min/Max IV-based)
-//        mpain (Max Pain) · gpos/gneg (top gamma strikes)
-// Chaque famille de niveaux est customisable: visibilité, couleur, épaisseur,
-// style de ligne.
+// GEX Daily Levels
+// Plots externally computed dealer gamma exposure (GEX) levels from a compact
+// text string. Format: price,label,kind;price,label,kind;...
+// kinds: res/sup (Call/Put Wall) . res0/sup0 (0DTE walls) . flip (Gamma Flip)
+//        emh/eml (ATM straddle Expected Move) . emb (fractional EM bands)
+//        ivh/ivl (IV-based 1D range) . mpain (Max Pain) . gpos/gneg (top gamma)
+// Levels can come from any gamma data source or your own option-chain math.
 // ============================================================================
 
-string src = input.text_area(defval = "", title = "String GEX du jour")
+const string TIP = "Format: price,label,kind;price,label,kind;... See the script description for the full format specification and kind codes."
+string market = input.string("Auto", "Market", options = ["Auto", "NQ", "ES", "SPX"], tooltip = "Auto picks the right levels string from the chart symbol (NQ/MNQ/NDX -> NQ, ES/MES -> ES, SPX/SP500 -> SPX). Force a market if needed.")
+string srcNQ  = input.text_area(defval = "", title = "NQ — levels string",  tooltip = TIP)
+string srcES  = input.text_area(defval = "", title = "ES — levels string",  tooltip = TIP)
+string srcSPX = input.text_area(defval = "", title = "SPX — levels string", tooltip = TIP)
+
+f_market() =>
+    string m = market
+    if m == "Auto"
+        string sym = str.upper(syminfo.root + " " + syminfo.ticker)
+        m := str.contains(sym, "NQ") or str.contains(sym, "NDX") or str.contains(sym, "US100") or str.contains(sym, "USTEC") ? "NQ" : str.contains(sym, "SPX") or str.contains(sym, "SP500") ? "SPX" : str.contains(sym, "ES") or str.contains(sym, "US500") ? "ES" : "NQ"
+    m
+
+string src = f_market() == "ES" ? srcES : f_market() == "SPX" ? srcSPX : srcNQ
 
 // ---- global ----------------------------------------------------------------
 const string GG = "Global"
@@ -145,6 +157,64 @@ f_style(string k) =>
 
 f_size(string s) =>
     s == "Small" ? size.small : s == "Normal" ? size.normal : size.tiny
+
+// ---- alerts & proximity table --------------------------------------------------
+const string GA = "Alerts & Table"
+bool useAlerts = input.bool(true, "Alert on key level cross (walls / 0DTE / flip)", group = GA)
+bool showTable = input.bool(true, "Proximity table", group = GA)
+
+var array<float>  aP = array.new<float>()
+var array<string> aT = array.new<string>()
+var array<string> aK = array.new<string>()
+
+if barstate.isfirst and str.length(src) > 0
+    array<string> rows0 = str.split(src, ";")
+    for r0 in rows0
+        array<string> f0 = str.split(r0, ",")
+        if array.size(f0) == 3
+            float p0 = str.tonumber(array.get(f0, 0))
+            if not na(p0)
+                array.push(aP, p0)
+                array.push(aT, array.get(f0, 1))
+                array.push(aK, array.get(f0, 2))
+
+f_isKey(string k) =>
+    k == "res" or k == "sup" or k == "res0" or k == "sup0" or k == "flip"
+
+if useAlerts and barstate.isconfirmed and array.size(aP) > 0
+    for i = 0 to array.size(aP) - 1
+        if f_isKey(array.get(aK, i))
+            float lv = array.get(aP, i)
+            bool crossUp = close[1] < lv and close >= lv
+            bool crossDn = close[1] > lv and close <= lv
+            if crossUp or crossDn
+                alert("GEX level cross: " + array.get(aT, i) + " @ " + str.tostring(lv, format.mintick) + (crossUp ? " (up)" : " (down)"), alert.freq_once_per_bar)
+
+var table tb = table.new(position.top_right, 3, 3, bgcolor = color.new(#131316, 15), border_width = 1, border_color = #222228)
+if showTable and barstate.islast and array.size(aP) > 0
+    float bestUp = na
+    float bestDn = na
+    string upT = ""
+    string dnT = ""
+    for i = 0 to array.size(aP) - 1
+        float lv = array.get(aP, i)
+        if lv >= close and (na(bestUp) or lv < bestUp)
+            bestUp := lv
+            upT := array.get(aT, i)
+        if lv <= close and (na(bestDn) or lv > bestDn)
+            bestDn := lv
+            dnT := array.get(aT, i)
+    table.cell(tb, 0, 0, "GEX " + f_market(),  text_color = #F0B90B, text_size = size.tiny)
+    table.cell(tb, 1, 0, "level", text_color = #7A7A85, text_size = size.tiny)
+    table.cell(tb, 2, 0, "dist",  text_color = #7A7A85, text_size = size.tiny)
+    if not na(bestUp)
+        table.cell(tb, 0, 1, "▲ " + upT, text_color = #26A69A, text_size = size.tiny)
+        table.cell(tb, 1, 1, str.tostring(bestUp, format.mintick), text_color = #E8E6E1, text_size = size.tiny)
+        table.cell(tb, 2, 1, "+" + str.tostring(bestUp - close, "#.#"), text_color = #7A7A85, text_size = size.tiny)
+    if not na(bestDn)
+        table.cell(tb, 0, 2, "▼ " + dnT, text_color = #EF5350, text_size = size.tiny)
+        table.cell(tb, 1, 2, str.tostring(bestDn, format.mintick), text_color = #E8E6E1, text_size = size.tiny)
+        table.cell(tb, 2, 2, str.tostring(bestDn - close, "#.#"), text_color = #7A7A85, text_size = size.tiny)
 
 // ---- draw --------------------------------------------------------------------
 var array<line>  lns = array.new<line>()
