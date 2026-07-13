@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEX · Admin webhooks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
+    --text:#E8E6E1; --muted:#7A7A85; --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:13px; line-height:1.6;
+  }
+  main{max-width:680px; margin:0 auto; padding:28px 16px 48px}
+  h1{font-size:14px; font-weight:600; letter-spacing:.12em; color:var(--gold); margin-bottom:4px}
+  .sub{color:var(--muted); font-size:12px; margin-bottom:20px}
+  .sub a{color:var(--gold); text-decoration:none}
+  .panel{background:var(--panel); border:1px solid var(--border); margin-bottom:14px}
+  .panel h2{
+    font-size:11px; font-weight:600; letter-spacing:.14em; color:var(--muted);
+    text-transform:uppercase; padding:9px 14px; border-bottom:1px solid var(--border);
+  }
+  .row{display:grid; grid-template-columns:56px 1fr auto auto; gap:8px; align-items:center;
+       padding:10px 14px; border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:none}
+  .row .t{font-weight:600; color:var(--gold)}
+  .row .status{grid-column:2 / 5; font-size:11.5px; color:var(--muted); padding-left:2px}
+  .status b.on{color:var(--teal)} .status b.env{color:var(--muted)}
+  input{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    font:inherit; font-size:12px; padding:6px 8px; width:100%;
+  }
+  input::placeholder{color:#55555f}
+  input:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
+  button{
+    background:rgba(240,185,11,.14); color:var(--gold); border:1px solid var(--gold);
+    font:inherit; font-size:12px; padding:6px 12px; cursor:pointer; white-space:nowrap;
+  }
+  button:hover{background:rgba(240,185,11,.24)}
+  button:disabled{opacity:.5; cursor:wait}
+  button.ghost{border-color:var(--border); color:var(--muted); background:var(--panel2)}
+  #saveBtn{width:100%; padding:9px}
+  #msg{margin-top:10px; font-size:12px; display:none}
+  #msg.ok{color:var(--teal)} #msg.err{color:var(--red)}
+  .note{color:var(--muted); font-size:11.5px; padding:12px 14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>ADMIN · WEBHOOKS DISCORD</h1>
+  <div class="sub">Route les niveaux de chaque marché vers son channel. <a href="/">← retour au dashboard</a></div>
+
+  <section class="panel">
+    <h2>Webhooks par marché</h2>
+    <div id="rows"></div>
+    <div class="note">
+      Laisser un champ vide = inchangé · bouton ✕ = retirer le webhook du marché.<br>
+      Un marché sans webhook utilise « Défaut », puis la variable d'environnement.<br>
+      Après « Enregistrer », utilise « Test » pour vérifier l'arrivée dans le bon channel.
+    </div>
+  </section>
+
+  <button id="saveBtn">Enregistrer</button>
+  <div id="msg"></div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const ROWS = ["NQ", "ES", "SPX", "default"];
+const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", default:"Défaut"};
+let KEY = "";
+
+function getKey(){
+  try{ KEY = localStorage.getItem("gexKey") || ""; }catch(_){}
+  if (!KEY){
+    KEY = (prompt("Mot de passe admin (GEX_REFRESH_KEY) :") || "").trim();
+    if (KEY){ try{ localStorage.setItem("gexKey", KEY); }catch(_){} }
+  }
+  return KEY;
+}
+
+function msg(text, ok){
+  const m = $("msg");
+  m.textContent = text; m.className = ok ? "ok" : "err"; m.style.display = "block";
+}
+
+function rowHtml(t){
+  return `<div class="row" data-t="${t}">
+    <span class="t">${LABEL[t]}</span>
+    <input type="url" placeholder="https://discord.com/api/webhooks/… (vide = inchangé)" data-in="${t}">
+    <button class="ghost" data-test="${t}">Test</button>
+    <button class="ghost" data-del="${t}" title="Retirer ce webhook">✕</button>
+    <span class="status" data-st="${t}">—</span>
+  </div>`;
+}
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({headers: {"x-gex-key": KEY, "Content-Type": "application/json"}}, opts || {}));
+  if (r.status === 401){
+    try{ localStorage.removeItem("gexKey"); }catch(_){}
+    throw new Error("mot de passe invalide — recharge la page");
+  }
+  const d = await r.json();
+  if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
+  return d;
+}
+
+function paintStatus(cfg, envFallback){
+  for (const t of ROWS){
+    const st = document.querySelector(`[data-st="${t}"]`);
+    if (cfg[t]) st.innerHTML = `<b class="on">configuré ✓</b> (${cfg[t]})`;
+    else if (t !== "default" && cfg["default"]) st.innerHTML = `hérite de <b class="on">Défaut</b>`;
+    else if (envFallback) st.innerHTML = `<b class="env">fallback variable d'environnement</b>`;
+    else st.innerHTML = `<b style="color:var(--red)">aucun webhook — pas de ping ${LABEL[t]}</b>`;
+  }
+}
+
+async function load(){
+  $("rows").innerHTML = ROWS.map(rowHtml).join("");
+  if (!getKey()) return;
+  try{
+    const d = await api("/api/webhooks");
+    paintStatus(d.config || {}, d.env_fallback);
+  }catch(e){ msg("Chargement impossible : " + e.message, false); }
+
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm("Retirer le webhook " + LABEL[b.dataset.del] + " ?")) return;
+    try{
+      const d = await api("/api/webhooks", {method:"POST", body: JSON.stringify({[b.dataset.del]: ""})});
+      paintStatus(d.config || {}, true); msg("Webhook " + LABEL[b.dataset.del] + " retiré.", true);
+    }catch(e){ msg(e.message, false); }
+  });
+
+  document.querySelectorAll("[data-test]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try{
+      const d = await api("/api/webhooks/test", {method:"POST", body: JSON.stringify({target: b.dataset.test})});
+      msg(d.sent ? "Test envoyé pour " + LABEL[b.dataset.test] + " — vérifie le channel."
+                 : "Échec du test (aucun webhook effectif pour " + LABEL[b.dataset.test] + " ?)", d.sent);
+    }catch(e){ msg(e.message, false); }
+    finally{ b.disabled = false; }
+  });
+
+  $("saveBtn").onclick = async () => {
+    const body = {};
+    for (const t of ROWS){
+      const v = document.querySelector(`[data-in="${t}"]`).value.trim();
+      if (v !== "") body[t] = v;
+    }
+    if (!Object.keys(body).length){ msg("Rien à enregistrer (champs vides = inchangés).", false); return; }
+    $("saveBtn").disabled = true;
+    try{
+      const d = await api("/api/webhooks", {method:"POST", body: JSON.stringify(body)});
+      paintStatus(d.config || {}, true);
+      for (const t of ROWS) document.querySelector(`[data-in="${t}"]`).value = "";
+      msg("Enregistré : " + (d.changed || []).join(", "), true);
+    }catch(e){ msg(e.message, false); }
+    finally{ $("saveBtn").disabled = false; }
+  };
+}
+load();
+</script>
+</body>
+</html>

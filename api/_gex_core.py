@@ -11,6 +11,7 @@ Walls: call wall = strike of max positive net GEX (ALL strikes),
 """
 
 import datetime as dt
+import json
 import math
 import re
 from zoneinfo import ZoneInfo
@@ -356,6 +357,71 @@ def future_basis(index_spot, yahoo_future, override=None):
 
 
 # --------------------------------------------------------------------------- #
+# Upstash KV helpers (env UPSTASH_REDIS_REST_* or KV_REST_API_*)               #
+# --------------------------------------------------------------------------- #
+def _kv_conf():
+    import os
+
+    url = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN")
+    return (url.rstrip("/"), token) if url and token else (None, None)
+
+
+def kv_get(key):
+    """GET a key from Upstash REST. Returns string or None. Never raises."""
+    url, token = _kv_conf()
+    if not url:
+        return None
+    try:
+        import requests
+
+        r = requests.get(f"{url}/get/{key}",
+                         headers={"Authorization": f"Bearer {token}"}, timeout=5)
+        r.raise_for_status()
+        return r.json().get("result")
+    except Exception:
+        return None
+
+
+def kv_set(key, value, ex=None):
+    """SET a key in Upstash REST. Returns bool. Never raises."""
+    url, token = _kv_conf()
+    if not url:
+        return False
+    try:
+        import requests
+
+        q = f"?EX={int(ex)}" if ex else ""
+        r = requests.post(f"{url}/set/{key}{q}",
+                          headers={"Authorization": f"Bearer {token}"},
+                          data=value, timeout=5)
+        r.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+WEBHOOKS_KEY = "gex:webhooks"
+
+
+def fetch_webhooks():
+    """Per-target webhook config from Upstash: {"NQ": url, "ES": url, "SPX": url,
+    "default": url}. Empty dict when unset/unavailable."""
+    v = kv_get(WEBHOOKS_KEY)
+    if not v:
+        return {}
+    try:
+        d = json.loads(v)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_webhooks(cfg):
+    return kv_set(WEBHOOKS_KEY, json.dumps(cfg))
+
+
+# --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
 def discord_notify(payloads, dashboard_url="https://gexdash.wealthbuilders.group"):
@@ -365,20 +431,28 @@ def discord_notify(payloads, dashboard_url="https://gexdash.wealthbuilders.group
     import os
     import traceback as tb
 
-    url = os.environ.get("DISCORD_WEBHOOK_URL")
-    if not url:
-        return False
     if isinstance(payloads, dict):
         payloads = [payloads]
+    env_url = os.environ.get("DISCORD_WEBHOOK_URL")
+    cfg = fetch_webhooks()
+    groups = {}
+    for payload in payloads:
+        tgt = payload.get("target", "NQ")
+        url = cfg.get(tgt) or cfg.get("default") or env_url
+        if url:
+            groups.setdefault(url, []).append(payload)
+    if not groups:
+        return False
     try:
         import requests
 
-        embeds = []
-        for payload in payloads[:10]:
-            embeds.append(_discord_embed(payload, dashboard_url))
-        r = requests.post(url, json={"embeds": embeds}, timeout=10)
-        r.raise_for_status()
-        return True
+        ok = True
+        for url, plist in groups.items():
+            embeds = [_discord_embed(p, dashboard_url) for p in plist[:10]]
+            r = requests.post(url, json={"embeds": embeds}, timeout=10)
+            if r.status_code >= 300:
+                ok = False
+        return ok
     except Exception:
         tb.print_exc()
         return False

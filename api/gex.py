@@ -26,13 +26,16 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from api._gex_core import TARGETS, build_payload, discord_notify, et_today
+from api._gex_core import (TARGETS, build_payload, discord_notify, et_today,
+                           fetch_webhooks, save_webhooks)
 
 ROOT = Path(__file__).resolve().parent.parent
 
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/admin": ("admin.html", "text/html; charset=utf-8"),
+    "/admin.html": ("admin.html", "text/html; charset=utf-8"),
     "/history.json": ("history.json", "application/json"),
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
 }
@@ -117,7 +120,86 @@ def _q_target(qs):
     return t if t in TARGETS else None
 
 
+VALID_HOOK_PREFIXES = ("https://discord.com/api/webhooks/",
+                       "https://discordapp.com/api/webhooks/",
+                       "https://ptb.discord.com/api/webhooks/",
+                       "https://canary.discord.com/api/webhooks/")
+
+
+def _mask(url):
+    return ("…" + url[-6:]) if url else None
+
+
 class handler(BaseHTTPRequestHandler):
+    def _auth_key(self, qs=None):
+        """True if the request carries a valid GEX_REFRESH_KEY."""
+        secret = os.environ.get("GEX_REFRESH_KEY")
+        if not secret:
+            return True
+        given = self.headers.get("x-gex-key") or ((qs or {}).get("key", [None])[0] or "")
+        return bool(given) and hmac.compare_digest(given, secret)
+
+    def _read_json(self):
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            return json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            return {}
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        if path == "/api/webhooks":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            body = self._read_json()
+            cfg = fetch_webhooks()
+            changed = []
+            for tgt in list(TARGETS) + ["default"]:
+                if tgt not in body:
+                    continue
+                v = (body.get(tgt) or "").strip()
+                if v == "":
+                    if tgt in cfg:
+                        cfg.pop(tgt)
+                        changed.append(tgt)
+                elif v.startswith(VALID_HOOK_PREFIXES):
+                    cfg[tgt] = v
+                    changed.append(tgt)
+                else:
+                    self._send(400, json.dumps(
+                        {"error": f"{tgt}: URL invalide (doit commencer par discord.com/api/webhooks/)"}
+                    ).encode(), "application/json")
+                    return
+            ok = save_webhooks(cfg)
+            self._send(200 if ok else 500, json.dumps({
+                "saved": ok, "changed": changed,
+                "config": {k: _mask(v) for k, v in cfg.items()},
+            }).encode(), "application/json")
+            return
+
+        if path == "/api/webhooks/test":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            tgt = (self._read_json().get("target") or "NQ").upper()
+            if tgt not in TARGETS and tgt != "DEFAULT":
+                self._send(400, json.dumps({"error": "target invalide"}).encode(), "application/json")
+                return
+            fake = {"target": tgt if tgt != "DEFAULT" else "NQ",
+                    "mode": "snapshot", "date": et_today().isoformat(),
+                    "generated_utc": "", "regime": "positive",
+                    "levels": [], "pine": "",
+                    "expected_move": None, "net_gex_bn": 0, "pc_oi": None,
+                    "nq_price": None, "basis": 0, "basis_source": "test"}
+            ok = discord_notify(fake)
+            self._send(200, json.dumps({"sent": ok, "target": tgt}).encode(), "application/json")
+            return
+
+        self._send(404, json.dumps({"error": "not found"}).encode(), "application/json")
+
     def _send(self, code, body, ctype):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -159,6 +241,19 @@ class handler(BaseHTTPRequestHandler):
                 )
                 return
             self._send(200, fpath.read_bytes(), ctype)
+            return
+
+        # ---- admin: current webhook config (masked) ----
+        if path == "/api/webhooks":
+            qs0 = parse_qs(parsed.query)
+            if not self._auth_key(qs0):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            cfg = fetch_webhooks()
+            self._send(200, json.dumps({
+                "config": {k: _mask(v) for k, v in cfg.items()},
+                "env_fallback": bool(os.environ.get("DISCORD_WEBHOOK_URL")),
+            }).encode(), "application/json")
             return
 
         # ---- CRON fallback: compute+publish only if today's snapshot is missing ----

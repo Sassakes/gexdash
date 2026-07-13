@@ -20,6 +20,8 @@ import sys
 from api._gex_core import (
     Opt,
     discord_notify,
+    kv_get,
+    kv_set,
     atm_straddle,
     bs_gamma,
     build_payload,
@@ -123,8 +125,13 @@ def run_live(args):
     cache, done = {}, []
     for target in targets:
         done.append(run_target(args, target, cache))
-    if done and discord_notify(done):
-        print("[ok] niveaux postés sur Discord (" + ", ".join(p["target"] for p in done) + ")")
+    if done:
+        guard = f"gex:notified:{done[0]['date']}"
+        if kv_get(guard):
+            print("[skip] Discord déjà notifié aujourd'hui (runs multiples)")
+        elif discord_notify(done):
+            kv_set(guard, "1", ex=172800)
+            print("[ok] niveaux postés sur Discord (" + ", ".join(p["target"] for p in done) + ")")
 
 
 def run_target(args, target, cache):

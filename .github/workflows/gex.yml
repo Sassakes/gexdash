@@ -2,11 +2,13 @@ name: GEX daily levels
 
 on:
   schedule:
-    # Crons GitHub = UTC fixe (pas de DST). Deux runs pour couvrir été/hiver :
-    # 12:45 UTC = 14:45 Paris été · 13:45 UTC = 14:45 Paris hiver
-    # (~45 min avant l'open US). Le 2e run écrase le 1er avec du plus frais.
-    - cron: "45 12 * * 1-5"
-    - cron: "45 13 * * 1-5"
+    # Crons GitHub = UTC fixe + retards fréquents -> 3 tentatives étalées.
+    # Été (Paris = UTC+2) : 14:20, 14:50, 15:20 — toutes AVANT l'open US 15:30.
+    # Hiver (Paris = UTC+1) : 13:20, 13:50, 14:20 — idem.
+    # Le garde anti-doublon Discord (Upstash) évite les pings multiples.
+    - cron: "20 12 * * 1-5"
+    - cron: "50 12 * * 1-5"
+    - cron: "20 13 * * 1-5"
   workflow_dispatch:
     inputs:
       basis:
@@ -41,6 +43,10 @@ jobs:
           # SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           BASIS_INPUT: ${{ github.event.inputs.basis }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Optionnel mais recommandé : permet le routage par channel configuré
+          # dans /admin.html et le garde anti-doublon des pings Discord.
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
         run: |
           ARGS="--targets NQ,ES,SPX --n-expiries 10 --top-n 4 --out ."
           if [ -n "$BASIS_INPUT" ]; then ARGS="$ARGS --basis $BASIS_INPUT"; fi
