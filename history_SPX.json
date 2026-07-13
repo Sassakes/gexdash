@@ -1,0 +1,13 @@
+[
+ {
+  "date": "2026-07-13",
+  "nq_price": 7546.2598,
+  "call_wall": 7575.0,
+  "put_wall": 7495.0,
+  "gamma_flip": 7526.2,
+  "em_high": 7567.4,
+  "em_low": 7525.2,
+  "net_gex_bn": 16.73,
+  "basis": 0.0
+ }
+]
