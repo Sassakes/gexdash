@@ -12,13 +12,13 @@
  },
  {
   "date": "2026-07-14",
-  "nq_price": 7525.9902,
+  "nq_price": 7534.7402,
   "call_wall": 7575.0,
   "put_wall": 7505.0,
-  "gamma_flip": 7525.5,
-  "em_high": 7557.0,
-  "em_low": 7494.9,
-  "net_gex_bn": 2.78,
+  "gamma_flip": 7526.7,
+  "em_high": 7561.8,
+  "em_low": 7507.7,
+  "net_gex_bn": 11.62,
   "basis": 0.0
  }
 ]
