@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GEX · Admin webhooks</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
@@ -18,7 +18,13 @@
     font-size:13px; line-height:1.6;
   }
   main{max-width:680px; margin:0 auto; padding:28px 16px 48px}
-  h1{font-size:14px; font-weight:600; letter-spacing:.12em; color:var(--gold); margin-bottom:4px}
+  h1{
+    font-family:"Space Grotesk", var(--mono, monospace); font-size:15px; font-weight:700;
+    letter-spacing:.2em; color:var(--text); margin-bottom:4px; text-transform:uppercase;
+    display:flex; align-items:center; gap:10px;
+  }
+  h1 em{font-style:normal; color:var(--gold)}
+  h1 svg{width:24px; height:24px; flex:none}
   .sub{color:var(--muted); font-size:12px; margin-bottom:20px}
   .sub a{color:var(--gold); text-decoration:none}
   .panel{background:var(--panel); border:1px solid var(--border); margin-bottom:14px}
@@ -53,7 +59,7 @@
 </head>
 <body>
 <main>
-  <h1>ADMIN · WEBHOOKS DISCORD</h1>
+  <h1><svg viewBox="0 0 100 100" aria-hidden="true"><g stroke="#F0B90B" stroke-width="6" fill="none"><line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/><line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/><line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/></g><circle cx="50" cy="50" r="13" fill="#F0B90B"/></svg>GEX <em>Terminal</em> · Admin</h1>
   <div class="sub">Route les niveaux de chaque marché vers son channel. <a href="/">← retour au dashboard</a></div>
 
   <section class="panel">

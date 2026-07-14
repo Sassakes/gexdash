@@ -27,7 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from api._gex_core import (TARGETS, build_payload, discord_notify, et_today,
-                           fetch_webhooks, save_webhooks)
+                           fetch_webhooks, kv_get, kv_set, save_webhooks)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -198,6 +198,10 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"sent": ok, "target": tgt}).encode(), "application/json")
             return
 
+        if path == "/api/cron":
+            self._cron(parsed)
+            return
+
         self._send(404, json.dumps({"error": "not found"}).encode(), "application/json")
 
     def _send(self, code, body, ctype):
@@ -207,6 +211,57 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _cron(self, parsed):
+        """Shared by GET (browser / Vercel cron) and POST (QStash schedules).
+        Computes+publishes any target missing today's snapshot; ?force=1
+        recomputes everything. Discord ping is sent at most once per day
+        (kv guard gex:notified:{date}) so forced pre-open refreshes stay silent."""
+        qs = parse_qs(parsed.query)
+        cron_secret = os.environ.get("CRON_SECRET")
+        gex_key = os.environ.get("GEX_REFRESH_KEY")
+        auth = self.headers.get("Authorization", "")
+        given_key = self.headers.get("x-gex-key") or (qs.get("key", [None])[0] or "")
+        ok_cron = cron_secret and hmac.compare_digest(auth, f"Bearer {cron_secret}")
+        ok_key = gex_key and hmac.compare_digest(given_key, gex_key)
+        if (cron_secret or gex_key) and not (ok_cron or ok_key):
+            self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+            return
+        try:
+            today = et_today().isoformat()
+            force = "force" in qs
+            results, computed, cache = {}, [], {}
+            for target in TARGETS:
+                latest = _latest_payload(target)
+                fresh = (latest is not None
+                         and latest.get("date") == today
+                         and latest.get("generated_utc", "") >= f"{today}T11:30:00")
+                if fresh and not force:
+                    results[target] = {"skipped": True}
+                    continue
+                payload = build_payload(target=target, mode="snapshot",
+                                        chain_cache=cache)
+                ok, why = _upstash_set(payload)
+                results[target] = {"skipped": False, "published": ok,
+                                   "publish_info": why,
+                                   "generated_utc": payload["generated_utc"]}
+                if ok:
+                    computed.append(payload)
+            guard = f"gex:notified:{today}"
+            if not computed:
+                notified = False
+            elif kv_get(guard):
+                notified = "skipped (déjà notifié aujourd'hui)"
+            else:
+                notified = discord_notify(computed)
+                if notified:
+                    kv_set(guard, "1", ex=172800)
+            self._send(200, json.dumps({
+                "date": today, "discord": notified, "targets": results,
+            }).encode(), "application/json")
+        except Exception as e:
+            traceback.print_exc()
+            self._send(500, json.dumps({"error": str(e)}).encode(), "application/json")
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -256,46 +311,9 @@ class handler(BaseHTTPRequestHandler):
             }).encode(), "application/json")
             return
 
-        # ---- CRON fallback: compute+publish only if today's snapshot is missing ----
+        # ---- CRON: QStash (POST) / navigateur / filet Vercel (GET) ----
         if path == "/api/cron":
-            qs = parse_qs(parsed.query)
-            cron_secret = os.environ.get("CRON_SECRET")
-            gex_key = os.environ.get("GEX_REFRESH_KEY")
-            auth = self.headers.get("Authorization", "")
-            given_key = self.headers.get("x-gex-key") or (qs.get("key", [None])[0] or "")
-            ok_cron = cron_secret and hmac.compare_digest(auth, f"Bearer {cron_secret}")
-            ok_key = gex_key and hmac.compare_digest(given_key, gex_key)
-            if (cron_secret or gex_key) and not (ok_cron or ok_key):
-                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
-                           "application/json")
-                return
-            try:
-                today = et_today().isoformat()
-                force = "force" in qs
-                results, computed, cache = {}, [], {}
-                for target in TARGETS:
-                    latest = _latest_payload(target)
-                    fresh = (latest is not None
-                             and latest.get("date") == today
-                             and latest.get("generated_utc", "") >= f"{today}T11:30:00")
-                    if fresh and not force:
-                        results[target] = {"skipped": True}
-                        continue
-                    payload = build_payload(target=target, mode="snapshot",
-                                            chain_cache=cache)
-                    ok, why = _upstash_set(payload)
-                    results[target] = {"skipped": False, "published": ok,
-                                       "publish_info": why,
-                                       "generated_utc": payload["generated_utc"]}
-                    if ok:
-                        computed.append(payload)
-                notified = discord_notify(computed) if computed else False
-                self._send(200, json.dumps({
-                    "date": today, "discord": notified, "targets": results,
-                }).encode(), "application/json")
-            except Exception as e:
-                traceback.print_exc()
-                self._send(500, json.dumps({"error": str(e)}).encode(), "application/json")
+            self._cron(parsed)
             return
 
         # ---- API: live recompute (protected by GEX_REFRESH_KEY if set) ----

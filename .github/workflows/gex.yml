@@ -2,13 +2,12 @@ name: GEX daily levels
 
 on:
   schedule:
-    # Crons GitHub = UTC fixe + retards fréquents -> 3 tentatives étalées.
-    # Été (Paris = UTC+2) : 14:20, 14:50, 15:20 — toutes AVANT l'open US 15:30.
-    # Hiver (Paris = UTC+1) : 13:20, 13:50, 14:20 — idem.
-    # Le garde anti-doublon Discord (Upstash) évite les pings multiples.
-    - cron: "20 12 * * 1-5"
-    - cron: "50 12 * * 1-5"
-    - cron: "20 13 * * 1-5"
+    # GitHub exécute les crons de ce repo avec ~2h30-3h de retard constant
+    # (observé sur tous les runs). On programme donc TÔT pour RECEVOIR à l'heure :
+    # planifié 09:45 UTC (11:45 Paris été) -> exécution réelle observée ~14h00-14h45 Paris.
+    # Un seul cron = un seul ping Discord par jour, garanti.
+    # Filets si ce run déraille : cron Vercel (~15h30+) puis refresh manuel 15h25.
+    - cron: "45 9 * * 1-5"
   workflow_dispatch:
     inputs:
       basis:

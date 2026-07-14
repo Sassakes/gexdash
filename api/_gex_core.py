@@ -23,9 +23,9 @@ YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m
 
 # target -> (CBOE option chain, Yahoo future for the basis; None = index scale)
 TARGETS = {
-    "NQ":  {"chain": "_NDX", "future": "NQ=F"},
-    "ES":  {"chain": "_SPX", "future": "ES=F"},
-    "SPX": {"chain": "_SPX", "future": None},
+    "NQ":  {"chain": "_NDX", "future": "NQ=F", "etf": "QQQ"},
+    "ES":  {"chain": "_SPX", "future": "ES=F", "etf": "SPY"},
+    "SPX": {"chain": "_SPX", "future": None,   "etf": "SPY"},
 }
 CONTRACT_MULT = 100
 RISK_FREE = 0.04
@@ -64,11 +64,15 @@ def bs_gamma(S, K, T, sigma, r=RISK_FREE):
 
 
 class Opt:
-    __slots__ = ("K", "is_call", "OI", "gamma", "iv", "dte")
+    __slots__ = ("K", "is_call", "OI", "gamma", "iv", "dte", "vol", "scale")
 
-    def __init__(self, K, is_call, OI, gamma, iv, dte):
+    def __init__(self, K, is_call, OI, gamma, iv, dte, vol=0.0, scale=1.0):
         self.K, self.is_call, self.OI = K, is_call, OI
         self.gamma, self.iv, self.dte = gamma, iv, dte
+        self.vol, self.scale = vol, scale
+        # scale = spot_du_produit / spot_indice (1.0 pour la chaîne indice).
+        # K/scale ramène la strike à l'échelle indice ; le dollar-gamma de
+        # chaque option reste calculé avec SON spot (spot_indice * scale).
 
 
 # --------------------------------------------------------------------------- #
@@ -93,6 +97,10 @@ def parse_chain(data, n_expiries, today=None):
     spot = float(data["current_price"])
     raw = data["options"]
 
+    def _is_monthly(exp):
+        # 3e vendredi : là où vit l'OI institutionnel (monthlies + quarterlies)
+        return exp.weekday() == 4 and 15 <= exp.day <= 21
+
     exps = set()
     for o in raw:
         m = OCC_RE.match(o["option"])
@@ -101,7 +109,10 @@ def parse_chain(data, n_expiries, today=None):
         exp = _occ_expiry(m)
         if exp >= today:
             exps.add(exp)
-    keep = sorted(exps)[:n_expiries]
+    nearest = sorted(exps)[:n_expiries]
+    monthlies = [e for e in sorted(exps)
+                 if _is_monthly(e) and (e - today).days <= 60]
+    keep = sorted(set(nearest) | set(monthlies))
     keep_set = set(keep)
 
     opts = []
@@ -118,8 +129,9 @@ def parse_chain(data, n_expiries, today=None):
         K = int(m.group(4)) / 1000.0
         gamma = _finite_float(o.get("gamma"))
         iv = _finite_float(o.get("iv"))
+        vol = _finite_float(o.get("volume"))
         dte = max((exp - today).days, 0)
-        opts.append(Opt(K, m.group(3) == "C", oi, gamma, iv, dte))
+        opts.append(Opt(K, m.group(3) == "C", oi, gamma, iv, dte, vol=vol))
     return spot, opts, keep
 
 
@@ -127,11 +139,13 @@ def parse_chain(data, n_expiries, today=None):
 # ATM straddle -> expected move                                                #
 # --------------------------------------------------------------------------- #
 def _mid(rec):
+    """Returns (mid, from_quotes). Falls back to last trade (stale) when the
+    book is empty — flagged so the EM quality can be surfaced downstream."""
     bid = _finite_float(rec.get("bid"))
     ask = _finite_float(rec.get("ask"))
     if bid > 0 and ask > 0 and ask >= bid:
-        return (bid + ask) / 2.0
-    return _finite_float(rec.get("last_trade_price"))
+        return (bid + ask) / 2.0, True
+    return _finite_float(rec.get("last_trade_price")), False
 
 
 def atm_straddle(data, spot, today=None):
@@ -147,17 +161,17 @@ def atm_straddle(data, spot, today=None):
         if exp < today:
             continue
         K = int(m.group(4)) / 1000.0
-        mid = _mid(o)
+        mid, live = _mid(o)
         if mid <= 0:
             continue
-        by_exp.setdefault(exp, {}).setdefault(K, {})[m.group(3)] = mid
+        by_exp.setdefault(exp, {}).setdefault(K, {})[m.group(3)] = (mid, live)
 
     for exp in sorted(by_exp):  # nearest expiry with a usable straddle
         pairs = {K: v for K, v in by_exp[exp].items() if "C" in v and "P" in v}
         if not pairs:
             continue
         K = min(pairs, key=lambda k: abs(k - spot))
-        c, p = pairs[K]["C"], pairs[K]["P"]
+        (c, c_live), (p, p_live) = pairs[K]["C"], pairs[K]["P"]
         straddle = c + p
         return {
             "expiry": str(exp),
@@ -166,6 +180,7 @@ def atm_straddle(data, spot, today=None):
             "put_mid": round(p, 2),
             "straddle": round(straddle, 2),
             "em_pct": round(100.0 * straddle / spot, 3),
+            "quality": "live" if (c_live and p_live) else "indicative",
         }
     return None
 
@@ -206,13 +221,21 @@ def em_bands_levels(spot, straddle, fractions):
 # --------------------------------------------------------------------------- #
 # GEX computation                                                              #
 # --------------------------------------------------------------------------- #
-def per_strike_gex(spot, opts):
-    """Net signed GEX aggregated by strike (calls +, puts -), using chain gamma."""
+def per_strike_gex(spot, opts, bucket=None):
+    """Net signed dollar GEX aggregated by INDEX-scale strike (calls +, puts -).
+    Handles blended products: each option's dollar gamma uses its own spot
+    (spot * o.scale); its strike is mapped to index scale (K / o.scale) and
+    optionally bucketed (e.g. 10 pts NDX, 5 pts SPX) so index and ETF strikes
+    aggregate into the same levels."""
     agg = {}
     for o in opts:
         sign = 1.0 if o.is_call else -1.0
-        gex = sign * o.gamma * o.OI * CONTRACT_MULT * spot * spot * 0.01
-        agg[o.K] = agg.get(o.K, 0.0) + gex
+        S = spot * o.scale
+        gex = sign * o.gamma * o.OI * CONTRACT_MULT * S * S * 0.01
+        k_idx = o.K / o.scale
+        if bucket:
+            k_idx = round(k_idx / bucket) * bucket
+        agg[k_idx] = agg.get(k_idx, 0.0) + gex
     strikes = np.array(sorted(agg))
     net = np.array([agg[k] for k in strikes])
     return strikes, net
@@ -230,12 +253,14 @@ def zero_gamma_flip(opts, lo, hi, n=300):
     iv = np.array([o.iv for o in valid])
     OI = np.array([o.OI for o in valid])
     sign = np.array([1.0 if o.is_call else -1.0 for o in valid])
+    scale = np.array([o.scale for o in valid])
 
     spots = np.linspace(lo, hi, n)
     totals = np.empty(n)
     for i, S in enumerate(spots):
-        g = bs_gamma(S, K, T, iv)
-        totals[i] = np.sum(sign * g * OI * CONTRACT_MULT * S * S * 0.01)
+        S_own = S * scale
+        g = bs_gamma(S_own, K, T, iv)
+        totals[i] = np.sum(sign * g * OI * CONTRACT_MULT * S_own * S_own * 0.01)
 
     sgn = np.sign(totals)
     cross = np.where(np.diff(sgn) != 0)[0]
@@ -247,22 +272,35 @@ def zero_gamma_flip(opts, lo, hi, n=300):
     return float(x0 - y0 * (x1 - x0) / (y1 - y0))
 
 
-def zero_dte_walls(spot, opts):
-    """Call/Put walls computed on the nearest expiry only (0DTE on a trading
-    day). Returns (cw, pw, expiry_dte) — any element may be None."""
+def zero_dte_walls(spot, opts, bucket=None):
+    """Call/Put walls on the nearest expiry only, weighted by max(OI, volume):
+    OI is yesterday's settled positioning, volume captures today's 0DTE flow.
+    Returns (cw, pw, expiry_dte) — any element may be None."""
     if not opts:
         return None, None, None
     min_dte = min(o.dte for o in opts)
     sub = [o for o in opts if o.dte == min_dte]
-    strikes, net = per_strike_gex(spot, sub)
+    agg = {}
+    for o in sub:
+        sign = 1.0 if o.is_call else -1.0
+        w = max(o.OI, o.vol)
+        S = spot * o.scale
+        gex = sign * o.gamma * w * CONTRACT_MULT * S * S * 0.01
+        k_idx = o.K / o.scale
+        if bucket:
+            k_idx = round(k_idx / bucket) * bucket
+        agg[k_idx] = agg.get(k_idx, 0.0) + gex
+    strikes = np.array(sorted(agg))
+    net = np.array([agg[k] for k in strikes])
     cw = float(strikes[int(np.argmax(net))]) if len(net) and net.max() > 0 else None
     pw = float(strikes[int(np.argmin(net))]) if len(net) and net.min() < 0 else None
     return cw, pw, min_dte
 
 
 def max_pain(opts):
-    """Classic max pain on the nearest expiry: strike minimizing total
-    intrinsic payout to option holders."""
+    """Classic max pain on the nearest expiry of the INDEX chain (ETF legs
+    excluded: mixing payout scales is not meaningful)."""
+    opts = [o for o in opts if o.scale == 1.0]
     if not opts:
         return None
     min_dte = min(o.dte for o in opts)
@@ -283,6 +321,7 @@ def max_pain(opts):
 def atm_iv(spot, opts):
     """ATM implied vol from the nearest expiry with dte >= 1 (0DTE IV decays
     intraday and is a poor daily-range proxy). Falls back to any expiry."""
+    opts = [o for o in opts if o.scale == 1.0]
     cands = [o for o in opts if o.dte >= 1 and o.iv > 0] or [o for o in opts if o.iv > 0]
     if not cands:
         return None
@@ -526,22 +565,51 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     cfg = TARGETS[target]
     symbol = cfg["chain"]
     today = et_today()
-    if chain_cache is not None and symbol in chain_cache:
-        data = chain_cache[symbol]
-    else:
-        data = fetch_cboe(symbol)
+
+    def _chain(sym):
+        if chain_cache is not None and sym in chain_cache:
+            return chain_cache[sym]
+        d = fetch_cboe(sym)
         if chain_cache is not None:
-            chain_cache[symbol] = data
+            chain_cache[sym] = d
+        return d
+
+    data = _chain(symbol)
     spot, opts, exps = parse_chain(data, n_expiries, today=today)
-    if not opts:
-        raise ValueError("no options parsed from CBOE chain")
-    strikes, net = per_strike_gex(spot, opts)
+    # garde-fous : refuser une chaîne dégénérée plutôt que publier du bruit
+    idx_oi = sum(o.OI for o in opts)
+    if len(opts) < 50 or idx_oi < 1000:
+        raise ValueError(
+            f"index chain too thin ({len(opts)} opts, OI {idx_oi:.0f}) — refusing")
+    sources = [{"chain": symbol, "opts": len(opts), "oi": round(idx_oi)}]
+
+    # blend ETF (QQQ/SPY) : le gros du positionnement gamma vit là.
+    # Strikes ramenées à l'échelle indice, dollar-gamma agrégé par bucket.
+    etf_sym = cfg.get("etf")
+    if etf_sym:
+        try:
+            etf_data = _chain(etf_sym)
+            etf_spot, etf_opts, _ = parse_chain(etf_data, n_expiries, today=today)
+            scale = etf_spot / spot
+            for o in etf_opts:
+                o.scale = scale
+            opts = opts + etf_opts
+            sources.append({"chain": etf_sym, "opts": len(etf_opts),
+                            "oi": round(sum(o.OI for o in etf_opts)),
+                            "scale": round(scale, 5)})
+        except Exception as e:
+            sources.append({"chain": etf_sym, "error": str(e)[:120]})
+
+    bucket = 10.0 if spot >= 10000 else 5.0
+    strikes, net = per_strike_gex(spot, opts, bucket=bucket)
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
+    if flip is None:  # régime très déséquilibré : élargir avant d'abandonner
+        flip = zero_gamma_flip(opts, spot * 0.85, spot * 1.15)
     em = atm_straddle(data, spot, today=today)
 
     # ---- extra levels: 0DTE walls, max pain, IV-based 1D range ----
     extras = []
-    cw0, pw0, dte0 = zero_dte_walls(spot, opts)
+    cw0, pw0, dte0 = zero_dte_walls(spot, opts, bucket=bucket)
     if cw0 is not None:
         extras.append((cw0, "CW 0DTE", "res0"))
     if pw0 is not None:
@@ -561,6 +629,17 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
 
     levels = extract_levels(spot, strikes, net, flip, em=em, extras=extras, top_n=top_n)
     basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
+    if basis_source == "none":  # Yahoo KO : dernière basis connue plutôt que 0
+        last = kv_get(f"gex:basis:{target}")
+        if last is not None:
+            try:
+                basis = float(last)
+                nq_price = spot + basis
+                basis_source = "last-known"
+            except ValueError:
+                pass
+    elif basis_source in ("yahoo", "manual"):
+        kv_set(f"gex:basis:{target}", str(round(basis, 2)), ex=7 * 86400)
     net_total_bn = float(net.sum()) / 1e9
     call_oi = sum(o.OI for o in opts if o.is_call)
     put_oi = sum(o.OI for o in opts if not o.is_call)
@@ -596,6 +675,8 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         "max_pain_index": mp,
         "expected_move": em,
         "expiries": [str(e) for e in exps],
+        "sources": sources,
+        "bucket": bucket,
         "levels": levels_out,
         "profile": gex_profile(spot, strikes, net, basis),
         "pine": to_pine_string(levels, basis),
