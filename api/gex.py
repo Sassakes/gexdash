@@ -121,7 +121,7 @@ def _q_target(qs):
 
 
 YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC"}
-CHART_INTERVALS = {"1m": "1d", "5m": "1d", "15m": "5d"}  # interval -> range
+CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
 def _yahoo_chart(sym, interval, rng):

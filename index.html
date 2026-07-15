@@ -135,10 +135,6 @@
 
   /* ============ chart ============ */
   .chartbox{height:400px; position:relative}
-  .chartbox .src{
-    position:absolute; right:10px; top:8px; z-index:3; font-size:10px;
-    color:var(--faint); pointer-events:none;
-  }
   .ivs{display:inline-flex; border:1px solid var(--line); margin-left:auto}
   .ivs button{
     background:transparent; color:var(--faint); border:none;
@@ -271,7 +267,7 @@
         <button data-iv="15m">15m</button>
       </span>
     </h2>
-    <div class="chartbox" id="chartBox"><span class="src">source Yahoo · quasi temps réel</span></div>
+    <div class="chartbox" id="chartBox"></div>
   </section>
 
   <section class="panel">
@@ -430,9 +426,18 @@ function bindChips(){
   paintChips();
 }
 
-/* ---- chart live : Lightweight Charts + proxy Yahoo ---- */
+/* ---- chart live : Lightweight Charts + proxy de flux marché ---- */
 const CHART = {chart:null, series:null, lines:[], iv:"5m", lastBar:null, ivSec:{"1m":60,"5m":300,"15m":900},
-               poll:null, levels:null};
+               poll:null, levels:null, grid:null};
+
+/* Le moteur de chart affiche les timestamps en UTC brut ; on décale chaque
+   barre vers Europe/Paris (DST géré par Intl, pas d'offset codé en dur). */
+function parisShift(tSec){
+  const d = new Date(tSec * 1000);
+  const paris = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+  const utc = new Date(d.toLocaleString("en-US", {timeZone: "UTC"}));
+  return tSec + Math.round((paris - utc) / 1000);
+}
 
 function ensureChart(){
   if (CHART.chart || typeof LightweightCharts === "undefined"){
@@ -474,9 +479,19 @@ async function loadBars(){
     const r = await fetch(`/api/chart?target=${TARGET}&interval=${CHART.iv}`);
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    CHART.series.setData(d.bars);
-    CHART.lastBar = d.bars[d.bars.length - 1] || null;
-    $("chartNote").textContent = TARGET + " · " + d.bars.length + " bougies";
+    const bars = d.bars.map(b => ({...b, time: parisShift(b.time)}));
+    CHART.series.setData(bars);
+    CHART.lastBar = bars[bars.length - 1] || null;
+    if (CHART.lastBar && CHART.iv !== "1m"){
+      // 5 jours chargés (scroll arrière dispo) mais vue par défaut = journée en cours
+      CHART.chart.timeScale().setVisibleRange({
+        from: CHART.lastBar.time - 30 * 3600,
+        to: CHART.lastBar.time + 45 * 60,
+      });
+    } else {
+      CHART.chart.timeScale().fitContent();
+    }
+    $("chartNote").textContent = TARGET + " · heure Paris";
     applyLevelLines();
     clearInterval(CHART.poll);
     CHART.poll = setInterval(pollQuote, 8000);
@@ -492,7 +507,7 @@ async function pollQuote(){
     const d = await r.json();
     if (!r.ok || d.price == null) return;
     const sec = CHART.ivSec[CHART.iv], p = d.price;
-    const bucket = Math.floor((d.time || Date.now()/1000) / sec) * sec;
+    const bucket = Math.floor(parisShift(d.time || Date.now()/1000) / sec) * sec;
     if (bucket > CHART.lastBar.time){
       CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
     }else{
@@ -547,7 +562,8 @@ function show(d){
 
   const stats = [
     [tgt, fmt(d.nq_price), "price"],
-    ["Basis", (d.basis>=0?"+":"") + fmt(d.basis) + " · " + d.basis_source, ""],
+    ["Basis", (d.basis>=0?"+":"") + fmt(d.basis) + " · " + (
+      {manual:"manuelle", index:"indice", "last-known":"mémorisée", none:"—"}[d.basis_source] || "marché"), ""],
     ["Net GEX $Bn/1%", (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
     ["Régime", d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
     ["P/C OI", d.pc_oi != null ? fmt(d.pc_oi,2) : "—", d.pc_oi > 1 ? "neg" : "pos"],
