@@ -254,6 +254,10 @@
     <span class="sub" id="hdrDate">—</span>
   </div>
   <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
+  <span class="ivs" id="langSel">
+    <button data-l="fr" class="on">FR</button>
+    <button data-l="en">EN</button>
+  </span>
   <div class="refresh">
     <input id="basisIn" inputmode="decimal" placeholder="basis (opt.)"
            title="Basis manuelle, ex: 145.5 — vide = basis marché">
@@ -271,7 +275,7 @@
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
   <span style="flex:1"></span>
   <a class="toplink" id="tvLink" target="_blank" rel="noopener"
-     href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/">Indicateur TradingView <span class="ext">↗</span></a>
+     href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">Indicateur TradingView</span> <span class="ext">↗</span></a>
   <a class="toplink" id="dcLink" target="_blank" rel="noopener"
      href="https://discord.gg/YfCbXDtb4">Discord The Hub <span class="ext">↗</span></a>
 </div>
@@ -283,7 +287,7 @@
   <div class="stats" id="badges"></div>
 
   <section class="panel" id="chartPanel">
-    <h2>Chart · niveaux GEX superposés
+    <h2><span id="chartTitle">Chart · niveaux GEX superposés</span>
       <span class="note" id="chartNote"></span>
       <span class="ivs" id="lvChips" style="margin-left:auto">
         <button data-g="gex" class="on" title="Walls, 0DTE, flip, Max Pain, G±">GEX</button>
@@ -300,25 +304,25 @@
   </section>
 
   <section class="panel">
-    <h2>Positionnement <span class="note" id="railNote"></span></h2>
+    <h2><span id="railTitle">Positionnement</span> <span class="note" id="railNote"></span></h2>
     <div class="pad" id="rail"></div>
   </section>
 
   <section class="panel">
     <h2 id="levelsTitle">Niveaux du jour</h2>
     <table>
-      <thead><tr><th>Niveau</th><th>Prix</th><th>Distance</th></tr></thead>
+      <thead><tr><th id="th1">Niveau</th><th id="th2">Prix</th><th id="th3">Distance</th></tr></thead>
       <tbody id="levelsBody"></tbody>
     </table>
   </section>
 
   <div class="duo">
     <section class="panel">
-      <h2>Expected move <span class="note" id="emNote"></span></h2>
+      <h2><span id="emTitle">Expected move</span> <span class="note" id="emNote"></span></h2>
       <div class="pad" id="emCard"></div>
     </section>
     <section class="panel">
-      <h2>String Pine <span class="note">indicateur GEX Daily Levels</span></h2>
+      <h2><span id="pineTitle">String Pine</span> <span class="note" id="pineNote">indicateur GEX Daily Levels</span></h2>
       <div class="pad">
         <div id="pineStr"></div>
         <button id="copyBtn">Copier la string Pine</button>
@@ -344,8 +348,52 @@ const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold,
                     ivh:C.muted, ivl:C.muted, mpain:C.gold, emb:C.text};
 const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip", hgex:"HGEX",
                emh:"EM+", eml:"EM−", mpain:"MP"};
-const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
+const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US",
                 {minimumFractionDigits:d, maximumFractionDigits:d});
+const T = {
+  fr: {
+    loading:"Chargement", noSnap:t0=>"Aucun snapshot "+t0+" pour l'instant — lance le workflow GitHub Actions ou clique « ⟳ Refresh ».",
+    calc:"⟳ Calcul…", refresh:"⟳ Refresh", basisBad:"Basis invalide : un nombre (ex: 145.5) ou vide.",
+    askKey:"Mot de passe refresh :", badKey:"mot de passe invalide",
+    refreshFail:m=>"Refresh indisponible : "+m, pubFail:r=>"Calcul OK mais publication échouée → "+(r||"raison inconnue"),
+    notPub:" · NON PUBLIÉ", levels:t0=>"Niveaux du jour · échelle "+t0,
+    stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Régime", stPC:"P/C OI", stIV:"IV ATM",
+    bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
+    rail:"Positionnement", chart:"Chart · niveaux GEX superposés", chartHint:" · heure Paris",
+    chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
+    em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)",
+    emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
+    pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
+    copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
+    tv:"Indicateur TradingView", th:["Niveau","Prix","Distance"], pts:"pts",
+    genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
+    tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
+  },
+  en: {
+    loading:"Loading", noSnap:t0=>"No "+t0+" snapshot yet — run the GitHub Action or hit “⟳ Refresh”.",
+    calc:"⟳ Computing…", refresh:"⟳ Refresh", basisBad:"Invalid basis: a number (e.g. 145.5) or empty.",
+    askKey:"Refresh password:", badKey:"invalid password",
+    refreshFail:m=>"Refresh unavailable: "+m, pubFail:r=>"Computed OK but publish failed → "+(r||"unknown reason"),
+    notPub:" · NOT PUBLISHED", levels:t0=>"Today's levels · "+t0+" scale",
+    stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Regime", stPC:"P/C OI", stIV:"ATM IV",
+    bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
+    rail:"Positioning", chart:"Chart · GEX levels overlay", chartHint:" · Paris time",
+    chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
+    em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)",
+    emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
+    pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
+    copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
+    tv:"TradingView indicator", th:["Level","Price","Distance"], pts:"pts",
+    genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
+    tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
+  },
+};
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+if (!T[LANG]) LANG = "fr";
+const t = k => T[LANG][k];
+let LAST_D = null;
+
 let TARGET = "NQ";
 try{ TARGET = localStorage.getItem("gexTarget") || "NQ"; }catch(_){}
 if (!["NQ","ES","SPX"].includes(TARGET)) TARGET = "NQ";
@@ -368,7 +416,7 @@ function paintTabs(){
 async function loadTarget(){
   paintTabs();
   $("status").style.display = "block";
-  $("status").textContent = "Chargement " + TARGET + "…";
+  $("status").textContent = t("loading") + " " + TARGET + "…";
   $("app").style.display = "none";
   let data;
   try{
@@ -376,12 +424,35 @@ async function loadTarget(){
   }catch(e){}
   if (data && !data.error){ show(data); }
   else {
-    $("status").textContent = "Aucun snapshot " + TARGET +
-      " pour l'instant — lance le workflow GitHub Actions ou clique « ⟳ Refresh ».";
+    $("status").textContent = t("noSnap")(TARGET);
   }
 }
 
+function applyLang(){
+  document.querySelectorAll("#langSel button").forEach(b =>
+    b.classList.toggle("on", b.dataset.l === LANG));
+  $("railTitle").textContent = t("rail");
+  $("chartTitle").textContent = t("chart");
+  $("emTitle").textContent = t("em");
+  $("pineTitle").textContent = t("pine");
+  $("pineNote").textContent = t("pineNote");
+  $("copyBtn").textContent = t("copy");
+  $("pineTopBtn").textContent = t("pineTop");
+  $("tvLbl").textContent = t("tv");
+  const th = t("th");
+  $("th1").textContent = th[0]; $("th2").textContent = th[1]; $("th3").textContent = th[2];
+  const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen")};
+  document.querySelectorAll("#lvChips button").forEach(b => b.title = tips[b.dataset.g] || "");
+  if (LAST_D) show(LAST_D);
+}
+
 async function load(){
+  document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
+    LANG = b.dataset.l;
+    try{ localStorage.setItem("gexLang", LANG); }catch(_){}
+    applyLang();
+  });
+  applyLang();
   document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
     TARGET = b.dataset.t;
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
@@ -396,41 +467,41 @@ async function load(){
 
 async function refreshLive(){
   const btn = $("refreshBtn"), err = $("liveErr");
-  btn.disabled = true; btn.textContent = "⟳ Calcul…";
+  btn.disabled = true; btn.textContent = t("calc");
   err.style.display = "none";
   const b = $("basisIn").value.trim().replace(",", ".");
   if (b !== "" && !isFinite(parseFloat(b))){
-    err.textContent = "Basis invalide : un nombre (ex: 145.5) ou vide.";
+    err.textContent = t("basisBad");
     err.style.display = "block";
-    btn.disabled = false; btn.textContent = "⟳ Refresh";
+    btn.disabled = false; btn.textContent = t("refresh");
     return;
   }
   let key = "";
   try{ key = localStorage.getItem("gexKey") || ""; }catch(_){}
   if (!key){
-    key = (prompt("Mot de passe refresh :") || "").trim();
-    if (!key){ btn.disabled = false; btn.textContent = "⟳ Refresh"; return; }
+    key = (prompt(t("askKey")) || "").trim();
+    if (!key){ btn.disabled = false; btn.textContent = t("refresh"); return; }
   }
   try{
     const r = await fetch("/api/gex?target=" + TARGET + (b !== "" ? "&basis=" + encodeURIComponent(b) : ""),
                           {headers: {"x-gex-key": key}});
     if (r.status === 401){
       try{ localStorage.removeItem("gexKey"); }catch(_){}
-      throw new Error("mot de passe invalide");
+      throw new Error(t("badKey"));
     }
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
     try{ localStorage.setItem("gexKey", key); }catch(_){}
     show(d);
     if (d.published === false){
-      err.textContent = "Calcul OK mais publication échouée → " + (d.publish_info || "raison inconnue");
+      err.textContent = t("pubFail")(d.publish_info);
       err.style.display = "block";
     }
   }catch(e){
-    err.textContent = "Refresh indisponible : " + e.message;
+    err.textContent = t("refreshFail")(e.message);
     err.style.display = "block";
   }finally{
-    btn.disabled = false; btn.textContent = "⟳ Refresh";
+    btn.disabled = false; btn.textContent = t("refresh");
   }
 }
 
@@ -521,12 +592,12 @@ async function loadBars(){
     } else {
       CHART.chart.timeScale().fitContent();
     }
-    $("chartNote").textContent = TARGET + " · heure Paris";
+    $("chartNote").textContent = TARGET + t("chartHint");
     applyLevelLines();
     clearInterval(CHART.poll);
     CHART.poll = setInterval(pollQuote, 5000);
   }catch(e){
-    $("chartNote").textContent = "flux indisponible (" + e.message + ")";
+    $("chartNote").textContent = t("chartFail")(e.message);
   }
 }
 
@@ -553,22 +624,24 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
-  const addLine = (price, color, solid, axisLbl) =>
+  const addLine = (price, color, solid, axisLbl, title) =>
     CHART.lines.push(CHART.series.createPriceLine({
       price, color, lineWidth:1,
       lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: axisLbl, title: "",
+      axisLabelVisible: axisLbl, title: title || "",
     }));
 
   for (const L of CHART.levels){
     const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
+    // codes courts uniquement sur les niveaux nommés — la grille et les bandes
+    // restent identifiables par couleur, sans encombrer les bougies
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind));
+            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind), SHORT[L.kind]);
   }
   if (LVSHOW.open && CHART.grid){
-    addLine(CHART.grid.anchor, C.gold, true, true);
+    addLine(CHART.grid.anchor, C.gold, true, true, "Daily O");
     for (const g of CHART.grid.levels){
       // rouge au-dessus (zone de rejet), vert en dessous (zone de rebond)
       addLine(g.up,   "rgba(239,83,80,.5)",  false, false);
@@ -581,24 +654,25 @@ function show(d){
   $("status").style.display = "none";
   $("app").style.display = "block";
 
+  LAST_D = d;
   const tgt = d.target || "NQ";
   $("hdrDate").textContent = d.date + " · " + tgt + " (" + d.symbol + ")";
-  $("levelsTitle").textContent = "Niveaux du jour · échelle " + tgt;
+  $("levelsTitle").textContent = t("levels")(tgt);
 
   const live = d.mode === "live";
   const pill = $("statusPill");
   pill.classList.toggle("live", live);
   $("statusTxt").textContent = (live ? "LIVE " : "SNAPSHOT ") + d.generated_utc.slice(11,16) + " UTC"
-    + (d.published === false ? " · NON PUBLIÉ" : "");
+    + (d.published === false ? t("notPub") : "");
 
   const stats = [
     [tgt, fmt(d.nq_price), "price"],
-    ["Basis", (d.basis>=0?"+":"") + fmt(d.basis) + " · " + (
-      {manual:"manuelle", index:"indice", "last-known":"mémorisée", none:"—"}[d.basis_source] || "marché"), ""],
-    ["Net GEX $Bn/1%", (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
-    ["Régime", d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
-    ["P/C OI", d.pc_oi != null ? fmt(d.pc_oi,2) : "—", d.pc_oi > 1 ? "neg" : "pos"],
-    ["IV ATM", d.iv_atm != null ? fmt(d.iv_atm*100,1) + " %" : "—", ""],
+    [t("stBasis"), (d.basis>=0?"+":"") + fmt(d.basis) + " · " + (
+      {manual:t("bManual"), index:t("bIndex"), "last-known":t("bLast"), none:"—"}[d.basis_source] || t("bMarket")), ""],
+    [t("stNet"), (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
+    [t("stReg"), d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
+    [t("stPC"), d.pc_oi != null ? fmt(d.pc_oi,2) : "—", d.pc_oi > 1 ? "neg" : "pos"],
+    [t("stIV"), d.iv_atm != null ? fmt(d.iv_atm*100,1) + " %" : "—", ""],
   ];
   $("badges").innerHTML = stats.map(([k,v,c],i) =>
     `<div class="cell${i===0?" price":""}"><span class="lbl">${k}</span><span class="val ${c!=="price"?c:""}">${v}</span></div>`).join("");
@@ -612,9 +686,7 @@ function show(d){
   renderEM(d);
   renderPine(d);
   const srcs = (d.sources||[]).filter(s=>!s.error).map(s=>s.chain.replace("_","")).join(" + ");
-  $("footer").innerHTML = "Généré " + d.generated_utc.replace("T"," ").slice(0,16) + " UTC (" + d.mode + ")"
-    + (srcs ? " · chaînes " + srcs : "") + " · expiries " + d.expiries.length
-    + " · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.";
+  $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T"," ").slice(0,16), d.mode, srcs, d.expiries.length);
 }
 
 /* ---- rail signature : bande d'instrument, labels anti-collision ---- */
@@ -700,21 +772,21 @@ function renderLevels(d){
     return `<tr>
       <td class="k-${L.kind}"><span class="tick"></span>${L.label}</td>
       <td class="price k-${L.kind}">${fmt(L.price_nq)}</td>
-      <td class="dist">${dist==null ? "" : (dist>=0?"+":"") + fmt(dist,0) + " pts"}</td>
+      <td class="dist">${dist==null ? "" : (dist>=0?"+":"") + fmt(dist,0) + " " + t("pts")}</td>
     </tr>`;
   }).join("");
 }
 
 function renderEM(d){
   const em = d.expected_move;
-  if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">Straddle indisponible.</span>`; $("emNote").textContent=""; return; }
+  if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">${t("emNone")}</span>`; $("emNote").textContent=""; return; }
   const hi = d.levels.find(L=>L.kind==="emh"), lo = d.levels.find(L=>L.kind==="eml");
-  $("emNote").textContent = em.expiry + (em.quality === "indicative" ? " · quotes indicatives (hors séance)" : "");
+  $("emNote").textContent = em.expiry + (em.quality === "indicative" ? t("emStale") : "");
   const bands = (em.bands||[]).map(b =>
     `<div class="em-sub">±${b.pct}% <span class="dn">${fmt(b.low)}</span> / <span class="up">${fmt(b.high)}</span>` +
-    ` · dedans ${fmt(b.prob_inside,0)}% · touch ${fmt(b.prob_touch_side,0)}%</div>`).join("");
+    ` · ${t("emIn")} ${fmt(b.prob_inside,0)}% · ${t("emTouch")} ${fmt(b.prob_touch_side,0)}%</div>`).join("");
   const p100 = em.prob_inside != null
-    ? `<div class="em-sub">±100% clôture dedans ${fmt(em.prob_inside,0)}% · touch/côté ${fmt(em.prob_touch_side,0)}%</div>` : "";
+    ? `<div class="em-sub">±100% ${t("emClose")} ${fmt(em.prob_inside,0)}% · ${t("emSide")} ${fmt(em.prob_touch_side,0)}%</div>` : "";
   $("emCard").innerHTML = `
     <div class="em-band">
       <span class="v dn">${lo?fmt(lo.price_nq):"—"}</span>
@@ -725,18 +797,18 @@ function renderEM(d){
     <div class="em-sub" style="color:var(--faint)">ATM ${fmt(em.strike,0)} · call ${fmt(em.call_mid,2)} / put ${fmt(em.put_mid,2)}</div>`;
 }
 
-async function copyPine(d, btn, idleText){
+async function copyPine(d, btn, idleKey){
   try{
     await navigator.clipboard.writeText(d.pine);
-    btn.textContent = "Copiée ✓ — zone " + (d.target||"NQ");
-    setTimeout(()=>btn.textContent = idleText, 1900);
-  }catch(e){ btn.textContent = "Copie manuelle requise"; }
+    btn.textContent = t("copied")(d.target||"NQ");
+    setTimeout(()=>btn.textContent = t(idleKey), 1900);
+  }catch(e){ btn.textContent = t("copyMan"); }
 }
 
 function renderPine(d){
   $("pineStr").textContent = d.pine;
-  $("copyBtn").onclick = () => copyPine(d, $("copyBtn"), "Copier la string Pine");
-  $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "⧉ String Pine");
+  $("copyBtn").onclick = () => copyPine(d, $("copyBtn"), "copy");
+  $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "pineTop");
 }
 
 async function loadLinks(){

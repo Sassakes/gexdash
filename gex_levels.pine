@@ -119,9 +119,6 @@ int    wGn  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gn"
 string sGn  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "gn")
 
 // ---- lookups -----------------------------------------------------------------
-f_show(string k) =>
-    f_master(k) and f_show_family(k)
-
 f_show_family(string k) =>
     switch k
         "res"   => shRes
@@ -142,6 +139,9 @@ f_show_family(string k) =>
         "opu"   => shOPG
         "opd"   => shOPG
         => true
+
+f_show(string k) =>
+    f_master(k) and f_show_family(k)
 
 f_col(string k) =>
     switch k
