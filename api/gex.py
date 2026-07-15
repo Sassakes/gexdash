@@ -121,6 +121,7 @@ def _q_target(qs):
 
 
 YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC"}
+YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
@@ -137,10 +138,37 @@ def _yahoo_chart(sym, interval, rng):
     return r.json()["chart"]["result"][0]
 
 
+LINKS_KEY = "gex:links"
+DEFAULT_LINKS = {
+    "discord": "https://discord.gg/YfCbXDtb4",
+    "tradingview": "https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/",
+}
+LINK_PREFIXES = {
+    "discord": ("https://discord.gg/", "https://discord.com/invite/"),
+    "tradingview": ("https://www.tradingview.com/", "https://tradingview.com/"),
+}
+
+
+def _links():
+    try:
+        stored = json.loads(kv_get(LINKS_KEY) or "{}")
+    except Exception:
+        stored = {}
+    return {**DEFAULT_LINKS, **{k: v for k, v in stored.items() if v}}
+
+
 VALID_HOOK_PREFIXES = ("https://discord.com/api/webhooks/",
                        "https://discordapp.com/api/webhooks/",
                        "https://ptb.discord.com/api/webhooks/",
                        "https://canary.discord.com/api/webhooks/")
+
+
+def paris_hhmm():
+    """Current Europe/Paris local time as HH:MM (DST handled by zoneinfo)."""
+    from zoneinfo import ZoneInfo
+    import datetime as _dt
+
+    return _dt.datetime.now(ZoneInfo("Europe/Paris")).strftime("%H:%M")
 
 
 def _mask(url):
@@ -197,6 +225,33 @@ class handler(BaseHTTPRequestHandler):
             }).encode(), "application/json")
             return
 
+        if path == "/api/links":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            body = self._read_json()
+            try:
+                stored = json.loads(kv_get(LINKS_KEY) or "{}")
+            except Exception:
+                stored = {}
+            for k in ("discord", "tradingview"):
+                if k not in body:
+                    continue
+                v = (body.get(k) or "").strip()
+                if v == "":
+                    stored.pop(k, None)  # retour à la valeur par défaut
+                elif v.startswith(LINK_PREFIXES[k]):
+                    stored[k] = v
+                else:
+                    self._send(400, json.dumps(
+                        {"error": f"{k}: URL invalide (préfixe attendu : {' ou '.join(LINK_PREFIXES[k])})"}
+                    ).encode(), "application/json")
+                    return
+            ok = kv_set(LINKS_KEY, json.dumps(stored))
+            self._send(200 if ok else 500,
+                       json.dumps({"saved": ok, "links": _links()}).encode(), "application/json")
+            return
+
         if path == "/api/webhooks/test":
             if not self._auth_key():
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
@@ -232,8 +287,12 @@ class handler(BaseHTTPRequestHandler):
     def _cron(self, parsed):
         """Shared by GET (browser / Vercel cron) and POST (QStash schedules).
         Computes+publishes any target missing today's snapshot; ?force=1
-        recomputes everything. Discord ping is sent at most once per day
-        (kv guard gex:notified:{date}) so forced pre-open refreshes stay silent."""
+        recomputes everything. Discord is pinged ONLY when ?notify=1 is passed
+        (and at most once per day via the kv guard) — every other run is a
+        silent data refresh. ?paris=HHMM makes the run a no-op unless Paris
+        local time is within ~12 min of HHMM: two UTC schedules (13:25 and
+        14:25) can then bracket DST and exactly one fires at 15:25 Paris
+        year-round."""
         qs = parse_qs(parsed.query)
         cron_secret = os.environ.get("CRON_SECRET")
         gex_key = os.environ.get("GEX_REFRESH_KEY")
@@ -244,6 +303,20 @@ class handler(BaseHTTPRequestHandler):
         if (cron_secret or gex_key) and not (ok_cron or ok_key):
             self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
             return
+        want = (qs.get("paris", [None])[0] or "").strip()
+        if want:
+            now = paris_hhmm()
+            try:
+                tgt_min = int(want[:2]) * 60 + int(want[2:4])
+            except ValueError:
+                tgt_min = None
+            now_min = int(now[:2]) * 60 + int(now[3:5])
+            if tgt_min is None or abs(now_min - tgt_min) > 12:
+                self._send(200, json.dumps({
+                    "skipped": "outside-paris-window",
+                    "paris_now": now, "paris_want": want,
+                }).encode(), "application/json")
+                return
         try:
             today = et_today().isoformat()
             force = "force" in qs
@@ -265,7 +338,7 @@ class handler(BaseHTTPRequestHandler):
                 if ok:
                     computed.append(payload)
             guard = f"gex:notified:{today}"
-            if not computed:
+            if "notify" not in qs or not computed:
                 notified = False
             elif kv_get(guard):
                 notified = "skipped (déjà notifié aujourd'hui)"
@@ -330,12 +403,28 @@ class handler(BaseHTTPRequestHandler):
                 res = _yahoo_chart(YCHART[target], interval, CHART_INTERVALS[interval])
                 meta = res.get("meta", {})
                 if path == "/api/quote":
+                    price = meta.get("regularMarketPrice")
+                    ptime = meta.get("regularMarketTime") or 0
+                    source = "fut"
+                    # l'ETF US cote en quasi temps réel là où le future est différé :
+                    # converti à l'échelle target via le scale et la basis du snapshot
+                    try:
+                        pay = _latest_payload(target) or {}
+                        scale = next((s.get("scale") for s in pay.get("sources", [])
+                                      if s.get("chain") == YETF[target] and s.get("scale")), None)
+                        if scale:
+                            emeta = _yahoo_chart(YETF[target], "1m", "1d").get("meta", {})
+                            ep, et = emeta.get("regularMarketPrice"), emeta.get("regularMarketTime") or 0
+                            if ep and et > ptime:
+                                price = round(ep / scale + (pay.get("basis") or 0), 2)
+                                ptime, source = et, "etf"
+                    except Exception:
+                        pass
                     body = json.dumps({
-                        "target": target,
-                        "price": meta.get("regularMarketPrice"),
-                        "time": meta.get("regularMarketTime"),
+                        "target": target, "price": price,
+                        "time": ptime, "source": source,
                     }).encode()
-                    max_age = 4
+                    max_age = 3
                 else:
                     ts = res.get("timestamp") or []
                     q = (res.get("indicators", {}).get("quote") or [{}])[0]
@@ -360,6 +449,17 @@ class handler(BaseHTTPRequestHandler):
                 traceback.print_exc()
                 self._send(502, json.dumps({"error": f"chart source: {e}"}).encode(),
                            "application/json")
+            return
+
+        # ---- public links (dashboard header) ----
+        if path == "/api/links":
+            body = json.dumps(_links()).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=60, max-age=0")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         # ---- admin: current webhook config (masked) ----
@@ -414,8 +514,7 @@ class handler(BaseHTTPRequestHandler):
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
                 payload["publish_info"] = why
-                if ok:
-                    payload["discord"] = discord_notify(payload)
+                # publication silencieuse : seul le run planifié de 15h25 pinge Discord
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()

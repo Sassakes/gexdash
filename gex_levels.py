@@ -125,13 +125,15 @@ def run_live(args):
     cache, done = {}, []
     for target in targets:
         done.append(run_target(args, target, cache))
-    if done:
+    if done and args.notify:
         guard = f"gex:notified:{done[0]['date']}"
         if kv_get(guard):
-            print("[skip] Discord déjà notifié aujourd'hui (runs multiples)")
+            print("[skip] Discord déjà notifié aujourd'hui")
         elif discord_notify(done):
             kv_set(guard, "1", ex=172800)
             print("[ok] niveaux postés sur Discord (" + ", ".join(p["target"] for p in done) + ")")
+    elif done:
+        print("[info] publication silencieuse (ping Discord géré par le run planifié 15h25)")
 
 
 def run_target(args, target, cache):
@@ -283,6 +285,8 @@ def selftest():
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--notify", action="store_true",
+                    help="poster sur Discord (défaut : publication silencieuse)")
     ap.add_argument("--targets", default="NQ,ES,SPX",
                     help="cibles à calculer, ex: NQ,ES,SPX ou NQ seul")
     ap.add_argument("--n-expiries", type=int, default=10)

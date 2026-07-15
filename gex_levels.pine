@@ -124,8 +124,8 @@ f_col(string k) =>
         "gpos"  => cGp
         "gneg"  => cGn
         "opo"   => cOPG
-        "opu"   => color.new(#26A69A, 55)
-        "opd"   => color.new(#EF5350, 55)
+        "opu"   => color.new(#EF5350, 55)
+        "opd"   => color.new(#26A69A, 55)
         => color.new(#7A7A85, 30)
 
 f_w(string k) =>

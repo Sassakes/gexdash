@@ -96,6 +96,24 @@
     content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--gold);
   }
 
+  /* ============ pine top + hint ============ */
+  #pineTopBtn{
+    background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
+    font-size:12px; font-weight:500; padding:7px 14px; cursor:pointer;
+    transition:background .12s ease; white-space:nowrap;
+  }
+  #pineTopBtn:hover{background:rgba(240,185,11,.24)}
+  #pineTopBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .toplink{
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--line-strong); background:var(--surface);
+    color:var(--muted); font-size:12px; padding:7px 14px; text-decoration:none;
+    transition:color .12s ease, border-color .12s ease; white-space:nowrap;
+  }
+  .toplink:hover{color:var(--gold); border-color:rgba(240,185,11,.45)}
+  .toplink:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .toplink .ext{color:var(--faint); font-size:10px}
+
   /* ============ stat strip ============ */
   .stats{
     display:grid; grid-template-columns:minmax(190px, 1.4fr) repeat(5, 1fr);
@@ -242,11 +260,20 @@
   <span id="liveErr"></span>
 </header>
 
-<div class="tabs" id="tabs" role="tablist">
-  <button data-t="NQ" role="tab">NQ</button>
-  <button data-t="ES" role="tab">ES</button>
-  <button data-t="SPX" role="tab">SPX</button>
+<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px">
+  <div class="tabs" id="tabs" role="tablist" style="margin-bottom:0">
+    <button data-t="NQ" role="tab">NQ</button>
+    <button data-t="ES" role="tab">ES</button>
+    <button data-t="SPX" role="tab">SPX</button>
+  </div>
+  <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
+  <span style="flex:1"></span>
+  <a class="toplink" id="tvLink" target="_blank" rel="noopener"
+     href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/">Indicateur TradingView <span class="ext">↗</span></a>
+  <a class="toplink" id="dcLink" target="_blank" rel="noopener"
+     href="https://discord.gg/YfCbXDtb4">Discord The Hub <span class="ext">↗</span></a>
 </div>
+
 
 <div id="status">Chargement…</div>
 
@@ -359,6 +386,7 @@ async function load(){
     loadTarget();
   });
   bindChips();
+  loadLinks();
   await loadTarget();
   $("refreshBtn").onclick = refreshLive;
   $("basisIn").addEventListener("keydown", e => { if (e.key === "Enter") refreshLive(); });
@@ -494,7 +522,7 @@ async function loadBars(){
     $("chartNote").textContent = TARGET + " · heure Paris";
     applyLevelLines();
     clearInterval(CHART.poll);
-    CHART.poll = setInterval(pollQuote, 8000);
+    CHART.poll = setInterval(pollQuote, 5000);
   }catch(e){
     $("chartNote").textContent = "flux indisponible (" + e.message + ")";
   }
@@ -523,11 +551,11 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
-  const addLine = (price, color, solid, axisLbl, title) =>
+  const addLine = (price, color, solid, axisLbl) =>
     CHART.lines.push(CHART.series.createPriceLine({
       price, color, lineWidth:1,
       lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: axisLbl, title,
+      axisLabelVisible: axisLbl, title: "",
     }));
 
   for (const L of CHART.levels){
@@ -535,13 +563,14 @@ function applyLevelLines(){
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0"].includes(L.kind), L.label);
+            ["res","sup","flip","res0","sup0"].includes(L.kind));
   }
   if (LVSHOW.open && CHART.grid){
-    addLine(CHART.grid.anchor, C.gold, true, true, "Daily O");
+    addLine(CHART.grid.anchor, C.gold, true, true);
     for (const g of CHART.grid.levels){
-      addLine(g.up,   "rgba(38,166,154,.5)", false, false, "+" + g.pct + "%");
-      addLine(g.down, "rgba(239,83,80,.5)",  false, false, "−" + g.pct + "%");
+      // rouge au-dessus (zone de rejet), vert en dessous (zone de rebond)
+      addLine(g.up,   "rgba(239,83,80,.5)",  false, false);
+      addLine(g.down, "rgba(38,166,154,.5)", false, false);
     }
   }
 }
@@ -694,15 +723,26 @@ function renderEM(d){
     <div class="em-sub" style="color:var(--faint)">ATM ${fmt(em.strike,0)} · call ${fmt(em.call_mid,2)} / put ${fmt(em.put_mid,2)}</div>`;
 }
 
+async function copyPine(d, btn, idleText){
+  try{
+    await navigator.clipboard.writeText(d.pine);
+    btn.textContent = "Copiée ✓ — zone " + (d.target||"NQ");
+    setTimeout(()=>btn.textContent = idleText, 1900);
+  }catch(e){ btn.textContent = "Copie manuelle requise"; }
+}
+
 function renderPine(d){
   $("pineStr").textContent = d.pine;
-  $("copyBtn").onclick = async () => {
-    try{
-      await navigator.clipboard.writeText(d.pine);
-      $("copyBtn").textContent = "Copiée ✓ — zone " + (d.target||"NQ") + " de l'indicateur";
-      setTimeout(()=>$("copyBtn").textContent = "Copier la string Pine", 1900);
-    }catch(e){ $("copyBtn").textContent = "Sélectionne et copie manuellement"; }
-  };
+  $("copyBtn").onclick = () => copyPine(d, $("copyBtn"), "Copier la string Pine");
+  $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "⧉ String Pine");
+}
+
+async function loadLinks(){
+  try{
+    const d = await (await fetch("/api/links")).json();
+    if (d.tradingview) $("tvLink").href = d.tradingview;
+    if (d.discord) $("dcLink").href = d.discord;
+  }catch(_){}
 }
 
 load();
