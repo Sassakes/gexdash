@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/ui.js"></script>
 <style>
   :root{
     --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
@@ -30,7 +31,7 @@
     content:""; position:fixed; inset:0 0 auto 0; height:1px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--gold-glow), transparent);
   }
-  main{max-width:1240px; margin:0 auto; padding:26px 20px 56px}
+  main{max-width:1280px; margin:0 auto; padding:26px 20px 56px}
   a{color:var(--gold)}
   button, select{font-family:var(--mono)}
   header{
@@ -43,16 +44,13 @@
     letter-spacing:.2em; text-transform:uppercase; white-space:nowrap;
   }
   header h1 em{font-style:normal; color:var(--gold)}
-  .toplink{
-    display:inline-flex; align-items:center; gap:6px;
-    border:1px solid var(--line-strong); background:var(--surface);
-    color:var(--muted); font-size:12px; padding:7px 14px; text-decoration:none;
-    white-space:nowrap;
+  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px}
+  .topnav a{
+    color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
+    transition:color .12s ease; white-space:nowrap;
   }
-  .toplink:hover{color:var(--gold); border-color:rgba(240,185,11,.45)}
-  .addbar{
-    display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px;
-  }
+  .topnav a:hover{color:var(--gold)}
+  .addbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
   .addbar select{
     background:var(--surface2); border:1px solid var(--line); color:var(--text);
     font-size:12px; padding:8px 10px; cursor:pointer; min-height:36px;
@@ -62,16 +60,22 @@
     font-size:12px; font-weight:500; padding:8px 18px; cursor:pointer; min-height:36px;
   }
   #addBtn:hover{background:rgba(240,185,11,.24)}
-  .hint{color:var(--faint); font-size:11.5px}
-  .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(430px, 1fr)); gap:16px}
-  @media(max-width:640px){
-    main{padding:16px 12px 40px}
-    .grid{grid-template-columns:1fr}
+  #editBtn{
+    background:var(--surface); border:1px solid var(--line-strong); color:var(--muted);
+    font-size:12px; padding:8px 16px; cursor:pointer; min-height:36px;
+    transition:color .12s ease, border-color .12s ease;
   }
-  .card{background:linear-gradient(180deg, #131317, #101013); border:1px solid var(--line)}
+  #editBtn:hover{color:var(--gold)}
+  #editBtn.on{background:var(--gold-soft); color:var(--gold); border-color:var(--gold)}
+  .hint{color:var(--faint); font-size:11.5px}
+  #board{position:relative}
+  .card{
+    position:absolute; background:linear-gradient(180deg, #131317, #101013);
+    border:1px solid var(--line);
+  }
   .card .head{
-    display:flex; align-items:center; gap:10px;
-    padding:9px 12px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px; height:37px;
+    padding:0 12px; border-bottom:1px solid var(--line);
   }
   .card .head .t{
     font-family:var(--disp); font-size:10px; font-weight:600; letter-spacing:.18em;
@@ -83,10 +87,28 @@
     font-size:13px; cursor:pointer; padding:4px 8px;
   }
   .card .head button:hover{color:var(--red)}
-  .card .box{height:300px}
+  .card .box{height:calc(100% - 37px); position:relative}
+  body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
+  body.editing .card .head{cursor:grab}
+  body.editing .card .box{pointer-events:none; opacity:.85}
+  .card .rsz{
+    position:absolute; right:0; bottom:0; width:18px; height:18px; display:none;
+    cursor:nwse-resize; z-index:8;
+    background:linear-gradient(135deg, transparent 50%, rgba(240,185,11,.7) 50%);
+  }
+  body.editing .card .rsz{display:block}
+  .card.dragging{outline:1px dashed var(--gold); z-index:20; opacity:.92}
   #empty{
     color:var(--muted); padding:40px 16px; text-align:center;
     border:1px dashed var(--line); background:var(--surface);
+  }
+  @media(max-width:640px){
+    main{padding:16px 12px 40px}
+    .topnav{width:100%; margin-left:0}
+    #board{position:static}
+    .card{position:static !important; width:auto !important; height:380px !important; margin-bottom:14px}
+    .card .rsz{display:none !important}
+    #editBtn{display:none}
   }
 </style>
 </head>
@@ -102,18 +124,19 @@
     <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
-  <a class="toplink" href="/" style="margin-left:auto">← <span id="backLbl">Terminal</span></a>
+  <nav class="topnav"><a href="/">← <span id="backLbl">Terminal</span></a></nav>
 </header>
 
 <div class="addbar">
   <select id="addT"><option>NQ</option><option>ES</option><option>SPX</option></select>
   <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
-  <span class="hint" id="hintLbl">Ta disposition est sauvegardée dans ce navigateur.</span>
+  <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
+  <span class="hint" id="hintLbl">Disposition sauvegardée dans ce navigateur.</span>
 </div>
 
 <div id="empty" hidden></div>
-<div class="grid" id="grid"></div>
+<div id="board"></div>
 </main>
 
 <script>
@@ -131,39 +154,51 @@ const GROUP_KINDS = {
   gex: ["res","sup","res0","sup0","flip","hgex","gpos","gneg","mpain"],
   em:  ["emh","eml","emb","ivh","ivl"],
 };
-
-/* préférences partagées avec la page principale (fuseau, couleurs, filtres, langue) */
-const DEF_PREFS = {tz:"Europe/Paris", up:"#26A69A", dn:"#EF5350", px:"#FFD84D"};
-let PREFS = {...DEF_PREFS};
-try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs")||"{}")}; }catch(_){}
+/* PREFS, tzShift, TZ_CITY, buildGearMenu : fournis par /ui.js (partagés avec l'accueil) */
 let LVSHOW = {gex:true, em:true, open:true};
 try{ LVSHOW = Object.assign(LVSHOW, JSON.parse(localStorage.getItem("gexLvShow")||"{}")); }catch(_){}
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
-
 const TXT = {
   fr: {title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
-       hint:"Ta disposition est sauvegardée dans ce navigateur.",
+       hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
-       feedKo:"flux indisponible"},
+       feedKo:"flux indisponible", edit:"Éditer", done:"Terminé"},
   en: {title:"My dashboard", back:"Terminal", add:"Add a chart",
-       hint:"Your layout is saved in this browser.",
+       hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
-       feedKo:"feed unavailable"},
+       feedKo:"feed unavailable", edit:"Edit", done:"Done"},
 };
 const tx = k => (TXT[LANG] || TXT.fr)[k];
-
-function tzShift(tSec){
-  const d = new Date(tSec * 1000);
-  const loc = new Date(d.toLocaleString("en-US", {timeZone: PREFS.tz}));
-  const utc = new Date(d.toLocaleString("en-US", {timeZone: "UTC"}));
-  return tSec + Math.round((loc - utc) / 1000);
-}
 
 let CARDS = [];
 try{ CARDS = JSON.parse(localStorage.getItem("gexDashCards")||"[]"); }catch(_){}
 if (!Array.isArray(CARDS)) CARDS = [];
+CARDS.forEach((c, i) => {
+  if (c.w == null){ c.x = (i % 2) * 6; c.y = Math.floor(i / 2) * 4; c.w = 6; c.h = 4; }
+});
 function saveCards(){ try{ localStorage.setItem("gexDashCards", JSON.stringify(CARDS)); }catch(_){} }
+
+/* ---- plan de travail : grille 12 colonnes, ancrage au lâcher ---- */
+const COLS = 12, CELL_H = 82, GAP = 12;
+let EDIT = false;
+const board = $("board");
+function cellW(){ return (board.clientWidth - GAP * (COLS - 1)) / COLS; }
+function px(c){
+  const cw = cellW();
+  return {left: c.x * (cw + GAP), top: c.y * (CELL_H + GAP),
+          width: c.w * cw + (c.w - 1) * GAP, height: c.h * CELL_H + (c.h - 1) * GAP};
+}
+function clampCard(c){
+  c.w = Math.max(3, Math.min(COLS, Math.round(c.w)));
+  c.h = Math.max(3, Math.round(c.h));
+  c.x = Math.max(0, Math.min(COLS - c.w, Math.round(c.x)));
+  c.y = Math.max(0, Math.round(c.y));
+}
+function boardHeight(){
+  const rows = CARDS.reduce((m, c) => Math.max(m, c.y + c.h), 0);
+  board.style.height = (rows * (CELL_H + GAP) + 40) + "px";
+}
 
 const LEVELS_CACHE = {};
 async function getLevels(target){
@@ -177,6 +212,12 @@ async function getLevels(target){
 
 const IVSEC = {"1m":60, "5m":300, "15m":900};
 const RUNNING = [];
+const SERIES = [];
+function applyAllColors(){
+  for (const s of SERIES)
+    s.applyOptions({upColor:PREFS.up, downColor:PREFS.dn,
+      wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px});
+}
 
 async function mountCard(cfg, host){
   const box = host.querySelector(".box"), note = host.querySelector(".n");
@@ -193,8 +234,10 @@ async function mountCard(cfg, host){
     priceLineColor:PREFS.px, priceLineWidth:2,
     priceLineStyle:LightweightCharts.LineStyle.Dashed,
   });
+  SERIES.push(series);
   new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
     .observe(box);
+  buildGearMenu(box, {applyColors: applyAllColors, reloadBars: render});
 
   let lastBar = null;
   try{
@@ -207,6 +250,7 @@ async function mountCard(cfg, host){
     if (lastBar && cfg.iv !== "1m")
       chart.timeScale().setVisibleRange({from: lastBar.time - 30*3600, to: lastBar.time + 45*60});
     else chart.timeScale().fitContent();
+    note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
   const pay = await getLevels(cfg.t);
@@ -249,39 +293,117 @@ async function mountCard(cfg, host){
       series.update(lastBar);
     }catch(_){}
   }, 6000);
-  RUNNING.push({host, timer});
+  RUNNING.push({timer});
+}
+
+/* ---- drag & resize (mode édition), ancrage grille au lâcher ---- */
+function wireEdit(card, cfg){
+  const handle = document.createElement("div");
+  handle.className = "rsz";
+  card.appendChild(handle);
+
+  function startDrag(ev, mode){
+    if (!EDIT) return;
+    ev.preventDefault();
+    card.classList.add("dragging");
+    const cw = cellW();
+    const startX = ev.clientX, startY = ev.clientY;
+    const orig = {...cfg};
+    function move(e){
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (mode === "move"){
+        cfg.x = orig.x + dx / (cw + GAP);
+        cfg.y = orig.y + dy / (CELL_H + GAP);
+      } else {
+        cfg.w = orig.w + dx / (cw + GAP);
+        cfg.h = orig.h + dy / (CELL_H + GAP);
+      }
+      const p = px({x:Math.max(0,cfg.x), y:Math.max(0,cfg.y),
+                    w:Math.max(3,cfg.w), h:Math.max(3,cfg.h)});
+      Object.assign(card.style, {left:p.left+"px", top:p.top+"px",
+                                 width:p.width+"px", height:p.height+"px"});
+    }
+    function up(){
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      card.classList.remove("dragging");
+      clampCard(cfg);        // ancrage : snap sur la grille
+      saveCards();
+      layoutCard(card, cfg);
+      boardHeight();
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  card.querySelector(".head").addEventListener("pointerdown", e => {
+    if (e.target.tagName !== "BUTTON") startDrag(e, "move");
+  });
+  handle.addEventListener("pointerdown", e => startDrag(e, "resize"));
+}
+
+function layoutCard(card, cfg){
+  const p = px(cfg);
+  Object.assign(card.style, {left:p.left+"px", top:p.top+"px",
+                             width:p.width+"px", height:p.height+"px"});
 }
 
 function render(){
   for (const r of RUNNING) clearInterval(r.timer);
-  RUNNING.length = 0;
-  const grid = $("grid");
-  grid.innerHTML = "";
+  RUNNING.length = 0; SERIES.length = 0;
+  board.innerHTML = "";
   $("empty").hidden = CARDS.length > 0;
   $("empty").textContent = tx("empty");
   CARDS.forEach((cfg, idx) => {
+    clampCard(cfg);
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
       <span class="n"></span><button title="Retirer">✕</button></div>
       <div class="box"></div>`;
-    card.querySelector("button").onclick = () => {
+    card.querySelector(".head button").onclick = () => {
       CARDS.splice(idx, 1); saveCards(); render();
     };
-    grid.appendChild(card);
+    board.appendChild(card);
+    layoutCard(card, cfg);
+    wireEdit(card, cfg);
     mountCard(cfg, card);
   });
+  boardHeight();
+}
+
+function firstFreeSpot(w, h){
+  for (let y = 0; y < 60; y++)
+    for (let x = 0; x <= COLS - w; x++){
+      const clash = CARDS.some(c => x < c.x + c.w && x + w > c.x && y < c.y + c.h && y + h > c.y);
+      if (!clash) return {x, y};
+    }
+  return {x: 0, y: 0};
 }
 
 $("hTitle").textContent = tx("title");
 $("backLbl").textContent = tx("back");
 $("addLbl").textContent = tx("add");
 $("hintLbl").textContent = tx("hint");
+$("editLbl").textContent = tx("edit");
 $("addBtn").onclick = () => {
-  if (CARDS.length >= 8) return;
-  CARDS.push({t: $("addT").value, iv: $("addIv").value});
+  if (CARDS.length >= 10) return;
+  const spot = firstFreeSpot(6, 4);
+  CARDS.push({t: $("addT").value, iv: $("addIv").value, x: spot.x, y: spot.y, w: 6, h: 4});
   saveCards(); render();
 };
+$("editBtn").onclick = () => {
+  EDIT = !EDIT;
+  document.body.classList.toggle("editing", EDIT);
+  $("editBtn").classList.toggle("on", EDIT);
+  $("editLbl").textContent = EDIT ? tx("done") : tx("edit");
+};
+window.addEventListener("resize", () => {
+  CARDS.forEach((cfg, i) => {
+    const card = board.children[i];
+    if (card) layoutCard(card, cfg);
+  });
+  boardHeight();
+});
 if (typeof LightweightCharts === "undefined"){
   $("empty").hidden = false; $("empty").textContent = tx("feedKo");
 } else {
