@@ -8,11 +8,38 @@ indicator("GEX Daily Levels", overlay = true, max_lines_count = 64, max_labels_c
 // kinds: res/sup (Call/Put Wall) . res0/sup0 (0DTE walls) . flip (Gamma Flip)
 //        emh/eml (ATM straddle Expected Move) . emb (fractional EM bands)
 //        ivh/ivl (IV-based 1D range) . mpain (Max Pain) . gpos/gneg (top gamma)
-//        opo/opu/opd (Daily Open anchor and +/- percent grid from the open)
+//        opo/opu/opd (Daily Open anchor and +/- ATR-multiple grid from the open)
+//        hgex (dominant absolute gamma strike — the session's main magnet)
 // Levels can come from any gamma data source or your own option-chain math.
 // ============================================================================
 
 const string TIP = "Format: price,label,kind;price,label,kind;... See the script description for the full format specification and kind codes."
+const string GM = "Familles (mêmes groupes que le dashboard)"
+bool mGEX  = input.bool(true, "GEX — walls · 0DTE · flip · HGEX · Max Pain · G±", group = GM)
+bool mEM   = input.bool(true, "EM · 1D — expected move · bandes · 1D min/max", group = GM)
+bool mOPEN = input.bool(true, "Open — Daily O · grille ATR", group = GM)
+
+f_master(string k) =>
+    switch k
+        "res"   => mGEX
+        "sup"   => mGEX
+        "res0"  => mGEX
+        "sup0"  => mGEX
+        "flip"  => mGEX
+        "hgex"  => mGEX
+        "mpain" => mGEX
+        "gpos"  => mGEX
+        "gneg"  => mGEX
+        "emh"   => mEM
+        "eml"   => mEM
+        "emb"   => mEM
+        "ivh"   => mEM
+        "ivl"   => mEM
+        "opo"   => mOPEN
+        "opu"   => mOPEN
+        "opd"   => mOPEN
+        => true
+
 string market = input.string("Auto", "Market", options = ["Auto", "NQ", "ES", "SPX"], tooltip = "Auto picks the right levels string from the chart symbol (NQ/MNQ/NDX -> NQ, ES/MES -> ES, SPX/SP500 -> SPX). Force a market if needed.")
 string srcNQ  = input.text_area(defval = "", title = "NQ — levels string",  tooltip = TIP)
 string srcES  = input.text_area(defval = "", title = "ES — levels string",  tooltip = TIP)
@@ -78,7 +105,11 @@ bool   shGp = input.bool(true, "G+ (top gamma) ", group = GN, inline = "gp")
 color  cGp  = input.color(#26A69A80, "", group = GN, inline = "gp")
 int    wGp  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gp")
 string sGp  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "gp")
-bool   shOPG = input.bool(true, "Open % grid    ", group = GN, inline = "opg")
+bool   shHG  = input.bool(true, "HGEX           ", group = GN, inline = "hg")
+color  cHG   = input.color(#F0B90B, "", group = GN, inline = "hg")
+int    wHG   = input.int(2, "", minval = 1, maxval = 5, group = GN, inline = "hg")
+string sHG   = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "hg")
+bool   shOPG = input.bool(true, "Open ATR grid  ", group = GN, inline = "opg")
 color  cOPG  = input.color(#F0B90B, "", group = GN, inline = "opg")
 int    wOPG  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "opg")
 string sOPG  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "opg")
@@ -89,6 +120,9 @@ string sGn  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inlin
 
 // ---- lookups -----------------------------------------------------------------
 f_show(string k) =>
+    f_master(k) and f_show_family(k)
+
+f_show_family(string k) =>
     switch k
         "res"   => shRes
         "res0"  => shRes0
@@ -103,6 +137,7 @@ f_show(string k) =>
         "mpain" => shMP
         "gpos"  => shGp
         "gneg"  => shGn
+        "hgex"  => shHG
         "opo"   => shOPG
         "opu"   => shOPG
         "opd"   => shOPG
@@ -123,6 +158,7 @@ f_col(string k) =>
         "mpain" => cMP
         "gpos"  => cGp
         "gneg"  => cGn
+        "hgex"  => cHG
         "opo"   => cOPG
         "opu"   => color.new(#EF5350, 55)
         "opd"   => color.new(#26A69A, 55)
@@ -143,6 +179,7 @@ f_w(string k) =>
         "mpain" => wMP
         "gpos"  => wGp
         "gneg"  => wGn
+        "hgex"  => wHG
         "opo"   => wOPG
         "opu"   => wOPG
         "opd"   => wOPG
@@ -166,6 +203,7 @@ f_style(string k) =>
         "mpain" => sMP
         "gpos"  => sGp
         "gneg"  => sGn
+        "hgex"  => sHG
         "opo"   => sOPG
         "opu"   => sOPG
         "opd"   => sOPG

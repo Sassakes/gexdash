@@ -27,7 +27,7 @@ TARGETS = {
     "ES":  {"chain": "_SPX", "future": "ES=F", "etf": "SPY", "ychart": "ES=F"},
     "SPX": {"chain": "_SPX", "future": None,   "etf": "SPY", "ychart": "^GSPC"},
 }
-YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=5d"
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
 CONTRACT_MULT = 100
 RISK_FREE = 0.04
 OCC_RE = re.compile(r"^([A-Z\^_]+?)(\d{6})([CP])(\d{8})$")
@@ -339,12 +339,19 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 
     # SpotGamma convention: walls picked across ALL strikes, so a call wall
     # sitting at/below spot (end-of-squeeze magnet) is not missed.
+    cw = pw = None
     if len(net) and net.max() > 0:
-        cw = strikes[int(np.argmax(net))]
-        levels.append((float(cw), "Call Wall", "res"))
+        cw = float(strikes[int(np.argmax(net))])
+        levels.append((cw, "Call Wall", "res"))
     if len(net) and net.min() < 0:
-        pw = strikes[int(np.argmin(net))]
-        levels.append((float(pw), "Put Wall", "sup"))
+        pw = float(strikes[int(np.argmin(net))])
+        levels.append((pw, "Put Wall", "sup"))
+
+    # HGEX : strike au gamma absolu dominant — l'aimant principal de la séance
+    if len(net):
+        hg = float(strikes[int(np.argmax(np.abs(net)))])
+        if hg != cw and hg != pw:
+            levels.append((hg, "HGEX", "hgex"))
 
     if flip is not None:
         levels.append((flip, "Gamma Flip", "flip"))
@@ -536,10 +543,11 @@ def _discord_embed(payload, dashboard_url):
         }
 
 
-def daily_open(yahoo_sym):
-    """Today's daily-bar open on the TARGET scale (futures daily bar starts
-    18:00 ET the prior evening, so it is fixed well before a pre-open run).
-    None on failure — the grid is then simply omitted."""
+def daily_bars(yahoo_sym):
+    """(today_open, atr14) on the TARGET scale. The futures daily bar starts
+    18:00 ET the prior evening, so the open is fixed well before a pre-open
+    run. ATR14 = mean true range of the last 14 COMPLETED daily bars.
+    Either element may be None on failure."""
     try:
         import requests
         from urllib.parse import quote as _q
@@ -548,28 +556,49 @@ def daily_open(yahoo_sym):
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         r.raise_for_status()
         res = r.json()["chart"]["result"][0]
-        opens = (res.get("indicators", {}).get("quote") or [{}])[0].get("open") or []
-        for v in reversed(opens):
-            if v is not None and math.isfinite(float(v)):
-                return float(v)
+        q = (res.get("indicators", {}).get("quote") or [{}])[0]
+        rows = [(o, h, l, c) for o, h, l, c in
+                zip(q.get("open") or [], q.get("high") or [],
+                    q.get("low") or [], q.get("close") or [])
+                if None not in (o, h, l, c)
+                and all(math.isfinite(float(x)) for x in (o, h, l, c))]
+        if not rows:
+            return None, None
+        today_open = float(rows[-1][0])
+        atr = None
+        done = rows[:-1]  # barres terminées uniquement
+        if len(done) >= 5:
+            trs = []
+            for i in range(1, len(done)):
+                _, h, l, _ = done[i]
+                pc = done[i - 1][3]
+                trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+            trs = trs[-14:]
+            atr = float(sum(trs) / len(trs))
+        return today_open, atr
     except Exception:
-        pass
-    return None
+        return None, None
 
 
-def open_pct_grid(anchor, step_pct=0.5, n=6):
-    """Daily-open percentage grid: anchor +/- step..n*step percent.
-    Round-percent moves from the open are natural intraday anchors
-    (vol-targeting rebalances, '% day' desk framing)."""
+def open_grid(anchor, atr=None, n=6):
+    """Daily-open grid in VOLATILITY multiples: anchor +/- 0.5..3.0 x ATR14.
+    Vol-scaled distances adapt to the regime (a percent grid does not), which
+    is why ATR-multiple levels from the open hold so well intraday.
+    Falls back to percent steps (0.5%..3%) when ATR is unavailable."""
     if anchor is None or anchor <= 0:
         return None
+    if atr and atr > 0:
+        mode, unit = "atr", float(atr)
+    else:
+        mode, unit = "pct", anchor * 0.01  # 1% en points
     levels = []
     for i in range(1, n + 1):
-        p = round(i * step_pct, 2)
-        levels.append({"pct": p,
-                       "up": round(anchor * (1 + p / 100), 1),
-                       "down": round(anchor * (1 - p / 100), 1)})
-    return {"anchor": round(anchor, 1), "step_pct": step_pct, "n": n, "levels": levels}
+        m = round(i * 0.5, 2)
+        levels.append({"mult": m,
+                       "up": round(anchor + m * unit, 1),
+                       "down": round(anchor - m * unit, 1)})
+    return {"anchor": round(anchor, 1), "mode": mode,
+            "unit": round(unit, 2), "n": n, "levels": levels}
 
 
 # --------------------------------------------------------------------------- #
@@ -694,14 +723,16 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
             b["high"] = round(spot + em["straddle"] * b["pct"] / 100 + basis, 1)
             b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
         em["bands"] = bands_meta
-    grid = open_pct_grid(daily_open(cfg["ychart"]))
+    d_open, atr14 = daily_bars(cfg["ychart"])
+    grid = open_grid(d_open, atr=atr14)
 
     pine_rows = [(p + basis, l, k) for p, l, k in levels]
     if grid:
+        suf = " ATR" if grid["mode"] == "atr" else "%"
         pine_rows.append((grid["anchor"], "Daily O", "opo"))
         for g in grid["levels"]:
-            pine_rows.append((g["up"], f"+{g['pct']:g}%", "opu"))
-            pine_rows.append((g["down"], f"-{g['pct']:g}%", "opd"))
+            pine_rows.append((g["up"], f"+{g['mult']:g}{suf}", "opu"))
+            pine_rows.append((g["down"], f"-{g['mult']:g}{suf}", "opd"))
     pine = ";".join(f"{p:.1f},{l},{k}" for p, l, k in sorted(pine_rows, key=lambda x: -x[0]))
 
     return {

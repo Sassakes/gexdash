@@ -187,6 +187,8 @@
   .k-emh,.k-eml{color:var(--text); opacity:.85} .k-emb{color:var(--text); opacity:.55}
   .k-ivh,.k-ivl{color:var(--muted)} .k-mpain{color:var(--gold); opacity:.75}
   .k-flip .tick, .k-mpain .tick{transform:rotate(45deg)}
+  .k-hgex{color:var(--gold)}
+  .k-hgex .tick{background:currentColor}
   .k-res .tick, .k-res0 .tick, .k-gpos .tick{background:currentColor}
   .k-sup .tick, .k-sup0 .tick, .k-gneg .tick{background:currentColor}
 
@@ -286,7 +288,7 @@
       <span class="ivs" id="lvChips" style="margin-left:auto">
         <button data-g="gex" class="on" title="Walls, 0DTE, flip, Max Pain, G±">GEX</button>
         <button data-g="em" class="on" title="Expected move, bandes, 1D min/max">EM · 1D</button>
-        <button data-g="open" class="on" title="Grille % depuis le Daily Open">Open %</button>
+        <button data-g="open" class="on" title="Daily Open ± multiples d'ATR14">Open</button>
       </span>
       <span class="ivs" id="ivs" style="margin-left:8px">
         <button data-iv="1m">1m</button>
@@ -337,10 +339,10 @@ const $ = id => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
 const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94",
            faint:"#5C5C66", line:"#212127", text:"#ECEAE4"};
-const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold,
+const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, hgex:C.gold,
                     gpos:C.teal, gneg:C.red, emh:C.text, eml:C.text,
                     ivh:C.muted, ivl:C.muted, mpain:C.gold, emb:C.text};
-const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip",
+const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip", hgex:"HGEX",
                emh:"EM+", eml:"EM−", mpain:"MP"};
 const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString("fr-FR",
                 {minimumFractionDigits:d, maximumFractionDigits:d});
@@ -434,7 +436,7 @@ async function refreshLive(){
 
 /* ---- filtres de familles de niveaux (persistés) ---- */
 const GROUP_KINDS = {
-  gex: ["res","sup","res0","sup0","flip","gpos","gneg","mpain"],
+  gex: ["res","sup","res0","sup0","flip","hgex","gpos","gneg","mpain"],
   em:  ["emh","eml","emb","ivh","ivl"],
 };
 let LVSHOW = {gex:true, em:true, open:true};
@@ -563,7 +565,7 @@ function applyLevelLines(){
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0"].includes(L.kind));
+            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind));
   }
   if (LVSHOW.open && CHART.grid){
     addLine(CHART.grid.anchor, C.gold, true, true);
