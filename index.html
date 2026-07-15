@@ -367,6 +367,109 @@
     .duo .panel:nth-child(1){animation-delay:.14s}
     .duo .panel:nth-child(2){animation-delay:.18s}
   }
+
+  /* ═══════════════ couche premium ═══════════════ */
+  /* — mesh gradient ambiant : deux nappes dérivant lentement derrière le verre — */
+  html::before, html::after{
+    content:""; position:fixed; z-index:-2; border-radius:50%;
+    filter:blur(90px); pointer-events:none;
+  }
+  html::before{
+    width:820px; height:520px; top:-260px; left:50%; margin-left:-500px;
+    background:radial-gradient(closest-side, rgba(240,185,11,.14), transparent 70%);
+    animation:drift1 46s ease-in-out infinite alternate;
+  }
+  html::after{
+    width:760px; height:560px; bottom:-320px; right:-180px;
+    background:
+      radial-gradient(closest-side, rgba(38,166,154,.11), transparent 70%),
+      radial-gradient(closest-side, rgba(99,102,241,.07), transparent 75%);
+    animation:drift2 58s ease-in-out infinite alternate;
+  }
+  @keyframes drift1{from{transform:translate(0,0) scale(1)} to{transform:translate(140px,60px) scale(1.12)}}
+  @keyframes drift2{from{transform:translate(0,0) scale(1)} to{transform:translate(-120px,-80px) scale(1.08)}}
+  /* trame d'ingénierie à peine perceptible */
+  body{
+    background:
+      linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px),
+      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.05), transparent 62%),
+      var(--bg);
+    background-size:44px 44px, 44px 44px, auto, auto;
+  }
+
+  /* — panneaux verre + bordure en dégradé — */
+  .panel, .stats{
+    background:
+      linear-gradient(180deg, rgba(20,20,25,.72), rgba(15,15,19,.78)) padding-box,
+      linear-gradient(135deg, rgba(240,185,11,.32), rgba(255,255,255,.06) 34%,
+                      rgba(255,255,255,.04) 66%, rgba(38,166,154,.22)) border-box;
+    border:1px solid transparent;
+    backdrop-filter:blur(12px) saturate(1.25);
+    -webkit-backdrop-filter:blur(12px) saturate(1.25);
+  }
+
+  /* — spotlight curseur (signature Linear) — */
+  .panel, .stats{position:relative; --mx:50%; --my:-40px}
+  .panel::after, .stats::after{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:radial-gradient(340px circle at var(--mx) var(--my),
+               rgba(255,255,255,.05), transparent 62%);
+    opacity:0; transition:opacity .25s ease;
+  }
+  .panel:hover::after, .stats:hover::after{opacity:1}
+  .panel > *, .stats > *{position:relative; z-index:2}
+
+  /* — LIVE : liseré conique rotatif — */
+  #statusPill{position:relative; background:var(--surface); border:1px solid transparent; overflow:visible}
+  #statusPill::before{
+    content:""; position:absolute; inset:-1px; z-index:-1; padding:1px;
+    background:conic-gradient(from var(--pa, 0deg),
+      rgba(240,185,11,.0), rgba(240,185,11,.7), rgba(240,185,11,.0) 32%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    opacity:0; transition:opacity .3s ease;
+  }
+  @property --pa{syntax:"<angle>"; initial-value:0deg; inherits:false}
+  #statusPill.live::before{opacity:1; animation:ring 3.2s linear infinite}
+  @keyframes ring{to{--pa:360deg}}
+
+  /* — wordmark : reflet doré balayant — */
+  .brand h1 em{
+    background:linear-gradient(100deg, var(--gold) 42%, #FFE9A3 50%, var(--gold) 58%);
+    background-size:230% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:shine 7s ease-in-out infinite;
+  }
+  @keyframes shine{0%, 55%{background-position:120% 0} 85%, 100%{background-position:-40% 0}}
+
+  /* — contrôles : verre + lueur au survol — */
+  .tabs, .ivs, .chips button, #pineTopBtn, #statusPill{
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+  }
+  .tabs button.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 10px 24px -10px var(--gold-glow)}
+  #pineTopBtn:hover, .chips button.on:hover{box-shadow:0 8px 22px -10px var(--gold-glow)}
+  .topnav a{border-radius:2px}
+
+  /* — cellule prix : halo respirant discret — */
+  @media(prefers-reduced-motion:no-preference){
+    .cell.price .val{animation:breathe 5.5s ease-in-out infinite}
+    @keyframes breathe{
+      0%,100%{text-shadow:0 0 22px rgba(240,185,11,.18)}
+      50%{text-shadow:0 0 34px rgba(240,185,11,.34)}
+    }
+    /* entrées en scène : blur-in */
+    .panel, .stats{animation-name:riseblur}
+    @keyframes riseblur{
+      from{opacity:0; transform:translateY(7px); filter:blur(5px)}
+      to{opacity:1; transform:none; filter:blur(0)}
+    }
+  }
+  @media(prefers-reduced-motion:reduce){
+    html::before, html::after{animation:none}
+    .brand h1 em{animation:none; color:var(--gold); background:none}
+    #statusPill.live::before{animation:none}
+  }
 </style>
 </head>
 <body>
@@ -824,6 +927,24 @@ async function loadLinks(){
     if (d.discord) $("dcLink").href = d.discord;
   }catch(_){}
 }
+
+/* spotlight curseur sur les panneaux */
+(function(){
+  let raf = 0, ev = null;
+  document.addEventListener("pointermove", e => {
+    ev = e;
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      for (const p of document.querySelectorAll(".panel, .stats")){
+        const r = p.getBoundingClientRect();
+        if (ev.clientY < r.top - 80 || ev.clientY > r.bottom + 80) continue;
+        p.style.setProperty("--mx", (ev.clientX - r.left) + "px");
+        p.style.setProperty("--my", (ev.clientY - r.top) + "px");
+      }
+    });
+  }, {passive:true});
+})();
 
 load();
 </script>

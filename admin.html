@@ -77,6 +77,22 @@
   input:focus-visible, select:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   .row{transition:background .12s ease}
   .row:hover{background:rgba(255,255,255,.014)}
+
+  /* ═══════════════ couche premium ═══════════════ */
+  html::before{
+    content:""; position:fixed; z-index:-2; border-radius:50%;
+    width:760px; height:460px; top:-240px; left:50%; margin-left:-380px;
+    filter:blur(90px); pointer-events:none;
+    background:radial-gradient(closest-side, rgba(240,185,11,.12), transparent 70%);
+  }
+  .panel{
+    background:
+      linear-gradient(180deg, rgba(21,21,25,.78), rgba(16,16,20,.84)) padding-box,
+      linear-gradient(135deg, rgba(240,185,11,.28), rgba(255,255,255,.05) 45%,
+                      rgba(38,166,154,.18)) border-box;
+    border:1px solid transparent;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
 </style>
 </head>
 <body>

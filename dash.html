@@ -152,6 +152,61 @@
     outline:1px dashed rgba(240,185,11,.18); outline-offset:8px;
   }
   #empty{letter-spacing:.02em}
+
+  /* ═══════════════ couche premium ═══════════════ */
+  html::before, html::after{
+    content:""; position:fixed; z-index:-2; border-radius:50%;
+    filter:blur(90px); pointer-events:none;
+  }
+  html::before{
+    width:820px; height:520px; top:-260px; left:50%; margin-left:-500px;
+    background:radial-gradient(closest-side, rgba(240,185,11,.13), transparent 70%);
+    animation:drift1 46s ease-in-out infinite alternate;
+  }
+  html::after{
+    width:760px; height:560px; bottom:-320px; right:-180px;
+    background:radial-gradient(closest-side, rgba(38,166,154,.1), transparent 70%);
+    animation:drift2 58s ease-in-out infinite alternate;
+  }
+  @keyframes drift1{from{transform:translate(0,0)} to{transform:translate(140px,60px) scale(1.1)}}
+  @keyframes drift2{from{transform:translate(0,0)} to{transform:translate(-120px,-80px) scale(1.08)}}
+  body{
+    background:
+      linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px),
+      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.05), transparent 62%),
+      var(--bg);
+    background-size:44px 44px, 44px 44px, auto, auto;
+  }
+  .card{
+    background:
+      linear-gradient(180deg, rgba(20,20,25,.74), rgba(15,15,19,.8)) padding-box,
+      linear-gradient(135deg, rgba(240,185,11,.3), rgba(255,255,255,.05) 40%,
+                      rgba(38,166,154,.2)) border-box;
+    border:1px solid transparent;
+    backdrop-filter:blur(10px) saturate(1.2);
+    -webkit-backdrop-filter:blur(10px) saturate(1.2);
+  }
+  .card{--mx:50%; --my:-40px}
+  .card::after{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:radial-gradient(300px circle at var(--mx) var(--my),
+               rgba(255,255,255,.05), transparent 62%);
+    opacity:0; transition:opacity .25s ease;
+  }
+  .card:hover::after{opacity:1}
+  .card > *{position:relative; z-index:2}
+  header h1 em{
+    background:linear-gradient(100deg, var(--gold) 42%, #FFE9A3 50%, var(--gold) 58%);
+    background-size:230% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:shine 7s ease-in-out infinite;
+  }
+  @keyframes shine{0%, 55%{background-position:120% 0} 85%, 100%{background-position:-40% 0}}
+  @media(prefers-reduced-motion:reduce){
+    html::before, html::after{animation:none}
+    header h1 em{animation:none; color:var(--gold); background:none}
+  }
 </style>
 </head>
 <body>
@@ -459,6 +514,24 @@ window.addEventListener("resize", () => {
   boardHeight();
   paintBoardGrid();
 });
+/* spotlight curseur sur les cartes */
+(function(){
+  let raf = 0, ev = null;
+  document.addEventListener("pointermove", e => {
+    ev = e;
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      for (const p of document.querySelectorAll(".card")){
+        const r = p.getBoundingClientRect();
+        if (ev.clientY < r.top - 80 || ev.clientY > r.bottom + 80) continue;
+        p.style.setProperty("--mx", (ev.clientX - r.left) + "px");
+        p.style.setProperty("--my", (ev.clientY - r.top) + "px");
+      }
+    });
+  }, {passive:true});
+})();
+
 if (typeof LightweightCharts === "undefined"){
   $("empty").hidden = false; $("empty").textContent = tx("feedKo");
 } else {

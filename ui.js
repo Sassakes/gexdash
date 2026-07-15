@@ -63,7 +63,9 @@ function drawerLang(){
   }
   #gexDrawer{
     position:fixed; top:0; right:0; bottom:0; z-index:61; width:294px; max-width:88vw;
-    background:#0F0F12; border-left:1px solid var(--line-strong, #2B2B33);
+    background:rgba(14,14,18,.82);
+    backdrop-filter:blur(16px) saturate(1.2); -webkit-backdrop-filter:blur(16px) saturate(1.2);
+    border-left:1px solid var(--line-strong, #2B2B33);
     box-shadow:-18px 0 60px rgba(0,0,0,.55);
     transform:translateX(100%); transition:transform .2s ease;
     overflow-y:auto; overscroll-behavior:contain;
@@ -74,7 +76,8 @@ function drawerLang(){
   #gexDrawer .dhead{
     display:flex; align-items:center; justify-content:space-between;
     padding:16px 18px 14px; border-bottom:1px solid var(--line, #212127);
-    position:sticky; top:0; background:#0F0F12; z-index:2;
+    position:sticky; top:0; background:rgba(14,14,18,.9); z-index:2;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
   }
   #gexDrawer .dhead b{
     font-family:"Space Grotesk", monospace; font-size:12px; font-weight:700;
