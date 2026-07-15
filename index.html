@@ -96,45 +96,6 @@
     content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--gold);
   }
 
-  /* ============ pine top + hint ============ */
-  #pineTopBtn{
-    background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
-    font-size:12px; font-weight:500; padding:7px 14px; cursor:pointer;
-    transition:background .12s ease; white-space:nowrap;
-  }
-  #pineTopBtn:hover{background:rgba(240,185,11,.24)}
-  #pineTopBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-  #pineHint{
-    position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
-    background:rgba(6,6,8,.72); backdrop-filter:blur(2px); padding:20px;
-  }
-  .hintCard{
-    position:relative; max-width:420px; background:var(--surface);
-    border:1px solid var(--gold-glow); padding:22px 22px 18px;
-    box-shadow:0 12px 48px rgba(0,0,0,.6);
-  }
-  .hintCard h3{
-    font-family:var(--disp); font-size:12px; font-weight:600; letter-spacing:.16em;
-    text-transform:uppercase; color:var(--gold); margin-bottom:10px;
-  }
-  .hintCard p{color:var(--muted); font-size:12.5px; margin-bottom:14px}
-  .hintCard p b{color:var(--text)}
-  #hintCopy{
-    width:100%; background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
-    font-size:12.5px; font-weight:500; padding:10px; cursor:pointer; margin-bottom:12px;
-    transition:background .12s ease;
-  }
-  #hintCopy:hover{background:rgba(240,185,11,.24)}
-  .hintCard label{
-    display:flex; align-items:center; gap:8px; color:var(--faint); font-size:11.5px; cursor:pointer;
-  }
-  .hintCard input[type=checkbox]{accent-color:var(--gold)}
-  #hintClose{
-    position:absolute; top:8px; right:8px; background:none; border:none;
-    color:var(--faint); font-size:14px; cursor:pointer; padding:6px;
-  }
-  #hintClose:hover{color:var(--text)}
-
   /* ============ stat strip ============ */
   .stats{
     display:grid; grid-template-columns:minmax(190px, 1.4fr) repeat(5, 1fr);
@@ -281,24 +242,10 @@
   <span id="liveErr"></span>
 </header>
 
-<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px">
-  <div class="tabs" id="tabs" role="tablist" style="margin-bottom:0">
-    <button data-t="NQ" role="tab">NQ</button>
-    <button data-t="ES" role="tab">ES</button>
-    <button data-t="SPX" role="tab">SPX</button>
-  </div>
-  <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
-</div>
-
-<div id="pineHint" hidden>
-  <div class="hintCard">
-    <h3>Niveaux sur TradingView</h3>
-    <p>Copie la string Pine et colle-la dans la zone <b id="hintTgt">NQ</b> de
-       l'indicateur <b>GEX Daily Levels</b> pour afficher ces niveaux sur ton chart.</p>
-    <button id="hintCopy">⧉ Copier la string</button>
-    <label><input type="checkbox" id="hintMute"> Ne plus afficher ce message</label>
-    <button id="hintClose" aria-label="Fermer">✕</button>
-  </div>
+<div class="tabs" id="tabs" role="tablist">
+  <button data-t="NQ" role="tab">NQ</button>
+  <button data-t="ES" role="tab">ES</button>
+  <button data-t="SPX" role="tab">SPX</button>
 </div>
 
 <div id="status">Chargement…</div>
@@ -576,11 +523,11 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
-  const addLine = (price, color, solid, axisLbl) =>
+  const addLine = (price, color, solid, axisLbl, title) =>
     CHART.lines.push(CHART.series.createPriceLine({
       price, color, lineWidth:1,
       lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: axisLbl, title: "",
+      axisLabelVisible: axisLbl, title,
     }));
 
   for (const L of CHART.levels){
@@ -588,14 +535,13 @@ function applyLevelLines(){
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0"].includes(L.kind));
+            ["res","sup","flip","res0","sup0"].includes(L.kind), L.label);
   }
   if (LVSHOW.open && CHART.grid){
-    addLine(CHART.grid.anchor, C.gold, true, true);
+    addLine(CHART.grid.anchor, C.gold, true, true, "Daily O");
     for (const g of CHART.grid.levels){
-      // rouge au-dessus (zone de rejet), vert en dessous (zone de rebond)
-      addLine(g.up,   "rgba(239,83,80,.5)",  false, false);
-      addLine(g.down, "rgba(38,166,154,.5)", false, false);
+      addLine(g.up,   "rgba(38,166,154,.5)", false, false, "+" + g.pct + "%");
+      addLine(g.down, "rgba(239,83,80,.5)",  false, false, "−" + g.pct + "%");
     }
   }
 }
@@ -634,7 +580,6 @@ function show(d){
   renderLevels(d);
   renderEM(d);
   renderPine(d);
-  maybeShowHint(d);
   const srcs = (d.sources||[]).filter(s=>!s.error).map(s=>s.chain.replace("_","")).join(" + ");
   $("footer").innerHTML = "Généré " + d.generated_utc.replace("T"," ").slice(0,16) + " UTC (" + d.mode + ")"
     + (srcs ? " · chaînes " + srcs : "") + " · expiries " + d.expiries.length
@@ -749,41 +694,14 @@ function renderEM(d){
     <div class="em-sub" style="color:var(--faint)">ATM ${fmt(em.strike,0)} · call ${fmt(em.call_mid,2)} / put ${fmt(em.put_mid,2)}</div>`;
 }
 
-async function copyPine(d, btn, idleText){
-  try{
-    await navigator.clipboard.writeText(d.pine);
-    btn.textContent = "Copiée ✓ — zone " + (d.target||"NQ");
-    setTimeout(()=>btn.textContent = idleText, 1900);
-  }catch(e){ btn.textContent = "Copie manuelle requise"; }
-}
-
 function renderPine(d){
   $("pineStr").textContent = d.pine;
-  $("copyBtn").onclick = () => copyPine(d, $("copyBtn"), "Copier la string Pine");
-  $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "⧉ String Pine");
-}
-
-let HINT_SHOWN = false;
-function maybeShowHint(d){
-  if (HINT_SHOWN) return;
-  let muted = "";
-  try{ muted = localStorage.getItem("gexPineHint") || ""; }catch(_){}
-  if (muted === "off") return;
-  HINT_SHOWN = true;
-  $("hintTgt").textContent = d.target || "NQ";
-  const hint = $("pineHint");
-  hint.hidden = false;
-  const close = () => {
-    if ($("hintMute").checked){
-      try{ localStorage.setItem("gexPineHint", "off"); }catch(_){}
-    }
-    hint.hidden = true;
-  };
-  $("hintClose").onclick = close;
-  hint.onclick = e => { if (e.target === hint) close(); };
-  $("hintCopy").onclick = async () => {
-    await copyPine(d, $("hintCopy"), "⧉ Copier la string");
-    setTimeout(close, 1200);
+  $("copyBtn").onclick = async () => {
+    try{
+      await navigator.clipboard.writeText(d.pine);
+      $("copyBtn").textContent = "Copiée ✓ — zone " + (d.target||"NQ") + " de l'indicateur";
+      setTimeout(()=>$("copyBtn").textContent = "Copier la string Pine", 1900);
+    }catch(e){ $("copyBtn").textContent = "Sélectionne et copie manuellement"; }
   };
 }
 
