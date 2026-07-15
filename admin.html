@@ -63,6 +63,19 @@
   <div class="sub">Route les niveaux de chaque marché vers son channel. <a href="/">← retour au dashboard</a></div>
 
   <section class="panel">
+    <h2>Refresh des niveaux (publication silencieuse)</h2>
+    <div class="row" style="grid-template-columns:auto 1fr auto auto">
+      <select id="rfTarget" style="background:var(--panel2); border:1px solid var(--border); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
+        <option>NQ</option><option>ES</option><option>SPX</option>
+      </select>
+      <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
+      <button id="rfBtn">⟳ Refresh</button>
+      <span></span>
+      <span class="status" id="rfStatus">Recalcule et publie le marché choisi pour tout le monde — sans ping Discord.</span>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Webhooks par marché</h2>
     <div id="rows"></div>
     <div class="note">
@@ -171,6 +184,22 @@ async function load(){
     }catch(e){ msg(e.message, false); }
     finally{ b.disabled = false; }
   });
+
+  $("rfBtn").onclick = async () => {
+    const btn = $("rfBtn"), st = $("rfStatus");
+    const b = $("rfBasis").value.trim().replace(",", ".");
+    if (b !== "" && !isFinite(parseFloat(b))){ msg("Basis invalide.", false); return; }
+    btn.disabled = true; btn.textContent = "⟳ Calcul…"; st.textContent = "Calcul en cours…";
+    try{
+      const q = "?target=" + $("rfTarget").value + (b !== "" ? "&basis=" + encodeURIComponent(b) : "");
+      const d = await api("/api/gex" + q);
+      st.innerHTML = d.published
+        ? `<b class="on">publié ✓</b> ${d.target} · ${d.generated_utc.slice(11,16)} UTC · px ${d.nq_price ?? "—"} · basis ${d.basis} (${d.basis_source})`
+        : `<b style="color:var(--red)">calculé mais NON publié</b> — ${d.publish_info || ""}`;
+      msg("Refresh " + d.target + " terminé.", true);
+    }catch(e){ st.textContent = "—"; msg("Refresh impossible : " + e.message, false); }
+    finally{ btn.disabled = false; btn.textContent = "⟳ Refresh"; }
+  };
 
   try{
     const L = await (await fetch("/api/links")).json();

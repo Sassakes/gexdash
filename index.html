@@ -64,22 +64,6 @@
     #statusPill.live .dot{animation:pulse 2.2s ease-in-out infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   }
-  .refresh{display:flex; margin-left:auto; border:1px solid var(--line-strong); background:var(--surface)}
-  .refresh input{
-    background:transparent; border:none; border-right:1px solid var(--line);
-    color:var(--text); font-size:12px; padding:8px 10px; width:112px;
-  }
-  .refresh input::placeholder{color:var(--faint)}
-  .refresh input:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  #refreshBtn{
-    background:var(--gold-soft); color:var(--gold); border:none;
-    font-size:12px; font-weight:500; padding:8px 16px; cursor:pointer;
-    transition:background .12s ease;
-  }
-  #refreshBtn:hover{background:rgba(240,185,11,.24)}
-  #refreshBtn:disabled{opacity:.5; cursor:wait}
-  #refreshBtn:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  #liveErr{width:100%; color:var(--red); font-size:12px; padding-top:8px; display:none}
 
   /* ============ tabs ============ */
   .tabs{display:inline-flex; border:1px solid var(--line-strong); background:var(--surface); margin-bottom:16px}
@@ -171,6 +155,21 @@
   .ivs button.on{color:var(--gold); background:var(--gold-soft); font-weight:600}
   .ivs button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
   .chips button.on::before{content:"● "; font-size:7px; vertical-align:2px}
+  #tzSel{
+    background:var(--surface2); border:1px solid var(--line); color:var(--muted);
+    font:inherit; font-size:11px; padding:6px 8px; min-height:30px; cursor:pointer;
+  }
+  #tzSel:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+  .gear{
+    background:var(--surface2); border:1px solid var(--line); color:var(--muted);
+    font-size:13px; width:32px; min-height:30px; cursor:pointer;
+  }
+  .gear:hover{color:var(--gold)}
+  .pref{display:inline-flex; align-items:center; gap:7px; color:var(--faint); font-size:11px}
+  .pref input[type=color]{
+    width:34px; height:26px; padding:0; border:1px solid var(--line);
+    background:var(--surface2); cursor:pointer;
+  }
 
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
@@ -250,9 +249,6 @@
     .brand .sub{font-size:10px}
     #statusPill{order:3}
     #langSel{order:4; margin-left:auto}
-    .refresh{order:5; width:100%; margin-left:0}
-    .refresh input{flex:1; width:auto; font-size:16px}   /* 16px : empêche le zoom iOS */
-    #refreshBtn{padding:10px 18px; flex:none}
     .toplink{padding:9px 12px; font-size:11.5px}
     #pineTopBtn{padding:9px 12px}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
@@ -291,12 +287,7 @@
     <button data-l="fr" class="on">FR</button>
     <button data-l="en">EN</button>
   </span>
-  <div class="refresh">
-    <input id="basisIn" inputmode="decimal" placeholder="basis (opt.)"
-           title="Basis manuelle, ex: 145.5 — vide = basis marché">
-    <button id="refreshBtn">⟳ Refresh</button>
-  </div>
-  <span id="liveErr"></span>
+
 </header>
 
 <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px">
@@ -309,6 +300,7 @@
   <span style="flex:1"></span>
   <a class="toplink" id="tvLink" target="_blank" rel="noopener"
      href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">Indicateur TradingView</span> <span class="ext">↗</span></a>
+  <a class="toplink" href="/dash"><span id="dashLbl">Mon dashboard</span> <span class="ext">→</span></a>
   <a class="toplink" id="dcLink" target="_blank" rel="noopener"
      href="https://discord.gg/YfCbXDtb4">Discord The Hub <span class="ext">↗</span></a>
 </div>
@@ -328,11 +320,26 @@
         <button data-g="em" class="on">EM · 1D</button>
         <button data-g="open" class="on">Open</button>
       </span>
-      <span class="ivs" id="ivs">
-        <button data-iv="1m">1m</button>
-        <button data-iv="5m" class="on">5m</button>
-        <button data-iv="15m">15m</button>
+      <span style="display:inline-flex; gap:8px; flex:none; align-items:center">
+        <select id="tzSel" title="Fuseau horaire du chart">
+          <option value="Europe/Paris">Paris</option>
+          <option value="America/New_York">New York</option>
+          <option value="Europe/London">London</option>
+          <option value="UTC">UTC</option>
+        </select>
+        <span class="ivs" id="ivs">
+          <button data-iv="1m">1m</button>
+          <button data-iv="5m" class="on">5m</button>
+          <button data-iv="15m">15m</button>
+        </span>
+        <button id="gearBtn" class="gear" title="Couleurs du chart">⚙</button>
       </span>
+    </div>
+    <div class="cbar" id="prefsRow" hidden>
+      <label class="pref"><span id="pUp">Bougie ↑</span><input type="color" id="cUp"></label>
+      <label class="pref"><span id="pDn">Bougie ↓</span><input type="color" id="cDn"></label>
+      <label class="pref"><span id="pPx">Prix</span><input type="color" id="cPx"></label>
+      <button id="prefReset" class="gear" style="width:auto; padding:0 12px" title="Réinitialiser">↺</button>
     </div>
     <div class="chartbox" id="chartBox"></div>
   </section>
@@ -379,42 +386,39 @@ const SHORT = {res:"CW", sup:"PW", res0:"CW0", sup0:"PW0", flip:"Flip", hgex:"HG
                emh:"EM+", eml:"EM−", mpain:"MP"};
 const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US",
                 {minimumFractionDigits:d, maximumFractionDigits:d});
+const DEF_PREFS = {tz:"Europe/Paris", up:"#26A69A", dn:"#EF5350", px:"#FFD84D"};
+let PREFS = {...DEF_PREFS};
+try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs")||"{}")}; }catch(_){}
+function savePrefs(){ try{ localStorage.setItem("gexPrefs", JSON.stringify(PREFS)); }catch(_){} }
+
 const T = {
   fr: {
     loading:"Chargement", noSnap:t0=>"Aucun snapshot "+t0+" pour l'instant — lance le workflow GitHub Actions ou clique « ⟳ Refresh ».",
-    calc:"⟳ Calcul…", refresh:"⟳ Refresh", basisBad:"Basis invalide : un nombre (ex: 145.5) ou vide.",
-    askKey:"Mot de passe refresh :", badKey:"mot de passe invalide",
-    refreshFail:m=>"Refresh indisponible : "+m, pubFail:r=>"Calcul OK mais publication échouée → "+(r||"raison inconnue"),
     notPub:" · NON PUBLIÉ", levels:t0=>"Niveaux du jour · échelle "+t0,
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Régime", stPC:"P/C OI", stIV:"IV ATM",
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
-    chart:"Chart · niveaux GEX superposés", chartHint:" · heure Paris",
-    chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
+    chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
-    tv:"Indicateur TradingView", th:["Niveau","Prix","Distance"], pts:"pts",
+    tv:"Indicateur TradingView", dash:"Mon dashboard", pUp:"Bougie ↑", pDn:"Bougie ↓", pPx:"Prix", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
   },
   en: {
     loading:"Loading", noSnap:t0=>"No "+t0+" snapshot yet — run the GitHub Action or hit “⟳ Refresh”.",
-    calc:"⟳ Computing…", refresh:"⟳ Refresh", basisBad:"Invalid basis: a number (e.g. 145.5) or empty.",
-    askKey:"Refresh password:", badKey:"invalid password",
-    refreshFail:m=>"Refresh unavailable: "+m, pubFail:r=>"Computed OK but publish failed → "+(r||"unknown reason"),
     notPub:" · NOT PUBLISHED", levels:t0=>"Today's levels · "+t0+" scale",
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Regime", stPC:"P/C OI", stIV:"ATM IV",
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
-    chart:"Chart · GEX levels overlay", chartHint:" · Paris time",
-    chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
+    chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
-    tv:"TradingView indicator", th:["Level","Price","Distance"], pts:"pts",
+    tv:"TradingView indicator", dash:"My dashboard", pUp:"Up candle", pDn:"Down candle", pPx:"Price", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
   },
@@ -469,6 +473,8 @@ function applyLang(){
   $("copyBtn").textContent = t("copy");
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
+  $("dashLbl").textContent = t("dash");
+  $("pUp").textContent = t("pUp"); $("pDn").textContent = t("pDn"); $("pPx").textContent = t("pPx");
   const th = t("th");
   $("th1").textContent = th[0]; $("th2").textContent = th[1]; $("th3").textContent = th[2];
   const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen")};
@@ -491,48 +497,6 @@ async function load(){
   bindChips();
   loadLinks();
   await loadTarget();
-  $("refreshBtn").onclick = refreshLive;
-  $("basisIn").addEventListener("keydown", e => { if (e.key === "Enter") refreshLive(); });
-}
-
-async function refreshLive(){
-  const btn = $("refreshBtn"), err = $("liveErr");
-  btn.disabled = true; btn.textContent = t("calc");
-  err.style.display = "none";
-  const b = $("basisIn").value.trim().replace(",", ".");
-  if (b !== "" && !isFinite(parseFloat(b))){
-    err.textContent = t("basisBad");
-    err.style.display = "block";
-    btn.disabled = false; btn.textContent = t("refresh");
-    return;
-  }
-  let key = "";
-  try{ key = localStorage.getItem("gexKey") || ""; }catch(_){}
-  if (!key){
-    key = (prompt(t("askKey")) || "").trim();
-    if (!key){ btn.disabled = false; btn.textContent = t("refresh"); return; }
-  }
-  try{
-    const r = await fetch("/api/gex?target=" + TARGET + (b !== "" ? "&basis=" + encodeURIComponent(b) : ""),
-                          {headers: {"x-gex-key": key}});
-    if (r.status === 401){
-      try{ localStorage.removeItem("gexKey"); }catch(_){}
-      throw new Error(t("badKey"));
-    }
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
-    try{ localStorage.setItem("gexKey", key); }catch(_){}
-    show(d);
-    if (d.published === false){
-      err.textContent = t("pubFail")(d.publish_info);
-      err.style.display = "block";
-    }
-  }catch(e){
-    err.textContent = t("refreshFail")(e.message);
-    err.style.display = "block";
-  }finally{
-    btn.disabled = false; btn.textContent = t("refresh");
-  }
 }
 
 /* ---- filtres de familles de niveaux (persistés) ---- */
@@ -563,12 +527,14 @@ const CHART = {chart:null, series:null, lines:[], iv:"5m", lastBar:null, ivSec:{
 
 /* Le moteur de chart affiche les timestamps en UTC brut ; on décale chaque
    barre vers Europe/Paris (DST géré par Intl, pas d'offset codé en dur). */
-function parisShift(tSec){
+function tzShift(tSec){
   const d = new Date(tSec * 1000);
-  const paris = new Date(d.toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+  const loc = new Date(d.toLocaleString("en-US", {timeZone: PREFS.tz}));
   const utc = new Date(d.toLocaleString("en-US", {timeZone: "UTC"}));
-  return tSec + Math.round((paris - utc) / 1000);
+  return tSec + Math.round((loc - utc) / 1000);
 }
+const TZ_CITY = {"Europe/Paris":"Paris", "America/New_York":"New York",
+                 "Europe/London":"London", "UTC":"UTC"};
 
 function ensureChart(){
   if (CHART.chart || typeof LightweightCharts === "undefined"){
@@ -587,9 +553,10 @@ function ensureChart(){
       horzLine:{color:C.faint, width:1, style:LightweightCharts.LineStyle.Dashed}},
   });
   CHART.series = CHART.chart.addCandlestickSeries({
-    upColor:C.teal, downColor:C.red, borderVisible:false,
-    wickUpColor:C.teal, wickDownColor:C.red,
-    priceLineColor:C.gold, priceLineStyle:LightweightCharts.LineStyle.Dotted,
+    upColor:PREFS.up, downColor:PREFS.dn, borderVisible:false,
+    wickUpColor:PREFS.up, wickDownColor:PREFS.dn,
+    priceLineColor:PREFS.px, priceLineWidth:2,
+    priceLineStyle:LightweightCharts.LineStyle.Dashed,
   });
   new ResizeObserver(() => CHART.chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
     .observe(box);
@@ -601,6 +568,25 @@ function ensureChart(){
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollQuote();
   });
+  const tz = $("tzSel");
+  tz.value = PREFS.tz;
+  tz.onchange = () => { PREFS.tz = tz.value; savePrefs(); loadBars(); };
+  $("gearBtn").onclick = () => { $("prefsRow").hidden = !$("prefsRow").hidden; };
+  const applyColors = () => {
+    CHART.series.applyOptions({upColor:PREFS.up, downColor:PREFS.dn,
+      wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px});
+    savePrefs();
+  };
+  for (const [id, key] of [["cUp","up"],["cDn","dn"],["cPx","px"]]){
+    const inp = $(id);
+    inp.value = PREFS[key];
+    inp.oninput = () => { PREFS[key] = inp.value; applyColors(); };
+  }
+  $("prefReset").onclick = () => {
+    Object.assign(PREFS, {up:DEF_PREFS.up, dn:DEF_PREFS.dn, px:DEF_PREFS.px});
+    for (const [id, key] of [["cUp","up"],["cDn","dn"],["cPx","px"]]) $(id).value = PREFS[key];
+    applyColors();
+  };
   return true;
 }
 
@@ -610,7 +596,7 @@ async function loadBars(){
     const r = await fetch(`/api/chart?target=${TARGET}&interval=${CHART.iv}`);
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    const bars = d.bars.map(b => ({...b, time: parisShift(b.time)}));
+    const bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
     if (CHART.lastBar && CHART.iv !== "1m"){
@@ -622,7 +608,7 @@ async function loadBars(){
     } else {
       CHART.chart.timeScale().fitContent();
     }
-    $("chartNote").textContent = TARGET + t("chartHint");
+    $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
     applyLevelLines();
     clearInterval(CHART.poll);
     CHART.poll = setInterval(pollQuote, 5000);
@@ -638,7 +624,7 @@ async function pollQuote(){
     const d = await r.json();
     if (!r.ok || d.price == null) return;
     const sec = CHART.ivSec[CHART.iv], p = d.price;
-    const bucket = Math.floor(parisShift(d.time || Date.now()/1000) / sec) * sec;
+    const bucket = Math.floor(tzShift(d.time || Date.now()/1000) / sec) * sec;
     if (bucket > CHART.lastBar.time){
       CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
     }else{

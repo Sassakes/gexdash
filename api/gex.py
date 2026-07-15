@@ -35,6 +35,8 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/admin": ("admin.html", "text/html; charset=utf-8"),
+    "/dash": ("dash.html", "text/html; charset=utf-8"),
+    "/dash.html": ("dash.html", "text/html; charset=utf-8"),
     "/admin.html": ("admin.html", "text/html; charset=utf-8"),
     "/history.json": ("history.json", "application/json"),
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
