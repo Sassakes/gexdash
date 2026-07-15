@@ -358,8 +358,9 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
         levels.append((flip, "Gamma Flip", "flip"))
 
     if em is not None:
-        levels.append((spot + em["straddle"], "EM High", "emh"))
-        levels.append((spot - em["straddle"], "EM Low", "eml"))
+        a = em.get("anchor_idx", spot)
+        levels.append((a + em["straddle"], "EM High", "emh"))
+        levels.append((a - em["straddle"], "EM Low", "eml"))
 
     if extras:
         levels.extend(extras)
@@ -675,27 +676,44 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     if flip is None:  # régime très déséquilibré : élargir avant d'abandonner
         flip = zero_gamma_flip(opts, spot * 0.85, spot * 1.15)
     iv = atm_iv(spot, opts)
-    em = atm_straddle(data, spot, today=today)
-    if em is not None:
-        em["source"] = "straddle"
-    # Garde-fou EM : le straddle ne vaut que ce que valent ses quotes. Hors
-    # séance (mids GTH morts/élargis), s'il s'écarte de >35% du modèle IV
-    # (straddle théorique ~= 0.8 x sigma journalier), on sert le modèle.
+
+    # basis et open daily calculés tôt : l'EM daily s'ancre au Daily Open
+    basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
+    if basis_source == "none":  # Yahoo KO : dernière basis connue plutôt que 0
+        last = kv_get(f"gex:basis:{target}")
+        if last is not None:
+            try:
+                basis = float(last)
+                nq_price = spot + basis
+                basis_source = "last-known"
+            except ValueError:
+                pass
+    elif basis_source in ("yahoo", "manual"):
+        kv_set(f"gex:basis:{target}", str(round(basis, 2)), ex=7 * 86400)
+    d_open, atr14 = daily_bars(cfg["ychart"])
+
+    # EM DAILY : straddle théorique plein-jour = 0.8 x sigma implicite,
+    # ancré au Daily Open — stable toute la séance (le straddle de marché,
+    # lui, mesure le move RESTANT et fond au fil de la journée : il est
+    # conservé en information secondaire).
+    market = atm_straddle(data, spot, today=today)
+    em = None
     if iv is not None:
-        model = 0.8 * spot * iv / math.sqrt(252)
-        if em is None:
-            em = {"expiry": None, "strike": round(spot),
-                  "call_mid": None, "put_mid": None,
-                  "straddle": round(model, 2),
-                  "em_pct": round(100.0 * model / spot, 3),
-                  "quality": "model", "source": "iv-model"}
-        elif (em.get("quality") == "indicative"
-              and abs(em["straddle"] - model) / model > 0.35):
-            em["raw_straddle"] = em["straddle"]
-            em["straddle"] = round(model, 2)
-            em["em_pct"] = round(100.0 * model / spot, 3)
-            em["quality"] = "model"
-            em["source"] = "iv-model (stale quotes)"
+        size = 0.8 * spot * iv / math.sqrt(252)
+        anchor_idx = (d_open - basis) if d_open is not None else spot
+        em = {"straddle": round(size, 2),
+              "em_pct": round(100.0 * size / spot, 3),
+              "anchor_idx": round(anchor_idx, 2),
+              "anchor": round(anchor_idx + basis, 1),
+              "sigma1d": round(spot * iv / math.sqrt(252), 2),
+              "source": "0.8σ daily", "quality": "model",
+              "expiry": market["expiry"] if market else None,
+              "market_straddle": market["straddle"] if market else None,
+              "market_quality": market["quality"] if market else None}
+    elif market is not None:  # pas d'IV exploitable : straddle brut en secours
+        em = dict(market, source="straddle", anchor_idx=spot,
+                  anchor=None, market_straddle=market["straddle"],
+                  market_quality=market["quality"])
 
     # ---- extra levels: 0DTE walls, max pain, IV-based 1D range ----
     extras = []
@@ -713,22 +731,11 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         extras.append((spot - rng, "1D Min", "ivl"))
     bands_meta = []
     if em is not None and em_bands:
-        band_lv, bands_meta = em_bands_levels(spot, em["straddle"], em_bands)
+        band_lv, bands_meta = em_bands_levels(em.get("anchor_idx", spot),
+                                              em["straddle"], em_bands)
         extras.extend(band_lv)
 
     levels = extract_levels(spot, strikes, net, flip, em=em, extras=extras, top_n=top_n)
-    basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
-    if basis_source == "none":  # Yahoo KO : dernière basis connue plutôt que 0
-        last = kv_get(f"gex:basis:{target}")
-        if last is not None:
-            try:
-                basis = float(last)
-                nq_price = spot + basis
-                basis_source = "last-known"
-            except ValueError:
-                pass
-    elif basis_source in ("yahoo", "manual"):
-        kv_set(f"gex:basis:{target}", str(round(basis, 2)), ex=7 * 86400)
     net_total_bn = float(net.sum()) / 1e9
     call_oi = sum(o.OI for o in opts if o.is_call)
     put_oi = sum(o.OI for o in opts if not o.is_call)
@@ -746,7 +753,6 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
             b["high"] = round(spot + em["straddle"] * b["pct"] / 100 + basis, 1)
             b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
         em["bands"] = bands_meta
-    d_open, atr14 = daily_bars(cfg["ychart"])
     grid = open_grid(d_open, iv=iv, atr=atr14)
 
     pine_rows = [(p + basis, l, k) for p, l, k in levels]

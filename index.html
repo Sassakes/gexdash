@@ -153,18 +153,24 @@
 
   /* ============ chart ============ */
   .chartbox{height:400px; position:relative}
-  .ivs{display:inline-flex; border:1px solid var(--line); margin-left:auto}
+  .cbar{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 12px; border-bottom:1px solid var(--line);
+    overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  }
+  .cbar::-webkit-scrollbar{display:none}
+  .ivs{display:inline-flex; border:1px solid var(--line); background:var(--surface2); flex:none}
   .ivs button{
     background:transparent; color:var(--faint); border:none;
-    border-right:1px solid var(--line); padding:3px 10px; font-size:10.5px;
+    border-right:1px solid var(--line); padding:6px 13px; font-size:11px;
     cursor:pointer; letter-spacing:.04em; font-family:var(--mono);
+    min-height:30px; transition:color .12s ease, background .12s ease;
   }
   .ivs button:last-child{border-right:none}
-  .ivs button.on{color:var(--gold); background:var(--gold-soft)}
+  .ivs button:hover{color:var(--text)}
+  .ivs button.on{color:var(--gold); background:var(--gold-soft); font-weight:600}
   .ivs button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-
-  /* ============ rail ============ */
-  #rail svg{display:block; width:100%; height:auto}
+  .chips button.on::before{content:"● "; font-size:7px; vertical-align:2px}
 
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
@@ -235,6 +241,33 @@
     .panel, .stats{animation:rise .28s ease-out both}
     @keyframes rise{from{opacity:0; transform:translateY(5px)} to{opacity:1; transform:none}}
   }
+
+  /* ============ mobile ============ */
+  @media(max-width:640px){
+    main{padding:16px 12px 40px}
+    header{gap:10px; padding-bottom:14px; margin-bottom:14px}
+    .brand h1{font-size:14px; letter-spacing:.16em}
+    .brand .sub{font-size:10px}
+    #statusPill{order:3}
+    #langSel{order:4; margin-left:auto}
+    .refresh{order:5; width:100%; margin-left:0}
+    .refresh input{flex:1; width:auto; font-size:16px}   /* 16px : empêche le zoom iOS */
+    #refreshBtn{padding:10px 18px; flex:none}
+    .toplink{padding:9px 12px; font-size:11.5px}
+    #pineTopBtn{padding:9px 12px}
+    .tabs button{padding:10px 0; flex:1; min-width:64px}
+    .tabs{display:flex; width:100%}
+    .stats{grid-template-columns:repeat(2, 1fr)}
+    .cell{padding:10px 12px}
+    .cell.price .val{font-size:22px}
+    .chartbox{height:300px}
+    .cbar{padding:8px 10px}
+    .ivs button{padding:8px 12px; min-height:36px}
+    thead th, td{padding-left:12px; padding-right:12px}
+    td.dist{width:auto; font-size:11px}
+    .em-band .v{font-size:15px}
+    footer{flex-direction:column; gap:4px}
+  }
 </style>
 </head>
 <body>
@@ -288,24 +321,20 @@
 
   <section class="panel" id="chartPanel">
     <h2><span id="chartTitle">Chart · niveaux GEX superposés</span>
-      <span class="note" id="chartNote"></span>
-      <span class="ivs" id="lvChips" style="margin-left:auto">
-        <button data-g="gex" class="on" title="Walls, 0DTE, flip, Max Pain, G±">GEX</button>
-        <button data-g="em" class="on" title="Expected move, bandes, 1D min/max">EM · 1D</button>
-        <button data-g="open" class="on" title="Daily Open ± multiples d'ATR14">Open</button>
+      <span class="note" id="chartNote"></span></h2>
+    <div class="cbar">
+      <span class="ivs chips" id="lvChips">
+        <button data-g="gex" class="on">GEX</button>
+        <button data-g="em" class="on">EM · 1D</button>
+        <button data-g="open" class="on">Open</button>
       </span>
-      <span class="ivs" id="ivs" style="margin-left:8px">
+      <span class="ivs" id="ivs">
         <button data-iv="1m">1m</button>
         <button data-iv="5m" class="on">5m</button>
         <button data-iv="15m">15m</button>
       </span>
-    </h2>
+    </div>
     <div class="chartbox" id="chartBox"></div>
-  </section>
-
-  <section class="panel">
-    <h2><span id="railTitle">Positionnement</span> <span class="note" id="railNote"></span></h2>
-    <div class="pad" id="rail"></div>
   </section>
 
   <section class="panel">
@@ -359,9 +388,10 @@ const T = {
     notPub:" · NON PUBLIÉ", levels:t0=>"Niveaux du jour · échelle "+t0,
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Régime", stPC:"P/C OI", stIV:"IV ATM",
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
-    rail:"Positionnement", chart:"Chart · niveaux GEX superposés", chartHint:" · heure Paris",
+    chart:"Chart · niveaux GEX superposés", chartHint:" · heure Paris",
     chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
+    emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
@@ -377,9 +407,10 @@ const T = {
     notPub:" · NOT PUBLISHED", levels:t0=>"Today's levels · "+t0+" scale",
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Regime", stPC:"P/C OI", stIV:"ATM IV",
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
-    rail:"Positioning", chart:"Chart · GEX levels overlay", chartHint:" · Paris time",
+    chart:"Chart · GEX levels overlay", chartHint:" · Paris time",
     chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
+    emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
@@ -431,7 +462,6 @@ async function loadTarget(){
 function applyLang(){
   document.querySelectorAll("#langSel button").forEach(b =>
     b.classList.toggle("on", b.dataset.l === LANG));
-  $("railTitle").textContent = t("rail");
   $("chartTitle").textContent = t("chart");
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
@@ -681,88 +711,11 @@ function show(d){
   CHART.grid = d.open_grid || null;
   loadBars();
 
-  renderRail(d);
   renderLevels(d);
   renderEM(d);
   renderPine(d);
   const srcs = (d.sources||[]).filter(s=>!s.error).map(s=>s.chain.replace("_","")).join(" + ");
   $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T"," ").slice(0,16), d.mode, srcs, d.expiries.length);
-}
-
-/* ---- rail signature : bande d'instrument, labels anti-collision ---- */
-function renderRail(d){
-  const marks = d.levels
-    .filter(L => SHORT[L.kind])
-    .map(L => ({p:L.price_nq, tag:SHORT[L.kind], color:KIND_COLOR[L.kind],
-                dash:["flip","emh","eml","res0","sup0","mpain"].includes(L.kind)}));
-  if (d.nq_price != null)
-    marks.push({p:d.nq_price, tag:d.target||"NQ", color:C.gold, cursor:true});
-  if (marks.length < 2){ $("rail").textContent = "—"; $("railNote").textContent=""; return; }
-
-  marks.sort((a,b)=>a.p-b.p);
-  const pMin = marks[0].p, pMax = marks[marks.length-1].p, span = (pMax-pMin)||1;
-  const W=840, mX=34, axisY=78, laneH=17;
-  const X = p => mX + (p-pMin)/span * (W-2*mX);
-
-  // lanes anti-collision : 2 au-dessus, 2 en dessous
-  const lanes = [[],[],[],[]]; // 0,1 = dessus · 2,3 = dessous
-  const width = m => Math.max(m.tag.length, String(Math.round(m.p)).length) * 6.6 + 10;
-  for (const m of marks){
-    const x = X(m.p), w = width(m);
-    let li = m.cursor ? 2 : 0;
-    for (; li < 4; li++){
-      const lane = lanes[li];
-      if (!lane.length || x - w/2 > lane[lane.length-1].right + 6){ break; }
-    }
-    li = Math.min(li, 3);
-    lanes[li].push({right: x + width(m)/2});
-    m.lane = li;
-  }
-  const H = axisY + 2*laneH + 40;
-  const svg = el("svg", {viewBox:`0 0 ${W} ${H}`, role:"img",
-    "aria-label":"Position des niveaux gamma autour du prix"});
-
-  // zone EM
-  const emh = marks.find(m=>m.tag==="EM+"), eml = marks.find(m=>m.tag==="EM−");
-  if (emh && eml)
-    el("rect",{x:X(eml.p), y:axisY-12, width:Math.max(1, X(emh.p)-X(eml.p)), height:24,
-      fill:"rgba(240,185,11,.06)"},svg);
-
-  // axe
-  el("line",{x1:mX-14,y1:axisY,x2:W-mX+14,y2:axisY,stroke:C.line,"stroke-width":1.4},svg);
-  el("line",{x1:mX-14,y1:axisY,x2:W-mX+14,y2:axisY,stroke:"rgba(240,185,11,.18)","stroke-width":1.4,
-    "stroke-dasharray":"1 5"},svg);
-
-  for (const m of marks){
-    const x = X(m.p);
-    const above = m.lane < 2;
-    const laneOff = (m.lane % 2) * laneH;
-    const ty = above ? axisY - 26 - laneOff : axisY + 34 + laneOff;
-
-    if (m.cursor){
-      el("path",{d:`M ${x} ${axisY-11} L ${x+6} ${axisY} L ${x} ${axisY+11} L ${x-6} ${axisY} Z`,
-        fill:C.gold},svg);
-    }else{
-      el("line",{x1:x,y1:axisY-9,x2:x,y2:axisY+9,stroke:m.color,"stroke-width":1.6,
-        "stroke-dasharray":m.dash?"3 2":"none"},svg);
-    }
-    // connecteur discret vers le label si lane éloignée
-    const cy1 = above ? axisY-11 : axisY+11;
-    const cy2 = above ? ty+4 : ty-14;
-    if (Math.abs(cy2-cy1) > 8)
-      el("line",{x1:x,y1:cy1,x2:x,y2:cy2,stroke:m.color,opacity:.28,"stroke-width":1},svg);
-
-    const t1 = el("text",{x:x,y:ty,fill:m.color,"font-size":10.5,"text-anchor":"middle",
-      "font-family":"IBM Plex Mono, monospace","font-weight":m.cursor?600:500},svg);
-    t1.textContent = m.tag;
-    const t2 = el("text",{x:x,y:ty+11,fill:m.cursor?m.color:C.faint,"font-size":9.5,
-      "text-anchor":"middle","font-family":"IBM Plex Mono, monospace"},svg);
-    t2.textContent = fmt(m.p,0);
-  }
-
-  $("rail").innerHTML = "";
-  $("rail").appendChild(svg);
-  $("railNote").textContent = fmt(pMin,0) + " — " + fmt(pMax,0);
 }
 
 function renderLevels(d){
@@ -781,21 +734,26 @@ function renderEM(d){
   const em = d.expected_move;
   if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">${t("emNone")}</span>`; $("emNote").textContent=""; return; }
   const hi = d.levels.find(L=>L.kind==="emh"), lo = d.levels.find(L=>L.kind==="eml");
-  $("emNote").textContent = (em.expiry || "1D") +
-    (em.quality === "model" ? t("emModel") : em.quality === "indicative" ? t("emStale") : "");
+  const daily = em.source && em.source.indexOf("0.8") === 0;
+  $("emNote").textContent = daily ? t("emDaily") : (em.expiry || "");
   const bands = (em.bands||[]).map(b =>
     `<div class="em-sub">±${b.pct}% <span class="dn">${fmt(b.low)}</span> / <span class="up">${fmt(b.high)}</span>` +
     ` · ${t("emIn")} ${fmt(b.prob_inside,0)}% · ${t("emTouch")} ${fmt(b.prob_touch_side,0)}%</div>`).join("");
   const p100 = em.prob_inside != null
     ? `<div class="em-sub">±100% ${t("emClose")} ${fmt(em.prob_inside,0)}% · ${t("emSide")} ${fmt(em.prob_touch_side,0)}%</div>` : "";
+  const mkt = em.market_straddle != null
+    ? `<div class="em-sub" style="color:var(--faint)">${t("emMarket")} ${fmt(em.market_straddle)} ${t("pts")}` +
+      `${em.market_quality === "indicative" ? t("emStaleShort") : ""}</div>` : "";
+  const mid = daily
+    ? `<span class="em-mid">${t("emAnchor")} ${em.anchor != null ? fmt(em.anchor,0) : ""} ±${fmt(em.straddle)} ${t("pts")}<b>${fmt(em.em_pct,2)} %</b></span>`
+    : `<span class="em-mid">±${fmt(em.straddle)} ${t("pts")}<b>${fmt(em.em_pct,2)} %</b></span>`;
   $("emCard").innerHTML = `
     <div class="em-band">
       <span class="v dn">${lo?fmt(lo.price_nq):"—"}</span>
-      <span class="em-mid">±${fmt(em.straddle)} pts<b>${fmt(em.em_pct,2)} %</b></span>
+      ${mid}
       <span class="v up">${hi?fmt(hi.price_nq):"—"}</span>
     </div>
-    ${p100}${bands}
-    <div class="em-sub" style="color:var(--faint)">ATM ${fmt(em.strike,0)} · call ${fmt(em.call_mid,2)} / put ${fmt(em.put_mid,2)}</div>`;
+    ${p100}${bands}${mkt}`;
 }
 
 async function copyPine(d, btn, idleKey){
