@@ -120,6 +120,23 @@ def _q_target(qs):
     return t if t in TARGETS else None
 
 
+YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC"}
+CHART_INTERVALS = {"1m": "1d", "5m": "1d", "15m": "5d"}  # interval -> range
+
+
+def _yahoo_chart(sym, interval, rng):
+    """Fetch Yahoo chart JSON (candles + meta). Isolated for testability."""
+    import requests
+    from urllib.parse import quote as _q
+
+    r = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{_q(sym)}"
+        f"?interval={interval}&range={rng}",
+        headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    r.raise_for_status()
+    return r.json()["chart"]["result"][0]
+
+
 VALID_HOOK_PREFIXES = ("https://discord.com/api/webhooks/",
                        "https://discordapp.com/api/webhooks/",
                        "https://ptb.discord.com/api/webhooks/",
@@ -296,6 +313,53 @@ class handler(BaseHTTPRequestHandler):
                 )
                 return
             self._send(200, fpath.read_bytes(), ctype)
+            return
+
+        # ---- chart data: candles + last price, proxied (Yahoo blocks browser CORS) ----
+        if path in ("/api/chart", "/api/quote"):
+            qs0 = parse_qs(parsed.query)
+            target = _q_target(qs0)
+            if target is None:
+                self._send(400, json.dumps({"error": "target must be NQ, ES or SPX"}).encode(),
+                           "application/json")
+                return
+            interval = (qs0.get("interval", ["5m"])[0] or "5m")
+            if interval not in CHART_INTERVALS:
+                interval = "5m"
+            try:
+                res = _yahoo_chart(YCHART[target], interval, CHART_INTERVALS[interval])
+                meta = res.get("meta", {})
+                if path == "/api/quote":
+                    body = json.dumps({
+                        "target": target,
+                        "price": meta.get("regularMarketPrice"),
+                        "time": meta.get("regularMarketTime"),
+                    }).encode()
+                    max_age = 4
+                else:
+                    ts = res.get("timestamp") or []
+                    q = (res.get("indicators", {}).get("quote") or [{}])[0]
+                    bars = []
+                    for i, t in enumerate(ts):
+                        o, h, l, c = (q.get("open") or [None])[i], (q.get("high") or [None])[i],                                      (q.get("low") or [None])[i], (q.get("close") or [None])[i]
+                        if None in (o, h, l, c):
+                            continue
+                        bars.append({"time": t, "open": round(o, 2), "high": round(h, 2),
+                                     "low": round(l, 2), "close": round(c, 2)})
+                    body = json.dumps({"target": target, "interval": interval,
+                                       "bars": bars,
+                                       "price": meta.get("regularMarketPrice")}).encode()
+                    max_age = 12
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", f"public, s-maxage={max_age}, max-age=0")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                traceback.print_exc()
+                self._send(502, json.dumps({"error": f"chart source: {e}"}).encode(),
+                           "application/json")
             return
 
         # ---- admin: current webhook config (masked) ----

@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root{
     --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
@@ -132,6 +133,22 @@
   .panel > h2 .note{font-family:var(--mono); letter-spacing:0; text-transform:none; font-weight:400; font-size:11px; color:var(--faint)}
   .pad{padding:14px 16px}
 
+  /* ============ chart ============ */
+  .chartbox{height:400px; position:relative}
+  .chartbox .src{
+    position:absolute; right:10px; top:8px; z-index:3; font-size:10px;
+    color:var(--faint); pointer-events:none;
+  }
+  .ivs{display:inline-flex; border:1px solid var(--line); margin-left:auto}
+  .ivs button{
+    background:transparent; color:var(--faint); border:none;
+    border-right:1px solid var(--line); padding:3px 10px; font-size:10.5px;
+    cursor:pointer; letter-spacing:.04em; font-family:var(--mono);
+  }
+  .ivs button:last-child{border-right:none}
+  .ivs button.on{color:var(--gold); background:var(--gold-soft)}
+  .ivs button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+
   /* ============ rail ============ */
   #rail svg{display:block; width:100%; height:auto}
 
@@ -239,6 +256,18 @@
 
 <div id="app" style="display:none">
   <div class="stats" id="badges"></div>
+
+  <section class="panel" id="chartPanel">
+    <h2>Chart · niveaux GEX superposés
+      <span class="note" id="chartNote"></span>
+      <span class="ivs" id="ivs">
+        <button data-iv="1m">1m</button>
+        <button data-iv="5m" class="on">5m</button>
+        <button data-iv="15m">15m</button>
+      </span>
+    </h2>
+    <div class="chartbox" id="chartBox"><span class="src">source Yahoo · quasi temps réel</span></div>
+  </section>
 
   <section class="panel">
     <h2>Positionnement <span class="note" id="railNote"></span></h2>
@@ -373,6 +402,99 @@ async function refreshLive(){
   }
 }
 
+/* ---- chart live : Lightweight Charts + proxy Yahoo ---- */
+const CHART = {chart:null, series:null, lines:[], iv:"5m", lastBar:null, ivSec:{"1m":60,"5m":300,"15m":900},
+               poll:null, levels:null};
+
+function ensureChart(){
+  if (CHART.chart || typeof LightweightCharts === "undefined"){
+    if (typeof LightweightCharts === "undefined") $("chartPanel").style.display = "none";
+    return !!CHART.chart;
+  }
+  const box = $("chartBox");
+  CHART.chart = LightweightCharts.createChart(box, {
+    layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
+            fontFamily:"IBM Plex Mono, monospace", fontSize:10},
+    grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
+    rightPriceScale:{borderColor:C.line},
+    timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal,
+      vertLine:{color:C.faint, width:1, style:LightweightCharts.LineStyle.Dashed},
+      horzLine:{color:C.faint, width:1, style:LightweightCharts.LineStyle.Dashed}},
+  });
+  CHART.series = CHART.chart.addCandlestickSeries({
+    upColor:C.teal, downColor:C.red, borderVisible:false,
+    wickUpColor:C.teal, wickDownColor:C.red,
+    priceLineColor:C.gold, priceLineStyle:LightweightCharts.LineStyle.Dotted,
+  });
+  new ResizeObserver(() => CHART.chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
+    .observe(box);
+  document.querySelectorAll("#ivs button").forEach(b => b.onclick = () => {
+    CHART.iv = b.dataset.iv;
+    document.querySelectorAll("#ivs button").forEach(x => x.classList.toggle("on", x === b));
+    loadBars();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pollQuote();
+  });
+  return true;
+}
+
+async function loadBars(){
+  if (!ensureChart()) return;
+  try{
+    const r = await fetch(`/api/chart?target=${TARGET}&interval=${CHART.iv}`);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || r.status);
+    CHART.series.setData(d.bars);
+    CHART.lastBar = d.bars[d.bars.length - 1] || null;
+    $("chartNote").textContent = TARGET + " · " + d.bars.length + " bougies";
+    applyLevelLines();
+    clearInterval(CHART.poll);
+    CHART.poll = setInterval(pollQuote, 8000);
+  }catch(e){
+    $("chartNote").textContent = "flux indisponible (" + e.message + ")";
+  }
+}
+
+async function pollQuote(){
+  if (!CHART.series || !CHART.lastBar || document.hidden) return;
+  try{
+    const r = await fetch(`/api/quote?target=${TARGET}`);
+    const d = await r.json();
+    if (!r.ok || d.price == null) return;
+    const sec = CHART.ivSec[CHART.iv], p = d.price;
+    const bucket = Math.floor((d.time || Date.now()/1000) / sec) * sec;
+    if (bucket > CHART.lastBar.time){
+      CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
+    }else{
+      CHART.lastBar = {time:CHART.lastBar.time, open:CHART.lastBar.open,
+        high:Math.max(CHART.lastBar.high, p), low:Math.min(CHART.lastBar.low, p), close:p};
+    }
+    CHART.series.update(CHART.lastBar);
+  }catch(e){}
+}
+
+function applyLevelLines(){
+  if (!CHART.series || !CHART.levels) return;
+  for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
+  CHART.lines = [];
+  const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
+  const skip = [];
+  for (const L of CHART.levels){
+    if (skip.includes(L.kind)) continue;
+    const solid = !dashKinds.includes(L.kind);
+    CHART.lines.push(CHART.series.createPriceLine({
+      price: L.price_nq,
+      color: KIND_COLOR[L.kind] || C.muted,
+      lineWidth: 1,
+      lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: ["res","sup","flip","res0","sup0"].includes(L.kind),
+      title: L.label,
+    }));
+  }
+}
+
 function show(d){
   $("status").style.display = "none";
   $("app").style.display = "block";
@@ -397,6 +519,9 @@ function show(d){
   ];
   $("badges").innerHTML = stats.map(([k,v,c],i) =>
     `<div class="cell${i===0?" price":""}"><span class="lbl">${k}</span><span class="val ${c!=="price"?c:""}">${v}</span></div>`).join("");
+
+  CHART.levels = d.levels;
+  loadBars();
 
   renderRail(d);
   renderLevels(d);
