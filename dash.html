@@ -31,7 +31,7 @@
     content:""; position:fixed; inset:0 0 auto 0; height:1px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--gold-glow), transparent);
   }
-  main{max-width:1280px; margin:0 auto; padding:26px 20px 56px}
+  main{max-width:none; margin:0; padding:26px 24px 56px}  /* plan de travail pleine largeur */
   a{color:var(--gold)}
   button, select{font-family:var(--mono)}
   header{
@@ -82,11 +82,13 @@
     text-transform:uppercase; color:var(--gold);
   }
   .card .head .n{font-size:10.5px; color:var(--faint)}
-  .card .head button{
-    margin-left:auto; background:none; border:none; color:var(--faint);
+  .card .head .gh{margin-left:auto; display:flex}
+  .card .head .gh .cgear{width:26px; height:26px; font-size:12px}
+  .card .head .rm{
+    background:none; border:none; color:var(--faint);
     font-size:13px; cursor:pointer; padding:4px 8px;
   }
-  .card .head button:hover{color:var(--red)}
+  .card .head .rm:hover{color:var(--red)}
   .card .box{height:calc(100% - 37px); position:relative}
   body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
   body.editing .card .head{cursor:grab}
@@ -110,6 +112,46 @@
     .card .rsz{display:none !important}
     #editBtn{display:none}
   }
+
+  /* ═══════════════ couche de raffinement ═══════════════ */
+  body{
+    background:
+      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
+      radial-gradient(900px 500px at 50% 118%, rgba(38,166,154,.035), transparent 60%),
+      var(--bg);
+  }
+  ::-webkit-scrollbar{width:9px; height:9px}
+  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#33333D}
+  header h1 em{text-shadow:0 0 22px var(--gold-glow)}
+  .topnav a{position:relative}
+  .topnav a::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
+    background:var(--gold); transform:scaleX(0); transform-origin:left;
+    transition:transform .16s ease;
+  }
+  .topnav a:hover::after{transform:scaleX(1)}
+  .addbar select, #addBtn, #editBtn{min-height:36px}
+  #addBtn{background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1))}
+  #addBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
+  #addBtn:active, #editBtn:active{transform:translateY(1px)}
+  .card{
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+    transition:box-shadow .16s ease;
+  }
+  .card:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 18px 44px -18px rgba(0,0,0,.8)}
+  .card .head{background:linear-gradient(180deg, rgba(255,255,255,.015), transparent)}
+  .card.dragging{box-shadow:0 24px 60px -16px rgba(0,0,0,.85), 0 0 0 1px var(--gold-glow)}
+  .card .rsz{
+    background:linear-gradient(135deg, transparent 55%, var(--gold) 55%);
+    opacity:.55; transition:opacity .12s ease;
+  }
+  .card .rsz:hover{opacity:1}
+  /* la grille d'ancrage se révèle en mode édition (fond posé par JS) */
+  body.editing #board{
+    outline:1px dashed rgba(240,185,11,.18); outline-offset:8px;
+  }
+  #empty{letter-spacing:.02em}
 </style>
 </head>
 <body>
@@ -155,8 +197,6 @@ const GROUP_KINDS = {
   em:  ["emh","eml","emb","ivh","ivl"],
 };
 /* PREFS, tzShift, TZ_CITY, buildGearMenu : fournis par /ui.js (partagés avec l'accueil) */
-let LVSHOW = {gex:true, em:true, open:true};
-try{ LVSHOW = Object.assign(LVSHOW, JSON.parse(localStorage.getItem("gexLvShow")||"{}")); }catch(_){}
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
@@ -237,7 +277,8 @@ async function mountCard(cfg, host){
   SERIES.push(series);
   new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
     .observe(box);
-  buildGearMenu(box, {applyColors: applyAllColors, reloadBars: render});
+  buildGearMenu(host.querySelector(".gh"),
+                {applyColors: applyAllColors, reloadBars: render, onLevelsChanged: render});
 
   let lastBar = null;
   try{
@@ -358,9 +399,9 @@ function render(){
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
-      <span class="n"></span><button title="Retirer">✕</button></div>
+      <span class="n"></span><span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
       <div class="box"></div>`;
-    card.querySelector(".head button").onclick = () => {
+    card.querySelector(".rm").onclick = () => {
       CARDS.splice(idx, 1); saveCards(); render();
     };
     board.appendChild(card);
@@ -391,11 +432,24 @@ $("addBtn").onclick = () => {
   CARDS.push({t: $("addT").value, iv: $("addIv").value, x: spot.x, y: spot.y, w: 6, h: 4});
   saveCards(); render();
 };
+function paintBoardGrid(){
+  if (EDIT){
+    const cw = cellW();
+    board.style.backgroundImage =
+      "radial-gradient(circle, rgba(240,185,11,.22) 1px, transparent 1.6px)";
+    board.style.backgroundSize = (cw + GAP) + "px " + (CELL_H + GAP) + "px";
+    board.style.backgroundPosition = "-" + (GAP/2) + "px -" + (GAP/2) + "px";
+  } else {
+    board.style.backgroundImage = "";
+  }
+}
+
 $("editBtn").onclick = () => {
   EDIT = !EDIT;
   document.body.classList.toggle("editing", EDIT);
   $("editBtn").classList.toggle("on", EDIT);
   $("editLbl").textContent = EDIT ? tx("done") : tx("edit");
+  paintBoardGrid();
 };
 window.addEventListener("resize", () => {
   CARDS.forEach((cfg, i) => {
@@ -403,6 +457,7 @@ window.addEventListener("resize", () => {
     if (card) layoutCard(card, cfg);
   });
   boardHeight();
+  paintBoardGrid();
 });
 if (typeof LightweightCharts === "undefined"){
   $("empty").hidden = false; $("empty").textContent = tx("feedKo");

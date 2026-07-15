@@ -55,6 +55,28 @@
   #msg{margin-top:10px; font-size:12px; display:none}
   #msg.ok{color:var(--teal)} #msg.err{color:var(--red)}
   .note{color:var(--muted); font-size:11.5px; padding:12px 14px}
+
+  /* ═══════════════ couche de raffinement ═══════════════ */
+  body{
+    background:
+      radial-gradient(900px 360px at 50% -160px, rgba(240,185,11,.05), transparent 62%),
+      var(--bg);
+  }
+  ::-webkit-scrollbar{width:9px}
+  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
+  h1 em{text-shadow:0 0 20px rgba(240,185,11,.3)}
+  .panel{box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -16px rgba(0,0,0,.6)}
+  button{transition:background .12s ease, color .12s ease, border-color .12s ease}
+  button:active{transform:translateY(1px)}
+  #saveBtn, #saveLinksBtn{
+    background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1));
+  }
+  #saveBtn:hover, #saveLinksBtn:hover{
+    background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16));
+  }
+  input:focus-visible, select:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
+  .row{transition:background .12s ease}
+  .row:hover{background:rgba(255,255,255,.014)}
 </style>
 </head>
 <body>

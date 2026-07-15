@@ -160,7 +160,24 @@
   .ivs button:hover{color:var(--text)}
   .ivs button.on{color:var(--gold); background:var(--gold-soft); font-weight:600}
   .ivs button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  .chips button.on::before{content:"● "; font-size:7px; vertical-align:2px}
+  .chips{display:inline-flex; gap:8px; flex:none}
+  .chips button{
+    display:inline-flex; align-items:center; gap:8px;
+    background:var(--surface2); border:1px solid var(--line); color:var(--faint);
+    font:inherit; font-size:11px; letter-spacing:.05em; padding:6px 14px;
+    min-height:30px; cursor:pointer; transition:all .12s ease;
+  }
+  .chips button:hover{color:var(--text); border-color:var(--line-strong)}
+  .chips button.on{
+    color:var(--gold); border-color:rgba(240,185,11,.5);
+    background:linear-gradient(180deg, rgba(240,185,11,.14), rgba(240,185,11,.06));
+  }
+  .chips .led{
+    width:7px; height:7px; border-radius:50%; background:#33333B; flex:none;
+    transition:all .12s ease;
+  }
+  .chips button.on .led{background:var(--gold); box-shadow:0 0 7px var(--gold-glow)}
+  .chips button:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
 
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
@@ -256,6 +273,100 @@
     .em-band .v{font-size:15px}
     footer{flex-direction:column; gap:4px}
   }
+
+  /* ═══════════════ couche de raffinement ═══════════════ */
+  /* — profondeur d'ambiance : lueur froide basse en écho au beam doré haut — */
+  body{
+    background:
+      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
+      radial-gradient(900px 500px at 50% 118%, rgba(38,166,154,.035), transparent 60%),
+      var(--bg);
+  }
+  ::-webkit-scrollbar{width:9px; height:9px}
+  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:#33333D}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  .brand h1 em{text-shadow:0 0 22px var(--gold-glow)}
+  .brand .sub{font-variant-numeric:tabular-nums}
+
+  .topnav a{position:relative}
+  .topnav a::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
+    background:var(--gold); transform:scaleX(0); transform-origin:left;
+    transition:transform .16s ease;
+  }
+  .topnav a:hover::after{transform:scaleX(1)}
+
+  .tabs{background:var(--surface)}
+  .tabs button{min-height:38px; letter-spacing:.06em}
+  .tabs button.on{
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 18px -10px var(--gold-glow);
+  }
+  #statusPill{min-height:32px; font-variant-numeric:tabular-nums}
+  #pineTopBtn{min-height:32px}
+
+  .stats{
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+  }
+  .cell{transition:background .14s ease}
+  .cell:hover{background:rgba(255,255,255,.016)}
+  .cell.price{
+    background:radial-gradient(340px 130px at 18% 0%, rgba(240,185,11,.09), transparent 70%);
+  }
+  .cell.price .val{font-size:28px; letter-spacing:-.015em; text-shadow:0 0 26px rgba(240,185,11,.22)}
+  .cell .lbl{padding-bottom:1px}
+
+  .panel{
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+  }
+  .panel > h2{
+    background:linear-gradient(180deg, rgba(255,255,255,.015), transparent);
+  }
+  .panel > h2::before{text-shadow:0 0 8px var(--gold-glow)}
+
+  .cbar{background:linear-gradient(180deg, rgba(255,255,255,.012), transparent)}
+  .ivs button, .chips button{min-height:32px}
+  .ivs button:active, .chips button:active, #pineTopBtn:active, .tabs button:active{
+    transform:translateY(1px);
+  }
+
+  tbody tr:hover{
+    background:rgba(255,255,255,.02);
+    box-shadow:inset 2px 0 0 rgba(240,185,11,.5);
+  }
+  tbody tr{box-shadow:inset 2px 0 0 transparent; transition:background .12s ease, box-shadow .12s ease}
+  td.price{font-size:13px}
+  thead th{border-bottom:1px solid var(--line-strong)}
+
+  #pineStr{
+    box-shadow:inset 0 2px 8px rgba(0,0,0,.4);
+    scrollbar-width:thin;
+  }
+  #copyBtn{
+    background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1));
+  }
+  #copyBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
+  #copyBtn:active{transform:translateY(1px)}
+
+  .em-band{
+    box-shadow:inset 3px 0 0 rgba(239,83,80,.45), inset -3px 0 0 rgba(38,166,154,.45);
+  }
+  .em-mid b{font-size:15px}
+
+  footer{position:relative; border-top:none; padding-top:16px}
+  footer::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:1px;
+    background:linear-gradient(90deg, var(--line), rgba(240,185,11,.28), var(--line));
+  }
+
+  @media(prefers-reduced-motion:no-preference){
+    .stats{animation-delay:.02s}
+    .panel:nth-of-type(1){animation-delay:.06s}
+    .panel:nth-of-type(2){animation-delay:.1s}
+    .duo .panel:nth-child(1){animation-delay:.14s}
+    .duo .panel:nth-child(2){animation-delay:.18s}
+  }
 </style>
 </head>
 <body>
@@ -305,15 +416,18 @@
     <h2><span id="chartTitle">Chart · niveaux GEX superposés</span>
       <span class="note" id="chartNote"></span></h2>
     <div class="cbar">
-      <span class="ivs chips" id="lvChips">
-        <button data-g="gex" class="on">GEX</button>
-        <button data-g="em" class="on">EM · 1D</button>
-        <button data-g="open" class="on">Open</button>
+      <span class="chips" id="lvChips">
+        <button data-g="gex"><i class="led"></i>GEX</button>
+        <button data-g="em"><i class="led"></i>EM · 1D</button>
+        <button data-g="open"><i class="led"></i>Open</button>
       </span>
-      <span class="ivs" id="ivs">
-        <button data-iv="1m">1m</button>
-        <button data-iv="5m" class="on">5m</button>
-        <button data-iv="15m">15m</button>
+      <span style="display:inline-flex; gap:8px; align-items:center; flex:none">
+        <span class="ivs" id="ivs">
+          <button data-iv="1m">1m</button>
+          <button data-iv="5m" class="on">5m</button>
+          <button data-iv="15m">15m</button>
+        </span>
+        <span id="gearHolder"></span>
       </span>
     </div>
     <div class="chartbox" id="chartBox"></div>
@@ -473,9 +587,6 @@ const GROUP_KINDS = {
   gex: ["res","sup","res0","sup0","flip","hgex","gpos","gneg","mpain"],
   em:  ["emh","eml","emb","ivh","ivl"],
 };
-let LVSHOW = {gex:true, em:true, open:true};
-try{ LVSHOW = Object.assign(LVSHOW, JSON.parse(localStorage.getItem("gexLvShow")||"{}")); }catch(_){}
-
 function paintChips(){
   document.querySelectorAll("#lvChips button").forEach(b =>
     b.classList.toggle("on", !!LVSHOW[b.dataset.g]));
@@ -483,7 +594,7 @@ function paintChips(){
 function bindChips(){
   document.querySelectorAll("#lvChips button").forEach(b => b.onclick = () => {
     LVSHOW[b.dataset.g] = !LVSHOW[b.dataset.g];
-    try{ localStorage.setItem("gexLvShow", JSON.stringify(LVSHOW)); }catch(_){}
+    saveLvShow();
     paintChips();
     applyLevelLines();
   });
@@ -530,11 +641,12 @@ function ensureChart(){
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollQuote();
   });
-  buildGearMenu($("chartBox"), {
+  buildGearMenu($("gearHolder"), {
     applyColors: () => CHART.series.applyOptions({
       upColor:PREFS.up, downColor:PREFS.dn,
       wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px}),
     reloadBars: loadBars,
+    onLevelsChanged: () => { paintChips(); applyLevelLines(); },
   });
   return true;
 }
