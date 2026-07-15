@@ -8,6 +8,7 @@ indicator("GEX Daily Levels", overlay = true, max_lines_count = 64, max_labels_c
 // kinds: res/sup (Call/Put Wall) . res0/sup0 (0DTE walls) . flip (Gamma Flip)
 //        emh/eml (ATM straddle Expected Move) . emb (fractional EM bands)
 //        ivh/ivl (IV-based 1D range) . mpain (Max Pain) . gpos/gneg (top gamma)
+//        opo/opu/opd (Daily Open anchor and +/- percent grid from the open)
 // Levels can come from any gamma data source or your own option-chain math.
 // ============================================================================
 
@@ -77,6 +78,10 @@ bool   shGp = input.bool(true, "G+ (top gamma) ", group = GN, inline = "gp")
 color  cGp  = input.color(#26A69A80, "", group = GN, inline = "gp")
 int    wGp  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gp")
 string sGp  = input.string(SOL, "", options = [SOL, DSH, DOT], group = GN, inline = "gp")
+bool   shOPG = input.bool(true, "Open % grid    ", group = GN, inline = "opg")
+color  cOPG  = input.color(#F0B90B, "", group = GN, inline = "opg")
+int    wOPG  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "opg")
+string sOPG  = input.string(DOT, "", options = [SOL, DSH, DOT], group = GN, inline = "opg")
 bool   shGn = input.bool(true, "G- (top gamma) ", group = GN, inline = "gn")
 color  cGn  = input.color(#EF535080, "", group = GN, inline = "gn")
 int    wGn  = input.int(1, "", minval = 1, maxval = 5, group = GN, inline = "gn")
@@ -98,6 +103,9 @@ f_show(string k) =>
         "mpain" => shMP
         "gpos"  => shGp
         "gneg"  => shGn
+        "opo"   => shOPG
+        "opu"   => shOPG
+        "opd"   => shOPG
         => true
 
 f_col(string k) =>
@@ -115,6 +123,9 @@ f_col(string k) =>
         "mpain" => cMP
         "gpos"  => cGp
         "gneg"  => cGn
+        "opo"   => cOPG
+        "opu"   => color.new(#26A69A, 55)
+        "opd"   => color.new(#EF5350, 55)
         => color.new(#7A7A85, 30)
 
 f_w(string k) =>
@@ -132,6 +143,9 @@ f_w(string k) =>
         "mpain" => wMP
         "gpos"  => wGp
         "gneg"  => wGn
+        "opo"   => wOPG
+        "opu"   => wOPG
+        "opd"   => wOPG
         => 1
 
 f_ls(string s) =>
@@ -152,6 +166,9 @@ f_style(string k) =>
         "mpain" => sMP
         "gpos"  => sGp
         "gneg"  => sGn
+        "opo"   => sOPG
+        "opu"   => sOPG
+        "opd"   => sOPG
         => SOL
     f_ls(s)
 

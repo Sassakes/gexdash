@@ -260,7 +260,12 @@
   <section class="panel" id="chartPanel">
     <h2>Chart · niveaux GEX superposés
       <span class="note" id="chartNote"></span>
-      <span class="ivs" id="ivs">
+      <span class="ivs" id="lvChips" style="margin-left:auto">
+        <button data-g="gex" class="on" title="Walls, 0DTE, flip, Max Pain, G±">GEX</button>
+        <button data-g="em" class="on" title="Expected move, bandes, 1D min/max">EM · 1D</button>
+        <button data-g="open" class="on" title="Grille % depuis le Daily Open">Open %</button>
+      </span>
+      <span class="ivs" id="ivs" style="margin-left:8px">
         <button data-iv="1m">1m</button>
         <button data-iv="5m" class="on">5m</button>
         <button data-iv="15m">15m</button>
@@ -357,6 +362,7 @@ async function load(){
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
     loadTarget();
   });
+  bindChips();
   await loadTarget();
   $("refreshBtn").onclick = refreshLive;
   $("basisIn").addEventListener("keydown", e => { if (e.key === "Enter") refreshLive(); });
@@ -400,6 +406,28 @@ async function refreshLive(){
   }finally{
     btn.disabled = false; btn.textContent = "⟳ Refresh";
   }
+}
+
+/* ---- filtres de familles de niveaux (persistés) ---- */
+const GROUP_KINDS = {
+  gex: ["res","sup","res0","sup0","flip","gpos","gneg","mpain"],
+  em:  ["emh","eml","emb","ivh","ivl"],
+};
+let LVSHOW = {gex:true, em:true, open:true};
+try{ LVSHOW = Object.assign(LVSHOW, JSON.parse(localStorage.getItem("gexLvShow")||"{}")); }catch(_){}
+
+function paintChips(){
+  document.querySelectorAll("#lvChips button").forEach(b =>
+    b.classList.toggle("on", !!LVSHOW[b.dataset.g]));
+}
+function bindChips(){
+  document.querySelectorAll("#lvChips button").forEach(b => b.onclick = () => {
+    LVSHOW[b.dataset.g] = !LVSHOW[b.dataset.g];
+    try{ localStorage.setItem("gexLvShow", JSON.stringify(LVSHOW)); }catch(_){}
+    paintChips();
+    applyLevelLines();
+  });
+  paintChips();
 }
 
 /* ---- chart live : Lightweight Charts + proxy Yahoo ---- */
@@ -480,18 +508,26 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
-  const skip = [];
-  for (const L of CHART.levels){
-    if (skip.includes(L.kind)) continue;
-    const solid = !dashKinds.includes(L.kind);
+  const addLine = (price, color, solid, axisLbl, title) =>
     CHART.lines.push(CHART.series.createPriceLine({
-      price: L.price_nq,
-      color: KIND_COLOR[L.kind] || C.muted,
-      lineWidth: 1,
+      price, color, lineWidth:1,
       lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: ["res","sup","flip","res0","sup0"].includes(L.kind),
-      title: L.label,
+      axisLabelVisible: axisLbl, title,
     }));
+
+  for (const L of CHART.levels){
+    const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
+              : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
+    if (grp && !LVSHOW[grp]) continue;
+    addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
+            ["res","sup","flip","res0","sup0"].includes(L.kind), L.label);
+  }
+  if (LVSHOW.open && CHART.grid){
+    addLine(CHART.grid.anchor, C.gold, true, true, "Daily O");
+    for (const g of CHART.grid.levels){
+      addLine(g.up,   "rgba(38,166,154,.5)", false, false, "+" + g.pct + "%");
+      addLine(g.down, "rgba(239,83,80,.5)",  false, false, "−" + g.pct + "%");
+    }
   }
 }
 
@@ -521,6 +557,7 @@ function show(d){
     `<div class="cell${i===0?" price":""}"><span class="lbl">${k}</span><span class="val ${c!=="price"?c:""}">${v}</span></div>`).join("");
 
   CHART.levels = d.levels;
+  CHART.grid = d.open_grid || null;
   loadBars();
 
   renderRail(d);

@@ -23,10 +23,11 @@ YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1m
 
 # target -> (CBOE option chain, Yahoo future for the basis; None = index scale)
 TARGETS = {
-    "NQ":  {"chain": "_NDX", "future": "NQ=F", "etf": "QQQ"},
-    "ES":  {"chain": "_SPX", "future": "ES=F", "etf": "SPY"},
-    "SPX": {"chain": "_SPX", "future": None,   "etf": "SPY"},
+    "NQ":  {"chain": "_NDX", "future": "NQ=F", "etf": "QQQ", "ychart": "NQ=F"},
+    "ES":  {"chain": "_SPX", "future": "ES=F", "etf": "SPY", "ychart": "ES=F"},
+    "SPX": {"chain": "_SPX", "future": None,   "etf": "SPY", "ychart": "^GSPC"},
 }
+YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=5d"
 CONTRACT_MULT = 100
 RISK_FREE = 0.04
 OCC_RE = re.compile(r"^([A-Z\^_]+?)(\d{6})([CP])(\d{8})$")
@@ -535,6 +536,42 @@ def _discord_embed(payload, dashboard_url):
         }
 
 
+def daily_open(yahoo_sym):
+    """Today's daily-bar open on the TARGET scale (futures daily bar starts
+    18:00 ET the prior evening, so it is fixed well before a pre-open run).
+    None on failure — the grid is then simply omitted."""
+    try:
+        import requests
+        from urllib.parse import quote as _q
+
+        r = requests.get(YAHOO_CHART.format(sym=_q(yahoo_sym)),
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        r.raise_for_status()
+        res = r.json()["chart"]["result"][0]
+        opens = (res.get("indicators", {}).get("quote") or [{}])[0].get("open") or []
+        for v in reversed(opens):
+            if v is not None and math.isfinite(float(v)):
+                return float(v)
+    except Exception:
+        pass
+    return None
+
+
+def open_pct_grid(anchor, step_pct=0.5, n=6):
+    """Daily-open percentage grid: anchor +/- step..n*step percent.
+    Round-percent moves from the open are natural intraday anchors
+    (vol-targeting rebalances, '% day' desk framing)."""
+    if anchor is None or anchor <= 0:
+        return None
+    levels = []
+    for i in range(1, n + 1):
+        p = round(i * step_pct, 2)
+        levels.append({"pct": p,
+                       "up": round(anchor * (1 + p / 100), 1),
+                       "down": round(anchor * (1 - p / 100), 1)})
+    return {"anchor": round(anchor, 1), "step_pct": step_pct, "n": n, "levels": levels}
+
+
 # --------------------------------------------------------------------------- #
 # Output helpers                                                               #
 # --------------------------------------------------------------------------- #
@@ -657,6 +694,16 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
             b["high"] = round(spot + em["straddle"] * b["pct"] / 100 + basis, 1)
             b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
         em["bands"] = bands_meta
+    grid = open_pct_grid(daily_open(cfg["ychart"]))
+
+    pine_rows = [(p + basis, l, k) for p, l, k in levels]
+    if grid:
+        pine_rows.append((grid["anchor"], "Daily O", "opo"))
+        for g in grid["levels"]:
+            pine_rows.append((g["up"], f"+{g['pct']:g}%", "opu"))
+            pine_rows.append((g["down"], f"-{g['pct']:g}%", "opd"))
+    pine = ";".join(f"{p:.1f},{l},{k}" for p, l, k in sorted(pine_rows, key=lambda x: -x[0]))
+
     return {
         "date": today.isoformat(),
         "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -678,6 +725,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         "sources": sources,
         "bucket": bucket,
         "levels": levels_out,
+        "open_grid": grid,
         "profile": gex_profile(spot, strikes, net, basis),
-        "pine": to_pine_string(levels, basis),
+        "pine": pine,
     }
