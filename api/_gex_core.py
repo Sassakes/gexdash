@@ -320,17 +320,18 @@ def max_pain(opts):
 
 
 def atm_iv(spot, opts):
-    """ATM implied vol from the nearest expiry with dte >= 1 (0DTE IV decays
-    intraday and is a poor daily-range proxy). Falls back to any expiry."""
+    """Robust ATM implied vol: MEDIAN of the ~8 options closest to spot on the
+    nearest expiry with dte >= 1 (0DTE IV decays intraday and is a poor daily
+    proxy; a single strike's IV is noisy). Falls back to any expiry."""
     opts = [o for o in opts if o.scale == 1.0]
     cands = [o for o in opts if o.dte >= 1 and o.iv > 0] or [o for o in opts if o.iv > 0]
     if not cands:
         return None
     min_dte = min(o.dte for o in cands)
-    sub = [o for o in cands if o.dte == min_dte]
-    K = min({o.K for o in sub}, key=lambda k: abs(k - spot))
-    ivs = [o.iv for o in sub if o.K == K]
-    return sum(ivs) / len(ivs)
+    sub = sorted((o for o in cands if o.dte == min_dte), key=lambda o: abs(o.K - spot))
+    ivs = sorted(o.iv for o in sub[:8])
+    n = len(ivs)
+    return ivs[n // 2] if n % 2 else (ivs[n // 2 - 1] + ivs[n // 2]) / 2.0
 
 
 def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
@@ -580,14 +581,16 @@ def daily_bars(yahoo_sym):
         return None, None
 
 
-def open_grid(anchor, atr=None, n=6):
-    """Daily-open grid in VOLATILITY multiples: anchor +/- 0.5..3.0 x ATR14.
-    Vol-scaled distances adapt to the regime (a percent grid does not), which
-    is why ATR-multiple levels from the open hold so well intraday.
-    Falls back to percent steps (0.5%..3%) when ATR is unavailable."""
+def open_grid(anchor, iv=None, atr=None, n=6):
+    """Daily-open grid in VOLATILITY multiples: anchor +/- 0.5..3.0 units.
+    Preferred unit = the 1-day implied sigma (anchor x IV_ATM / sqrt(252)) —
+    the same yardstick options desks quote the day in, which is why these
+    levels hold so well. Falls back to ATR14, then to percent steps."""
     if anchor is None or anchor <= 0:
         return None
-    if atr and atr > 0:
+    if iv and iv > 0:
+        mode, unit = "iv", anchor * float(iv) / math.sqrt(252)
+    elif atr and atr > 0:
         mode, unit = "atr", float(atr)
     else:
         mode, unit = "pct", anchor * 0.01  # 1% en points
@@ -671,7 +674,28 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
     if flip is None:  # régime très déséquilibré : élargir avant d'abandonner
         flip = zero_gamma_flip(opts, spot * 0.85, spot * 1.15)
+    iv = atm_iv(spot, opts)
     em = atm_straddle(data, spot, today=today)
+    if em is not None:
+        em["source"] = "straddle"
+    # Garde-fou EM : le straddle ne vaut que ce que valent ses quotes. Hors
+    # séance (mids GTH morts/élargis), s'il s'écarte de >35% du modèle IV
+    # (straddle théorique ~= 0.8 x sigma journalier), on sert le modèle.
+    if iv is not None:
+        model = 0.8 * spot * iv / math.sqrt(252)
+        if em is None:
+            em = {"expiry": None, "strike": round(spot),
+                  "call_mid": None, "put_mid": None,
+                  "straddle": round(model, 2),
+                  "em_pct": round(100.0 * model / spot, 3),
+                  "quality": "model", "source": "iv-model"}
+        elif (em.get("quality") == "indicative"
+              and abs(em["straddle"] - model) / model > 0.35):
+            em["raw_straddle"] = em["straddle"]
+            em["straddle"] = round(model, 2)
+            em["em_pct"] = round(100.0 * model / spot, 3)
+            em["quality"] = "model"
+            em["source"] = "iv-model (stale quotes)"
 
     # ---- extra levels: 0DTE walls, max pain, IV-based 1D range ----
     extras = []
@@ -683,7 +707,6 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     mp = max_pain(opts)
     if mp is not None:
         extras.append((mp, "Max Pain", "mpain"))
-    iv = atm_iv(spot, opts)
     if iv is not None:
         rng = spot * iv / math.sqrt(252)
         extras.append((spot + rng, "1D Max", "ivh"))
@@ -724,11 +747,11 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
             b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
         em["bands"] = bands_meta
     d_open, atr14 = daily_bars(cfg["ychart"])
-    grid = open_grid(d_open, atr=atr14)
+    grid = open_grid(d_open, iv=iv, atr=atr14)
 
     pine_rows = [(p + basis, l, k) for p, l, k in levels]
     if grid:
-        suf = " ATR" if grid["mode"] == "atr" else "%"
+        suf = {"iv": "σ", "atr": " ATR"}.get(grid["mode"], "%")
         pine_rows.append((grid["anchor"], "Daily O", "opo"))
         for g in grid["levels"]:
             pine_rows.append((g["up"], f"+{g['mult']:g}{suf}", "opu"))

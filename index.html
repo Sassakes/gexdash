@@ -361,7 +361,7 @@ const T = {
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
     rail:"Positionnement", chart:"Chart · niveaux GEX superposés", chartHint:" · heure Paris",
     chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
-    em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)",
+    em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
@@ -379,7 +379,7 @@ const T = {
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
     rail:"Positioning", chart:"Chart · GEX levels overlay", chartHint:" · Paris time",
     chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
-    em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)",
+    em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
@@ -781,7 +781,8 @@ function renderEM(d){
   const em = d.expected_move;
   if (!em){ $("emCard").innerHTML = `<span style="color:var(--muted)">${t("emNone")}</span>`; $("emNote").textContent=""; return; }
   const hi = d.levels.find(L=>L.kind==="emh"), lo = d.levels.find(L=>L.kind==="eml");
-  $("emNote").textContent = em.expiry + (em.quality === "indicative" ? t("emStale") : "");
+  $("emNote").textContent = (em.expiry || "1D") +
+    (em.quality === "model" ? t("emModel") : em.quality === "indicative" ? t("emStale") : "");
   const bands = (em.bands||[]).map(b =>
     `<div class="em-sub">±${b.pct}% <span class="dn">${fmt(b.low)}</span> / <span class="up">${fmt(b.high)}</span>` +
     ` · ${t("emIn")} ${fmt(b.prob_inside,0)}% · ${t("emTouch")} ${fmt(b.prob_touch_side,0)}%</div>`).join("");
