@@ -108,8 +108,11 @@
       </select>
       <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
       <button id="rfBtn">⟳ Refresh</button>
-      <span></span>
-      <span class="status" id="rfStatus">Recalcule et publie le marché choisi pour tout le monde — sans ping Discord.</span>
+      <label style="display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; cursor:pointer">
+        <input type="checkbox" id="rfNotify" style="accent-color:var(--gold); width:15px; height:15px; cursor:pointer">
+        Envoyer sur Discord
+      </label>
+      <span class="status" id="rfStatus">Recalcule et publie le marché choisi. Par défaut sans ping Discord — coche la case pour notifier.</span>
     </div>
   </section>
 
@@ -229,10 +232,14 @@ async function load(){
     if (b !== "" && !isFinite(parseFloat(b))){ msg("Basis invalide.", false); return; }
     btn.disabled = true; btn.textContent = "⟳ Calcul…"; st.textContent = "Calcul en cours…";
     try{
-      const q = "?target=" + $("rfTarget").value + (b !== "" ? "&basis=" + encodeURIComponent(b) : "");
+      const q = "?target=" + $("rfTarget").value
+        + (b !== "" ? "&basis=" + encodeURIComponent(b) : "")
+        + ($("rfNotify").checked ? "&notify=1" : "");
       const d = await api("/api/gex" + q);
       st.innerHTML = d.published
         ? `<b class="on">publié ✓</b> ${d.target} · ${d.generated_utc.slice(11,16)} UTC · px ${d.nq_price ?? "—"} · basis ${d.basis} (${d.basis_source})`
+          + (d.notified === true ? ' · <b class="on">Discord ✓</b>'
+             : d.notified === false ? ' · <b style="color:var(--red)">Discord ✗</b>' : "")
         : `<b style="color:var(--red)">calculé mais NON publié</b> — ${d.publish_info || ""}`;
       msg("Refresh " + d.target + " terminé.", true);
     }catch(e){ st.textContent = "—"; msg("Refresh impossible : " + e.message, false); }

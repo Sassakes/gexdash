@@ -517,7 +517,10 @@ class handler(BaseHTTPRequestHandler):
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
                 payload["publish_info"] = why
-                # publication silencieuse : seul le run planifié de 15h25 pinge Discord
+                # Silencieux par défaut (le run planifié de 15h25 reste la seule
+                # notification automatique). ?notify=1 = envoi Discord explicite.
+                if q("notify") == "1" and ok:
+                    payload["notified"] = bool(discord_notify([payload]))
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except Exception as e:
                 traceback.print_exc()
