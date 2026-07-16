@@ -319,12 +319,18 @@ def max_pain(opts):
     return float(ks[int(np.argmin(pay))])
 
 
-def atm_iv(spot, opts):
+def atm_iv(spot, opts, now_et=None):
     """Robust ATM implied vol: MEDIAN of the ~8 options closest to spot on the
-    nearest expiry with dte >= 1 (0DTE IV decays intraday and is a poor daily
-    proxy; a single strike's IV is noisy). Falls back to any expiry."""
+    front expiry. The front includes today's 0DTE while the session still has
+    most of the day ahead (its IV is literally the market's price of TODAY's
+    move — what daily sigma grids are built on). After 13:00 ET the 0DTE IV
+    becomes a decaying-intraday artefact, so we roll to the next expiry."""
     opts = [o for o in opts if o.scale == 1.0]
-    cands = [o for o in opts if o.dte >= 1 and o.iv > 0] or [o for o in opts if o.iv > 0]
+    if now_et is None:
+        now_et = dt.datetime.now(ET)
+    min_ok = 0 if now_et.hour < 13 else 1
+    cands = ([o for o in opts if o.dte >= min_ok and o.iv > 0]
+             or [o for o in opts if o.iv > 0])
     if not cands:
         return None
     min_dte = min(o.dte for o in cands)
@@ -625,7 +631,8 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
 
 
 def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
-                  mode="snapshot", em_bands=(0.5, 1.5), chain_cache=None):
+                  mode="snapshot", em_bands=(0.5, 1.5), chain_cache=None,
+                  iv_override=None):
     """Full pipeline: fetch -> compute -> JSON-ready payload dict.
     Raises on fetch/parse failure; caller handles errors.
     n_expiries=10 by default: wide enough that main walls approach the
@@ -675,7 +682,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
     if flip is None:  # régime très déséquilibré : élargir avant d'abandonner
         flip = zero_gamma_flip(opts, spot * 0.85, spot * 1.15)
-    iv = atm_iv(spot, opts)
+    iv = float(iv_override) if iv_override else atm_iv(spot, opts)
 
     # basis et open daily calculés tôt : l'EM daily s'ancre au Daily Open
     basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
@@ -706,6 +713,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
               "anchor_idx": round(anchor_idx, 2),
               "anchor": round(anchor_idx + basis, 1),
               "sigma1d": round(spot * iv / math.sqrt(252), 2),
+              "iv_source": "override" if iv_override else "chain-front",
               "source": "0.8σ daily", "quality": "model",
               "expiry": market["expiry"] if market else None,
               "market_straddle": market["straddle"] if market else None,

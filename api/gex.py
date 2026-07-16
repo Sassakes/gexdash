@@ -502,6 +502,8 @@ class handler(BaseHTTPRequestHandler):
             try:
                 basis = q("basis")
                 basis = float(basis) if basis is not None else None
+                iv_ov = q("iv")
+                iv_ov = float(iv_ov) / (100.0 if float(iv_ov) > 3 else 1.0) if iv_ov else None
                 n = max(1, min(int(q("n", 10)), 16))
                 target = (q("target", "NQ") or "NQ").upper()
                 if target not in TARGETS:
@@ -512,7 +514,7 @@ class handler(BaseHTTPRequestHandler):
 
                 payload = build_payload(
                     target=target, n_expiries=n, basis_override=basis, mode="live",
-                    em_bands=bands
+                    em_bands=bands, iv_override=iv_ov
                 )
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
