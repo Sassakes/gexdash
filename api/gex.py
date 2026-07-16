@@ -26,8 +26,16 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from api._gex_core import (TARGETS, build_payload, discord_notify, et_today,
-                           fetch_webhooks, kv_get, kv_set, save_webhooks)
+from api._gex_core import (TARGETS, build_payload, discord_news,
+                           discord_notify, et_today, fetch_webhooks, kv_get,
+                           kv_set, save_webhooks)
+
+CRON_LOG_KEY = "gex:cron:log"
+
+
+def _utc_now_iso():
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -205,7 +213,7 @@ class handler(BaseHTTPRequestHandler):
             body = self._read_json()
             cfg = fetch_webhooks()
             changed = []
-            for tgt in list(TARGETS) + ["default"]:
+            for tgt in list(TARGETS) + ["default", "news"]:
                 if tgt not in body:
                     continue
                 v = (body.get(tgt) or "").strip()
@@ -260,6 +268,11 @@ class handler(BaseHTTPRequestHandler):
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
                 return
             tgt = (self._read_json().get("target") or "NQ").upper()
+            if tgt == "NEWS":
+                ok = discord_news("✅ Test du canal News — GEX Terminal")
+                self._send(200, json.dumps({"sent": ok, "target": "NEWS"}).encode(),
+                           "application/json")
+                return
             if tgt not in TARGETS and tgt != "DEFAULT":
                 self._send(400, json.dumps({"error": "target invalide"}).encode(), "application/json")
                 return
@@ -289,40 +302,45 @@ class handler(BaseHTTPRequestHandler):
 
     def _cron(self, parsed):
         """Shared by GET (browser / Vercel cron) and POST (QStash schedules).
-        Computes+publishes any target missing today's snapshot; ?force=1
-        recomputes everything. Discord is pinged ONLY when ?notify=1 is passed
-        (and at most once per day via the kv guard) — every other run is a
-        silent data refresh. ?paris=HHMM makes the run a no-op unless Paris
-        local time is within ~12 min of HHMM: two UTC schedules (13:25 and
-        14:25) can then bracket DST and exactly one fires at 15:25 Paris
-        year-round."""
+        EVERY hit is journaled to Redis (gex:cron:log) so failures are never
+        silent. Auth: x-gex-key header/param, CRON_SECRET bearer, or Vercel's
+        own cron user-agent. Computes+publishes stale targets; ?force=1
+        recomputes all, and any hit between 00:00-03:00 Paris auto-forces
+        (Globex-open anchor refresh). Market Discord ping: ?notify=1, or a
+        Vercel-cron hit between 15:20 and 18:00 Paris (backup notifier) — in
+        all cases at most ONCE per day via the kv guard. The 'news' webhook
+        receives a short note on every run that actually recomputed data."""
         qs = parse_qs(parsed.query)
+        ua = self.headers.get("user-agent", "") or ""
+        entry = {"utc": _utc_now_iso(), "paris": paris_hhmm(),
+                 "q": parsed.query or "", "ua": ua[:60], "outcome": "?"}
+
+        def journal(outcome):
+            entry["outcome"] = outcome
+            try:
+                log = json.loads(kv_get(CRON_LOG_KEY) or "[]")
+                if not isinstance(log, list):
+                    log = []
+            except Exception:
+                log = []
+            log.insert(0, entry)
+            kv_set(CRON_LOG_KEY, json.dumps(log[:15]), ex=14 * 86400)
+
         cron_secret = os.environ.get("CRON_SECRET")
         gex_key = os.environ.get("GEX_REFRESH_KEY")
         auth = self.headers.get("Authorization", "")
         given_key = self.headers.get("x-gex-key") or (qs.get("key", [None])[0] or "")
         ok_cron = cron_secret and hmac.compare_digest(auth, f"Bearer {cron_secret}")
         ok_key = gex_key and hmac.compare_digest(given_key, gex_key)
-        if (cron_secret or gex_key) and not (ok_cron or ok_key):
+        ok_vercel = ua.startswith("vercel-cron")
+        if (cron_secret or gex_key) and not (ok_cron or ok_key or ok_vercel):
+            journal("401 unauthorized")
             self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
             return
-        want = (qs.get("paris", [None])[0] or "").strip()
-        if want:
-            now = paris_hhmm()
-            try:
-                tgt_min = int(want[:2]) * 60 + int(want[2:4])
-            except ValueError:
-                tgt_min = None
-            now_min = int(now[:2]) * 60 + int(now[3:5])
-            if tgt_min is None or abs(now_min - tgt_min) > 12:
-                self._send(200, json.dumps({
-                    "skipped": "outside-paris-window",
-                    "paris_now": now, "paris_want": want,
-                }).encode(), "application/json")
-                return
         try:
             today = et_today().isoformat()
-            force = "force" in qs
+            now_p = paris_hhmm().replace(":", "")
+            force = "force" in qs or now_p < "0300"   # nuit = refresh d'ancre
             results, computed, cache = {}, [], {}
             for target in TARGETS:
                 latest = _latest_payload(target)
@@ -340,25 +358,73 @@ class handler(BaseHTTPRequestHandler):
                                    "generated_utc": payload["generated_utc"]}
                 if ok:
                     computed.append(payload)
+            # ---- ping Discord marchés : au plus une fois par jour ----
+            backup_slot = ok_vercel and "1520" <= now_p <= "1800"
+            want_notify = ("notify" in qs) or backup_slot
             guard = f"gex:notified:{today}"
-            if "notify" not in qs or not computed:
+            if not want_notify:
                 notified = False
             elif kv_get(guard):
                 notified = "skipped (déjà notifié aujourd'hui)"
             else:
-                notified = discord_notify(computed)
-                if notified:
+                plist = computed or [p for p in (_latest_payload(t) for t in TARGETS)
+                                     if p and p.get("date") == today]
+                notified = discord_notify(plist) if plist else False
+                if notified is True:
                     kv_set(guard, "1", ex=172800)
+            # ---- canal News : trace publique de chaque refresh effectif ----
+            news = False
+            if computed:
+                px = " · ".join(
+                    "{} {:,}".format(p["target"], round(p["nq_price"])).replace(",", " ")
+                    for p in computed if p.get("nq_price"))
+                slot = ("open Globex" if now_p < "0300"
+                        else "pré-open US" if "1500" <= now_p <= "1800"
+                        else "refresh")
+                news = discord_news(
+                    "🔄 **GEX Terminal** — niveaux mis à jour ("
+                    + paris_hhmm() + " Paris · " + slot + ")"
+                    + ("\n" + px if px else "")
+                    + "\nhttps://gexdash.wealthbuilders.group")
+            journal("ok computed=%d notify=%s news=%s" % (len(computed), notified, news))
             self._send(200, json.dumps({
-                "date": today, "discord": notified, "targets": results,
+                "date": today, "discord": notified, "news": news,
+                "targets": results,
             }).encode(), "application/json")
         except Exception as e:
             traceback.print_exc()
+            journal("error %s" % e)
             self._send(500, json.dumps({"error": str(e)}).encode(), "application/json")
 
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+
+        if path == "/api/status":
+            if not self._auth_key(parse_qs(parsed.query)):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            targets = {}
+            for t in TARGETS:
+                p = _latest_payload(t)
+                targets[t] = ({"date": p.get("date"),
+                               "generated_utc": p.get("generated_utc"),
+                               "px": p.get("nq_price"), "iv": p.get("iv_atm")}
+                              if p else None)
+            today = et_today().isoformat()
+            try:
+                log = json.loads(kv_get(CRON_LOG_KEY) or "[]")
+            except Exception:
+                log = []
+            self._send(200, json.dumps({
+                "paris_now": paris_hhmm(), "date_et": today,
+                "notified_today": bool(kv_get(f"gex:notified:{today}")),
+                "targets": targets,
+                "cron_log": log[:10] if isinstance(log, list) else [],
+                "webhooks": sorted(fetch_webhooks().keys()),
+            }).encode(), "application/json")
+            return
+
 
         # ---- official levels: newest of committed snapshot vs published refresh ----
         if path in ("/levels.json", "/nq_levels.json"):

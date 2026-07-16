@@ -319,25 +319,54 @@ def max_pain(opts):
     return float(ks[int(np.argmin(pay))])
 
 
-def atm_iv(spot, opts, now_et=None):
-    """Robust ATM implied vol: MEDIAN of the ~8 options closest to spot on the
-    front expiry. The front includes today's 0DTE while the session still has
-    most of the day ahead (its IV is literally the market's price of TODAY's
-    move — what daily sigma grids are built on). After 13:00 ET the 0DTE IV
-    becomes a decaying-intraday artefact, so we roll to the next expiry."""
+def _expiry_iv(spot, opts, dte):
+    """Median IV of the ~8 strikes closest to spot on one expiry (noise-proof)."""
+    sub = sorted((o for o in opts if o.dte == dte and o.iv > 0),
+                 key=lambda o: abs(o.K - spot))
+    ivs = sorted(o.iv for o in sub[:8])
+    if not ivs:
+        return None
+    n = len(ivs)
+    return ivs[n // 2] if n % 2 else (ivs[n // 2 - 1] + ivs[n // 2]) / 2.0
+
+
+def atm_iv_detail(spot, opts, now_et=None):
+    """1-day ATM implied vol as a BLEND (mean) of the two front expiries'
+    median IVs: the 0DTE carries today's exact pricing, the next expiry
+    anchors the term structure — averaging them approximates a constant
+    1-day maturity (VIX1D spirit) and is far more stable day-to-day than
+    either leg alone. Before 13:00 ET the 0DTE is eligible as front; after,
+    its IV is a decaying-intraday artefact and the front rolls to dte>=1.
+    Returns {iv, mode, front:{dte,iv}, next:{dte,iv}} or None."""
     opts = [o for o in opts if o.scale == 1.0]
     if now_et is None:
         now_et = dt.datetime.now(ET)
     min_ok = 0 if now_et.hour < 13 else 1
-    cands = ([o for o in opts if o.dte >= min_ok and o.iv > 0]
-             or [o for o in opts if o.iv > 0])
-    if not cands:
+    dtes = sorted({o.dte for o in opts if o.dte >= min_ok and o.iv > 0})
+    if not dtes:
+        dtes = sorted({o.dte for o in opts if o.iv > 0})
+    if not dtes:
         return None
-    min_dte = min(o.dte for o in cands)
-    sub = sorted((o for o in cands if o.dte == min_dte), key=lambda o: abs(o.K - spot))
-    ivs = sorted(o.iv for o in sub[:8])
-    n = len(ivs)
-    return ivs[n // 2] if n % 2 else (ivs[n // 2 - 1] + ivs[n // 2]) / 2.0
+    front_dte = dtes[0]
+    next_dte = dtes[1] if len(dtes) > 1 else None
+    iv_f = _expiry_iv(spot, opts, front_dte)
+    iv_n = _expiry_iv(spot, opts, next_dte) if next_dte is not None else None
+    if iv_f is None and iv_n is None:
+        return None
+    if iv_f is not None and iv_n is not None:
+        iv, mode = (iv_f + iv_n) / 2.0, "blend"
+    elif iv_f is not None:
+        iv, mode = iv_f, "front-only"
+    else:
+        iv, mode = iv_n, "next-only"
+    return {"iv": iv, "mode": mode,
+            "front": {"dte": front_dte, "iv": round(iv_f, 4) if iv_f else None},
+            "next": {"dte": next_dte, "iv": round(iv_n, 4) if iv_n else None}}
+
+
+def atm_iv(spot, opts, now_et=None):
+    d = atm_iv_detail(spot, opts, now_et=now_et)
+    return d["iv"] if d else None
 
 
 def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
@@ -479,6 +508,20 @@ def save_webhooks(cfg):
 # --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
+def discord_news(text):
+    """Short plain message to the 'news' webhook (refresh announcements).
+    No-op when unset. Never raises."""
+    url = fetch_webhooks().get("news")
+    if not url:
+        return False
+    try:
+        import requests
+        r = requests.post(url, json={"content": text}, timeout=10)
+        return r.status_code in (200, 204)
+    except Exception:
+        return False
+
+
 def discord_notify(payloads, dashboard_url="https://gexdash.wealthbuilders.group"):
     """Post published levels to a Discord webhook (env DISCORD_WEBHOOK_URL).
     Accepts one payload dict or a list (one embed per target, single message).
@@ -682,7 +725,8 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
     if flip is None:  # régime très déséquilibré : élargir avant d'abandonner
         flip = zero_gamma_flip(opts, spot * 0.85, spot * 1.15)
-    iv = float(iv_override) if iv_override else atm_iv(spot, opts)
+    iv_detail = atm_iv_detail(spot, opts)
+    iv = float(iv_override) if iv_override else (iv_detail["iv"] if iv_detail else None)
 
     # basis et open daily calculés tôt : l'EM daily s'ancre au Daily Open
     basis, nq_price, basis_source = future_basis(spot, cfg["future"], override=basis_override)
@@ -713,7 +757,8 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
               "anchor_idx": round(anchor_idx, 2),
               "anchor": round(anchor_idx + basis, 1),
               "sigma1d": round(spot * iv / math.sqrt(252), 2),
-              "iv_source": "override" if iv_override else "chain-front",
+              "iv_source": "override" if iv_override else
+                            (iv_detail["mode"] if iv_detail else "none"),
               "source": "0.8σ daily", "quality": "model",
               "expiry": market["expiry"] if market else None,
               "market_straddle": market["straddle"] if market else None,
@@ -786,6 +831,9 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         "regime": "positive" if net_total_bn > 0 else "negative",
         "pc_oi": pc_oi,
         "iv_atm": round(iv, 4) if iv is not None else None,
+        "iv_diag": ({**iv_detail, "iv": round(iv_detail["iv"], 4),
+                     "override": round(float(iv_override), 4) if iv_override else None}
+                    if iv_detail else None),
         "zero_dte": {"dte": dte0, "call_wall": cw0, "put_wall": pw0},
         "max_pain_index": mp,
         "expected_move": em,

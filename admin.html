@@ -101,12 +101,24 @@
   <div class="sub">Route les niveaux de chaque marché vers son channel. <a href="/">← retour au dashboard</a></div>
 
   <section class="panel">
+    <h2>Statut du système</h2>
+    <div class="pad">
+      <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap">
+        <button id="stRefresh" class="ghost">⟲ Actualiser</button>
+        <button id="stRun" class="ghost">▶ Exécuter le cron maintenant (silencieux)</button>
+      </div>
+      <div id="stBox" class="status" style="line-height:1.9">chargement…</div>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>Refresh des niveaux (publication silencieuse)</h2>
-    <div class="row" style="grid-template-columns:auto 1fr auto auto">
+    <div class="row" style="grid-template-columns:auto 1fr auto auto auto">
       <select id="rfTarget" style="background:var(--panel2); border:1px solid var(--border); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
         <option>NQ</option><option>ES</option><option>SPX</option>
       </select>
       <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
+      <input id="rfIv" inputmode="decimal" placeholder="IV % (calibration, ex: 22.04)" style="max-width:190px">
       <button id="rfBtn">⟳ Refresh</button>
       <label style="display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; white-space:nowrap; cursor:pointer">
         <input type="checkbox" id="rfNotify" style="accent-color:var(--gold); width:15px; height:15px; cursor:pointer">
@@ -151,8 +163,8 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const ROWS = ["NQ", "ES", "SPX", "default"];
-const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", default:"Défaut"};
+const ROWS = ["NQ", "ES", "SPX", "default", "news"];
+const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", default:"Défaut", news:"News (annonces refresh)"};
 let KEY = "";
 
 function getKey(){
@@ -232,8 +244,11 @@ async function load(){
     if (b !== "" && !isFinite(parseFloat(b))){ msg("Basis invalide.", false); return; }
     btn.disabled = true; btn.textContent = "⟳ Calcul…"; st.textContent = "Calcul en cours…";
     try{
+      const ivv = $("rfIv").value.trim().replace(",", ".");
+      if (ivv !== "" && !isFinite(parseFloat(ivv))){ msg("IV invalide.", false); return; }
       const q = "?target=" + $("rfTarget").value
         + (b !== "" ? "&basis=" + encodeURIComponent(b) : "")
+        + (ivv !== "" ? "&iv=" + encodeURIComponent(ivv) : "")
         + ($("rfNotify").checked ? "&notify=1" : "");
       const d = await api("/api/gex" + q);
       st.innerHTML = d.published
@@ -245,6 +260,34 @@ async function load(){
     }catch(e){ st.textContent = "—"; msg("Refresh impossible : " + e.message, false); }
     finally{ btn.disabled = false; btn.textContent = "⟳ Refresh"; }
   };
+
+  async function loadStatus(){
+    try{
+      const d = await api("/api/status");
+      const tg = Object.entries(d.targets).map(([t, p]) =>
+        p ? `<b>${t}</b> : ${p.date} · ${(p.generated_utc||"").slice(11,16)} UTC · px ${p.px ?? "—"} · IV ${p.iv != null ? (p.iv*100).toFixed(1)+"%" : "—"}`
+          : `<b>${t}</b> : aucune donnée publiée`).join("<br>");
+      const log = (d.cron_log || []).map(l =>
+        `${(l.utc||"").slice(5,16).replace("T"," ")}Z · ${l.paris} Paris · <b>${l.outcome}</b> · ${(l.ua||"—").split("/")[0]}${l.q ? " · ?" + l.q : ""}`
+      ).join("<br>") || "<i>aucun hit cron enregistré — si les schedules QStash tournaient, il y aurait des lignes ici</i>";
+      $("stBox").innerHTML =
+        `<b>${d.paris_now} Paris</b> · webhooks configurés : ${d.webhooks.join(", ") || "aucun"} · ` +
+        `ping Discord aujourd'hui : <b class="${d.notified_today ? "on" : ""}">${d.notified_today ? "oui ✓" : "non"}</b>` +
+        `<br><br><b>Dernière publication par marché</b><br>${tg}` +
+        `<br><br><b>Journal des hits cron (15 derniers)</b><br>${log}`;
+    }catch(e){ $("stBox").textContent = "Statut indisponible : " + e.message; }
+  }
+  $("stRefresh").onclick = loadStatus;
+  $("stRun").onclick = async () => {
+    const b = $("stRun");
+    b.disabled = true; b.textContent = "▶ Exécution…";
+    try{
+      const d = await api("/api/cron?force=1");
+      msg("Cron exécuté — Discord: " + d.discord + " · News: " + d.news, true);
+    }catch(e){ msg("Cron KO : " + e.message, false); }
+    finally{ b.disabled = false; b.textContent = "▶ Exécuter le cron maintenant (silencieux)"; loadStatus(); }
+  };
+  loadStatus();
 
   try{
     const L = await (await fetch("/api/links")).json();
