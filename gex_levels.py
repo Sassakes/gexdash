@@ -122,9 +122,22 @@ def push_supabase(date_str, nq_price, levels_out):
 
 def run_live(args):
     targets = [t.strip().upper() for t in args.targets.split(",") if t.strip()]
-    cache, done = {}, []
+    cache, done, failed = {}, [], []
     for target in targets:
-        done.append(run_target(args, target, cache))
+        try:
+            done.append(run_target(args, target, cache))
+        except SystemExit as e:      # garde-fou d'intégrité : échec de CETTE cible
+            print(f"[error] {target} : {e}")
+            failed.append(target)
+        except Exception:
+            import traceback
+            print(f"[error] {target} a échoué :")
+            traceback.print_exc()
+            failed.append(target)
+    if failed and not done:
+        sys.exit(f"[error] toutes les cibles ont échoué ({', '.join(failed)})")
+    if failed:
+        print(f"[warn] cibles en échec : {', '.join(failed)} — les autres sont publiées")
     if done and args.notify:
         guard = f"gex:notified:{done[0]['date']}"
         if kv_get(guard):
@@ -157,8 +170,9 @@ def run_target(args, target, cache):
     print(f"# expiries: {', '.join(payload['expiries'])}")
     print(f"# net GEX total: {payload['net_gex_bn']:+.2f} $Bn/1%  regime={payload['regime']}")
     if em:
+        anchor_txt = f" @ {em['anchor']:.0f}" if em.get("anchor") else ""
         print(
-            f"# EM (straddle {em['expiry']} K={em['strike']:.0f}): "
+            f"# EM ({em.get('source', 'straddle')}{anchor_txt}): "
             f"+/-{em['straddle']:.1f} pts ({em['em_pct']:.2f}%)"
         )
     for L in levels_out:
