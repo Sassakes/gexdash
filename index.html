@@ -70,10 +70,21 @@
     margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
   }
   .topnav a{
-    color:var(--muted); text-decoration:none; font-size:12px;
-    padding:6px 10px; transition:color .12s ease; white-space:nowrap;
+    color:var(--text); text-decoration:none; font-size:12px; padding:7px 14px;
+    background:var(--surface2); border:1px solid var(--line-strong);
+    transition:color .12s ease, border-color .12s ease, box-shadow .12s ease;
+    white-space:nowrap;
   }
-  .topnav a:hover{color:var(--gold)}
+  .topnav a:hover{
+    color:var(--gold); border-color:rgba(240,185,11,.55);
+    box-shadow:0 6px 18px -10px var(--gold-glow);
+  }
+  #tzTop{
+    background:var(--surface2); border:1px solid var(--line-strong); color:var(--text);
+    font:inherit; font-size:11.5px; padding:7px 8px; cursor:pointer; margin-left:8px;
+  }
+  #tzTop:hover{border-color:rgba(240,185,11,.55)}
+  #tzTop:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   .topnav .ivs{margin-left:8px}
   .ctxbar{
     display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
@@ -123,7 +134,10 @@
   .cell .val.pos{color:var(--teal)} .cell .val.neg{color:var(--red)}
   @media(max-width:760px){
     .stats{grid-template-columns:repeat(3, 1fr)}
-    .cell.price{grid-column:1 / -1}
+    .cell{min-width:0}
+  .cell .val{overflow-wrap:anywhere}
+  .cell .val .src{font-size:10px; color:var(--muted); letter-spacing:.02em}
+  .cell.price{grid-column:1 / -1}
   }
 
   /* ============ panels ============ */
@@ -290,13 +304,6 @@
   .brand h1 em{text-shadow:0 0 22px var(--gold-glow)}
   .brand .sub{font-variant-numeric:tabular-nums}
 
-  .topnav a{position:relative}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
 
   .tabs{background:var(--surface)}
   .tabs button{min-height:38px; letter-spacing:.06em}
@@ -401,24 +408,13 @@
   /* — panneaux verre + bordure en dégradé — */
   .panel, .stats{
     background:
-      linear-gradient(180deg, rgba(20,20,25,.72), rgba(15,15,19,.78)) padding-box,
+      linear-gradient(180deg, #141419, #101014) padding-box,
       linear-gradient(135deg, rgba(240,185,11,.32), rgba(255,255,255,.06) 34%,
                       rgba(255,255,255,.04) 66%, rgba(38,166,154,.22)) border-box;
     border:1px solid transparent;
-    backdrop-filter:blur(12px) saturate(1.25);
-    -webkit-backdrop-filter:blur(12px) saturate(1.25);
   }
 
-  /* — spotlight curseur (signature Linear) — */
-  .panel, .stats{position:relative; --mx:50%; --my:-40px}
-  .panel::after, .stats::after{
-    content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
-    background:radial-gradient(340px circle at var(--mx) var(--my),
-               rgba(255,255,255,.05), transparent 62%);
-    opacity:0; transition:opacity .25s ease;
-  }
-  .panel:hover::after, .stats:hover::after{opacity:1}
-  .panel > *, .stats > *{position:relative; z-index:2}
+
 
   /* — LIVE : liseré conique rotatif — */
   #statusPill{position:relative; background:var(--surface); border:1px solid transparent; overflow:visible}
@@ -443,21 +439,13 @@
   }
   @keyframes shine{0%, 55%{background-position:120% 0} 85%, 100%{background-position:-40% 0}}
 
-  /* — contrôles : verre + lueur au survol — */
-  .tabs, .ivs, .chips button, #pineTopBtn, #statusPill{
-    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
-  }
+  /* — lueur au survol — */
   .tabs button.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 10px 24px -10px var(--gold-glow)}
   #pineTopBtn:hover, .chips button.on:hover{box-shadow:0 8px 22px -10px var(--gold-glow)}
   .topnav a{border-radius:2px}
 
   /* — cellule prix : halo respirant discret — */
   @media(prefers-reduced-motion:no-preference){
-    .cell.price .val{animation:breathe 5.5s ease-in-out infinite}
-    @keyframes breathe{
-      0%,100%{text-shadow:0 0 22px rgba(240,185,11,.18)}
-      50%{text-shadow:0 0 34px rgba(240,185,11,.34)}
-    }
     /* entrées en scène : blur-in */
     .panel, .stats{animation-name:riseblur}
     @keyframes riseblur{
@@ -493,6 +481,12 @@
     <a id="tvLink" target="_blank" rel="noopener"
        href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">TradingView</span> ↗</a>
     <a id="dcLink" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4">Discord ↗</a>
+    <select id="tzTop" title="Fuseau horaire des charts">
+      <option value="Europe/Paris">Paris</option>
+      <option value="America/New_York">New York</option>
+      <option value="Europe/London">London</option>
+      <option value="UTC">UTC</option>
+    </select>
     <span class="ivs" id="langSel">
       <button data-l="fr" class="on">FR</button>
       <button data-l="en">EN</button>
@@ -744,6 +738,9 @@ function ensureChart(){
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollQuote();
   });
+  const tzTop = $("tzTop");
+  tzTop.value = PREFS.tz;
+  tzTop.onchange = () => { PREFS.tz = tzTop.value; savePrefs(); loadBars(); };
   buildGearMenu($("gearHolder"), {
     applyColors: () => CHART.series.applyOptions({
       upColor:PREFS.up, downColor:PREFS.dn,
@@ -847,8 +844,8 @@ function show(d){
 
   const stats = [
     [tgt, fmt(d.nq_price), "price"],
-    [t("stBasis"), (d.basis>=0?"+":"") + fmt(d.basis) + " · " + (
-      {manual:t("bManual"), index:t("bIndex"), "last-known":t("bLast"), none:"—"}[d.basis_source] || t("bMarket")), ""],
+    [t("stBasis"), (d.basis>=0?"+":"") + fmt(d.basis) + ' <span class="src">' + (
+      {manual:t("bManual"), index:t("bIndex"), "last-known":t("bLast"), none:"—"}[d.basis_source] || t("bMarket")) + "</span>", ""],
     [t("stNet"), (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
     [t("stReg"), d.regime === "positive" ? "GAMMA +" : "GAMMA −", d.regime==="positive"?"pos":"neg"],
     [t("stPC"), d.pc_oi != null ? fmt(d.pc_oi,2) : "—", d.pc_oi > 1 ? "neg" : "pos"],
@@ -927,24 +924,6 @@ async function loadLinks(){
     if (d.discord) $("dcLink").href = d.discord;
   }catch(_){}
 }
-
-/* spotlight curseur sur les panneaux */
-(function(){
-  let raf = 0, ev = null;
-  document.addEventListener("pointermove", e => {
-    ev = e;
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      for (const p of document.querySelectorAll(".panel, .stats")){
-        const r = p.getBoundingClientRect();
-        if (ev.clientY < r.top - 80 || ev.clientY > r.bottom + 80) continue;
-        p.style.setProperty("--mx", (ev.clientX - r.left) + "px");
-        p.style.setProperty("--my", (ev.clientY - r.top) + "px");
-      }
-    });
-  }, {passive:true});
-})();
 
 load();
 </script>

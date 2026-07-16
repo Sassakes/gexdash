@@ -82,7 +82,21 @@
     text-transform:uppercase; color:var(--gold);
   }
   .card .head .n{font-size:10.5px; color:var(--faint)}
-  .card .head .gh{margin-left:auto; display:flex}
+  .cchips{display:inline-flex; gap:5px; margin-left:auto}
+  .cchips button{
+    display:inline-flex; align-items:center; gap:5px;
+    background:var(--surface2); border:1px solid var(--line); color:var(--faint);
+    font:inherit; font-size:9px; letter-spacing:.06em; padding:3px 8px;
+    cursor:pointer; transition:all .12s ease;
+  }
+  .cchips button:hover{color:var(--text)}
+  .cchips button.on{
+    color:var(--gold); border-color:rgba(240,185,11,.5);
+    background:linear-gradient(180deg, rgba(240,185,11,.14), rgba(240,185,11,.06));
+  }
+  .cchips .led{width:5px; height:5px; border-radius:50%; background:#33333B; flex:none}
+  .cchips button.on .led{background:var(--gold); box-shadow:0 0 5px var(--gold-glow)}
+  .card .head .gh{display:flex}
   .card .head .gh .cgear{width:26px; height:26px; font-size:12px}
   .card .head .rm{
     background:none; border:none; color:var(--faint);
@@ -180,22 +194,12 @@
   }
   .card{
     background:
-      linear-gradient(180deg, rgba(20,20,25,.74), rgba(15,15,19,.8)) padding-box,
+      linear-gradient(180deg, #141419, #101014) padding-box,
       linear-gradient(135deg, rgba(240,185,11,.3), rgba(255,255,255,.05) 40%,
                       rgba(38,166,154,.2)) border-box;
     border:1px solid transparent;
-    backdrop-filter:blur(10px) saturate(1.2);
-    -webkit-backdrop-filter:blur(10px) saturate(1.2);
   }
-  .card{--mx:50%; --my:-40px}
-  .card::after{
-    content:""; position:absolute; inset:0; pointer-events:none; z-index:1;
-    background:radial-gradient(300px circle at var(--mx) var(--my),
-               rgba(255,255,255,.05), transparent 62%);
-    opacity:0; transition:opacity .25s ease;
-  }
-  .card:hover::after{opacity:1}
-  .card > *{position:relative; z-index:2}
+
   header h1 em{
     background:linear-gradient(100deg, var(--gold) 42%, #FFE9A3 50%, var(--gold) 58%);
     background-size:230% 100%;
@@ -454,8 +458,22 @@ function render(){
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
-      <span class="n"></span><span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
+      <span class="n"></span>
+      <span class="cchips">
+        <button data-g="gex"><i class="led"></i>GEX</button>
+        <button data-g="em"><i class="led"></i>EM</button>
+        <button data-g="open"><i class="led"></i>Open</button>
+      </span>
+      <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
       <div class="box"></div>`;
+    card.querySelectorAll(".cchips button").forEach(b => {
+      b.classList.toggle("on", !!LVSHOW[b.dataset.g]);
+      b.onclick = () => {
+        LVSHOW[b.dataset.g] = !LVSHOW[b.dataset.g];
+        saveLvShow();
+        render();          // toutes les cartes se resynchronisent
+      };
+    });
     card.querySelector(".rm").onclick = () => {
       CARDS.splice(idx, 1); saveCards(); render();
     };
@@ -514,24 +532,6 @@ window.addEventListener("resize", () => {
   boardHeight();
   paintBoardGrid();
 });
-/* spotlight curseur sur les cartes */
-(function(){
-  let raf = 0, ev = null;
-  document.addEventListener("pointermove", e => {
-    ev = e;
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      for (const p of document.querySelectorAll(".card")){
-        const r = p.getBoundingClientRect();
-        if (ev.clientY < r.top - 80 || ev.clientY > r.bottom + 80) continue;
-        p.style.setProperty("--mx", (ev.clientX - r.left) + "px");
-        p.style.setProperty("--my", (ev.clientY - r.top) + "px");
-      }
-    });
-  }, {passive:true});
-})();
-
 if (typeof LightweightCharts === "undefined"){
   $("empty").hidden = false; $("empty").textContent = tx("feedKo");
 } else {
