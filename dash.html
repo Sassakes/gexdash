@@ -490,7 +490,7 @@ async function mountCard(cfg, host){
   for (const grp of ["gex", "em", "open"])
     if (cfg.lv[grp]) host._lines[grp] = drawGroup(series, host._pay, grp);
 
-  host._timer = setInterval(async () => {
+  const tick = async () => {
     if (document.hidden || !lastBar) return;
     try{
       const r = await fetch(`/api/quote?target=${cfg.t}`);
@@ -503,7 +503,11 @@ async function mountCard(cfg, host){
         high:Math.max(lastBar.high, p), low:Math.min(lastBar.low, p), close:p};
       series.update(lastBar);
     }catch(_){}
-  }, 6000);
+  };
+  // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
+  const offset = (Array.prototype.indexOf.call(board.children, host) % 8) * 250;
+  host._timer = null;
+  setTimeout(() => { if (host.isConnected){ tick(); host._timer = setInterval(tick, 2000); } }, offset);
 }
 
 function wireEdit(card, cfg){

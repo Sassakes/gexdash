@@ -506,7 +506,7 @@ class handler(BaseHTTPRequestHandler):
                         "target": target, "price": price,
                         "time": ptime, "source": source,
                     }).encode()
-                    max_age = 3
+                    max_age = 1
                 else:
                     ts = res.get("timestamp") or []
                     q = (res.get("indicators", {}).get("quote") or [{}])[0]

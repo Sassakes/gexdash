@@ -772,7 +772,7 @@ async function loadBars(){
     $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
     applyLevelLines();
     clearInterval(CHART.poll);
-    CHART.poll = setInterval(pollQuote, 5000);
+    CHART.poll = setInterval(pollQuote, 2000);
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
