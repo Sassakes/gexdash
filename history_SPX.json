@@ -31,5 +31,16 @@
   "em_low": 7511.7,
   "net_gex_bn": 27.21,
   "basis": 0.0
+ },
+ {
+  "date": "2026-07-16",
+  "nq_price": 7510.23,
+  "call_wall": 7600.0,
+  "put_wall": 7515.0,
+  "gamma_flip": 7540.8,
+  "em_high": 7607.4,
+  "em_low": 7510.2,
+  "net_gex_bn": -52.24,
+  "basis": 0.0
  }
 ]
