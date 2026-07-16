@@ -82,6 +82,36 @@
     text-transform:uppercase; color:var(--gold);
   }
   .card .head .n{font-size:10.5px; color:var(--faint)}
+  .cpanel{
+    position:absolute; top:8px; right:8px; z-index:9; width:220px;
+    background:rgba(14,14,18,.97); border:1px solid var(--line-strong);
+    box-shadow:0 14px 40px rgba(0,0,0,.7); padding:12px; font-size:11px;
+  }
+  .cpanel .cp-head{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--line);
+  }
+  .cpanel .cp-head b{
+    font-family:var(--disp); font-size:9.5px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--gold);
+  }
+  .cpanel .cp-x{background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px}
+  .cpanel .cp-x:hover{color:var(--text)}
+  .cp-row{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; color:var(--muted)}
+  .cp-sw{display:flex; gap:6px; align-items:center}
+  .cpanel input[type=color]{
+    width:22px; height:22px; padding:0; border:1px solid var(--line-strong);
+    background:var(--surface2); cursor:pointer; border-radius:4px;
+  }
+  .cp-rst{
+    width:100%; margin-top:8px; background:var(--surface2); border:1px solid var(--line);
+    color:var(--muted); font:inherit; font-size:10.5px; padding:6px; cursor:pointer;
+  }
+  .cp-rst:hover{color:var(--gold)}
+  #tzDash{
+    background:var(--surface2); border:1px solid var(--line); color:var(--text);
+    font-size:12px; padding:8px 10px; cursor:pointer; min-height:36px;
+  }
   .cchips{display:inline-flex; gap:5px; margin-left:auto}
   .cchips button{
     display:inline-flex; align-items:center; gap:5px;
@@ -233,6 +263,12 @@
   <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
+  <select id="tzDash" title="Fuseau horaire des charts">
+    <option value="Europe/Paris">Paris</option>
+    <option value="America/New_York">New York</option>
+    <option value="Europe/London">London</option>
+    <option value="UTC">UTC</option>
+  </select>
   <span class="hint" id="hintLbl">Disposition sauvegardée dans ce navigateur.</span>
 </div>
 
@@ -255,7 +291,7 @@ const GROUP_KINDS = {
   gex: ["res","sup","res0","sup0","flip","hgex","gpos","gneg","mpain"],
   em:  ["emh","eml","emb","ivh","ivl"],
 };
-/* PREFS, tzShift, TZ_CITY, buildGearMenu : fournis par /ui.js (partagés avec l'accueil) */
+/* PREFS, tzShift, TZ_CITY, CANDLE_PAIRS, PRICE_COLORS : fournis par /ui.js */
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
@@ -275,6 +311,8 @@ try{ CARDS = JSON.parse(localStorage.getItem("gexDashCards")||"[]"); }catch(_){}
 if (!Array.isArray(CARDS)) CARDS = [];
 CARDS.forEach((c, i) => {
   if (c.w == null){ c.x = (i % 2) * 6; c.y = Math.floor(i / 2) * 4; c.w = 6; c.h = 4; }
+  if (!c.lv) c.lv = {gex: true, em: true, open: true};
+  if (!c.colors) c.colors = {up: PREFS.up, dn: PREFS.dn, px: PREFS.px};
 });
 function saveCards(){ try{ localStorage.setItem("gexDashCards", JSON.stringify(CARDS)); }catch(_){} }
 
@@ -310,12 +348,108 @@ async function getLevels(target){
 }
 
 const IVSEC = {"1m":60, "5m":300, "15m":900};
-const RUNNING = [];
-const SERIES = [];
-function applyAllColors(){
-  for (const s of SERIES)
-    s.applyOptions({upColor:PREFS.up, downColor:PREFS.dn,
-      wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px});
+/* ---- chaque carte est INDÉPENDANTE : ses couleurs, ses filtres,
+        son timer et ses lignes vivent sur son élément DOM ---- */
+
+function drawGroup(series, pay, grp){
+  const lines = [];
+  if (!pay) return lines;
+  if (grp === "open"){
+    if (pay.open_grid){
+      lines.push(series.createPriceLine({price: pay.open_grid.anchor, color: C.gold,
+        lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true, title: "Daily O"}));
+      for (const g of pay.open_grid.levels){
+        lines.push(series.createPriceLine({price: g.up, color: "rgba(239,83,80,.5)",
+          lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: false, title: ""}));
+        lines.push(series.createPriceLine({price: g.down, color: "rgba(38,166,154,.5)",
+          lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: false, title: ""}));
+      }
+    }
+    return lines;
+  }
+  for (const L of pay.levels || []){
+    const g = GROUP_KINDS.gex.includes(L.kind) ? "gex"
+            : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
+    if (g !== grp) continue;
+    lines.push(series.createPriceLine({
+      price: L.price_nq, color: KIND_COLOR[L.kind] || C.muted, lineWidth: 1,
+      lineStyle: DASH_KINDS.includes(L.kind) ? LightweightCharts.LineStyle.Dashed
+                                             : LightweightCharts.LineStyle.Solid,
+      axisLabelVisible: ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
+      title: SHORT[L.kind] || "",
+    }));
+  }
+  return lines;
+}
+
+function toggleGroup(card, cfg, grp, btn){
+  cfg.lv[grp] = !cfg.lv[grp];
+  btn.classList.toggle("on", cfg.lv[grp]);
+  saveCards();
+  if (!card._series) return;
+  if (!cfg.lv[grp]){
+    (card._lines[grp] || []).forEach(l => { try{ card._series.removePriceLine(l); }catch(_){} });
+    card._lines[grp] = [];
+  } else {
+    card._lines[grp] = drawGroup(card._series, card._pay, grp);
+  }
+}
+
+/* panneau de réglages À L'INTÉRIEUR de la carte (couleurs de CE chart) */
+function buildCardPanel(host, cfg){
+  const gh = host.querySelector(".gh");
+  const btn = document.createElement("button");
+  btn.className = "cgear";
+  btn.textContent = "⚙";
+  btn.title = "Réglages de ce chart";
+  gh.appendChild(btn);
+  const panel = document.createElement("div");
+  panel.className = "cpanel";
+  panel.hidden = true;
+  host.querySelector(".box").appendChild(panel);
+
+  function renderPanel(){
+    const pairs = CANDLE_PAIRS.map(([a, b], k) =>
+      `<button class="dsw pair${cfg.colors.up===a && cfg.colors.dn===b ? " on" : ""}"
+        style="--a:${a};--b:${b}" data-pair="${k}"></button>`).join("");
+    const prices = PRICE_COLORS.map(c =>
+      `<button class="dsw${cfg.colors.px===c ? " on" : ""}" style="background:${c}" data-px="${c}"></button>`).join("");
+    panel.innerHTML = `
+      <div class="cp-head"><b>${cfg.t} · ${cfg.iv}</b><button class="cp-x">✕</button></div>
+      <div class="cp-row"><span>Palette</span><span class="cp-sw">${pairs}</span></div>
+      <div class="cp-row"><span>Corps ↑</span><input type="color" data-k="up" value="${cfg.colors.up}"></div>
+      <div class="cp-row"><span>Corps ↓</span><input type="color" data-k="dn" value="${cfg.colors.dn}"></div>
+      <div class="cp-row"><span>Prix</span><span class="cp-sw">${prices}<input type="color" data-k="px" value="${cfg.colors.px}"></span></div>
+      <button class="cp-rst">↺ Réinitialiser</button>`;
+    const apply = () => {
+      host._series.applyOptions({upColor: cfg.colors.up, downColor: cfg.colors.dn,
+        wickUpColor: cfg.colors.up, wickDownColor: cfg.colors.dn,
+        priceLineColor: cfg.colors.px});
+      saveCards();
+    };
+    panel.querySelector(".cp-x").onclick = () => { panel.hidden = true; };
+    panel.querySelectorAll("[data-pair]").forEach(b => b.onclick = () => {
+      const [a, c2] = CANDLE_PAIRS[+b.dataset.pair];
+      cfg.colors.up = a; cfg.colors.dn = c2; apply(); renderPanel();
+    });
+    panel.querySelectorAll("[data-px]").forEach(b => b.onclick = () => {
+      cfg.colors.px = b.dataset.px; apply(); renderPanel();
+    });
+    panel.querySelectorAll("input[data-k]").forEach(inp => inp.oninput = () => {
+      cfg.colors[inp.dataset.k] = inp.value; apply();
+    });
+    panel.querySelector(".cp-rst").onclick = () => {
+      cfg.colors = {up: "#26A69A", dn: "#EF5350", px: "#FFD84D"};
+      apply(); renderPanel();
+    };
+  }
+  btn.onclick = () => {
+    if (panel.hidden){ renderPanel(); panel.hidden = false; }
+    else panel.hidden = true;
+  };
 }
 
 async function mountCard(cfg, host){
@@ -328,16 +462,15 @@ async function mountCard(cfg, host){
     timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
   });
   const series = chart.addCandlestickSeries({
-    upColor:PREFS.up, downColor:PREFS.dn, borderVisible:false,
-    wickUpColor:PREFS.up, wickDownColor:PREFS.dn,
-    priceLineColor:PREFS.px, priceLineWidth:2,
-    priceLineStyle:LightweightCharts.LineStyle.Dashed,
+    upColor: cfg.colors.up, downColor: cfg.colors.dn, borderVisible: false,
+    wickUpColor: cfg.colors.up, wickDownColor: cfg.colors.dn,
+    priceLineColor: cfg.colors.px, priceLineWidth: 2,
+    priceLineStyle: LightweightCharts.LineStyle.Dashed,
   });
-  SERIES.push(series);
+  host._chart = chart; host._series = series; host._lines = {}; host._pay = null;
   new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
     .observe(box);
-  buildGearMenu(host.querySelector(".gh"),
-                {applyColors: applyAllColors, reloadBars: render, onLevelsChanged: render});
+  buildCardPanel(host, cfg);
 
   let lastBar = null;
   try{
@@ -353,33 +486,11 @@ async function mountCard(cfg, host){
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
-  const pay = await getLevels(cfg.t);
-  if (pay){
-    for (const L of pay.levels || []){
-      const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
-                : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
-      if (grp && !LVSHOW[grp]) continue;
-      series.createPriceLine({
-        price: L.price_nq, color: KIND_COLOR[L.kind] || C.muted, lineWidth: 1,
-        lineStyle: DASH_KINDS.includes(L.kind) ? LightweightCharts.LineStyle.Dashed
-                                               : LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
-        title: SHORT[L.kind] || "",
-      });
-    }
-    if (LVSHOW.open && pay.open_grid){
-      series.createPriceLine({price: pay.open_grid.anchor, color: C.gold, lineWidth:1,
-        lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: "Daily O"});
-      for (const g of pay.open_grid.levels){
-        series.createPriceLine({price: g.up, color: "rgba(239,83,80,.5)", lineWidth:1,
-          lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible:false, title:""});
-        series.createPriceLine({price: g.down, color: "rgba(38,166,154,.5)", lineWidth:1,
-          lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible:false, title:""});
-      }
-    }
-  }
+  host._pay = await getLevels(cfg.t);
+  for (const grp of ["gex", "em", "open"])
+    if (cfg.lv[grp]) host._lines[grp] = drawGroup(series, host._pay, grp);
 
-  const timer = setInterval(async () => {
+  host._timer = setInterval(async () => {
     if (document.hidden || !lastBar) return;
     try{
       const r = await fetch(`/api/quote?target=${cfg.t}`);
@@ -393,10 +504,8 @@ async function mountCard(cfg, host){
       series.update(lastBar);
     }catch(_){}
   }, 6000);
-  RUNNING.push({timer});
 }
 
-/* ---- drag & resize (mode édition), ancrage grille au lâcher ---- */
 function wireEdit(card, cfg){
   const handle = document.createElement("div");
   handle.className = "rsz";
@@ -448,8 +557,10 @@ function layoutCard(card, cfg){
 }
 
 function render(){
-  for (const r of RUNNING) clearInterval(r.timer);
-  RUNNING.length = 0; SERIES.length = 0;
+  for (const el of Array.from(board.children)){
+    if (el._timer) clearInterval(el._timer);
+    try{ el._chart && el._chart.remove(); }catch(_){}
+  }
   board.innerHTML = "";
   $("empty").hidden = CARDS.length > 0;
   $("empty").textContent = tx("empty");
@@ -467,14 +578,12 @@ function render(){
       <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
       <div class="box"></div>`;
     card.querySelectorAll(".cchips button").forEach(b => {
-      b.classList.toggle("on", !!LVSHOW[b.dataset.g]);
-      b.onclick = () => {
-        LVSHOW[b.dataset.g] = !LVSHOW[b.dataset.g];
-        saveLvShow();
-        render();          // toutes les cartes se resynchronisent
-      };
+      b.classList.toggle("on", !!cfg.lv[b.dataset.g]);
+      b.onclick = () => toggleGroup(card, cfg, b.dataset.g, b);   // CETTE carte uniquement
     });
     card.querySelector(".rm").onclick = () => {
+      if (card._timer) clearInterval(card._timer);
+      try{ card._chart && card._chart.remove(); }catch(_){}
       CARDS.splice(idx, 1); saveCards(); render();
     };
     board.appendChild(card);
@@ -502,7 +611,9 @@ $("editLbl").textContent = tx("edit");
 $("addBtn").onclick = () => {
   if (CARDS.length >= 10) return;
   const spot = firstFreeSpot(6, 4);
-  CARDS.push({t: $("addT").value, iv: $("addIv").value, x: spot.x, y: spot.y, w: 6, h: 4});
+  CARDS.push({t: $("addT").value, iv: $("addIv").value, x: spot.x, y: spot.y, w: 6, h: 4,
+              lv: {gex: true, em: true, open: true},
+              colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
   saveCards(); render();
 };
 function paintBoardGrid(){
@@ -517,6 +628,9 @@ function paintBoardGrid(){
   }
 }
 
+const tzD = $("tzDash");
+tzD.value = PREFS.tz;
+tzD.onchange = () => { PREFS.tz = tzD.value; savePrefs(); render(); };
 $("editBtn").onclick = () => {
   EDIT = !EDIT;
   document.body.classList.toggle("editing", EDIT);
