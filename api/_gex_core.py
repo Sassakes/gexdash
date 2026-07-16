@@ -508,6 +508,21 @@ def save_webhooks(cfg):
 # --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
+def discord_send(url, payload, note=None,
+                 dashboard_url="https://gexdash.wealthbuilders.group"):
+    """Post ONE payload's embed to a SPECIFIC webhook URL — no routing, no
+    fallback. Used by the admin per-row Test button. Never raises."""
+    try:
+        import requests
+        body = {"embeds": [_discord_embed(payload, dashboard_url)]}
+        if note:
+            body["content"] = note
+        r = requests.post(url, json=body, timeout=10)
+        return r.status_code in (200, 204)
+    except Exception:
+        return False
+
+
 def discord_news(text):
     """Short plain message to the 'news' webhook (refresh announcements).
     No-op when unset. Never raises."""

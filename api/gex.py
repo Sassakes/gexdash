@@ -27,8 +27,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from api._gex_core import (TARGETS, build_payload, discord_news,
-                           discord_notify, et_today, fetch_webhooks, kv_get,
-                           kv_set, save_webhooks)
+                           discord_notify, discord_send, et_today,
+                           fetch_webhooks, kv_get, kv_set, save_webhooks)
 
 CRON_LOG_KEY = "gex:cron:log"
 
@@ -269,12 +269,25 @@ class handler(BaseHTTPRequestHandler):
                 return
             tgt = (self._read_json().get("target") or "NQ").upper()
             if tgt == "NEWS":
-                ok = discord_news("✅ Test du canal News — GEX Terminal")
+                ok = discord_news("🧪 Test du canal News — GEX Terminal")
                 self._send(200, json.dumps({"sent": ok, "target": "NEWS"}).encode(),
                            "application/json")
                 return
             if tgt not in TARGETS and tgt != "DEFAULT":
                 self._send(400, json.dumps({"error": "target invalide"}).encode(), "application/json")
+                return
+            # Test = envoi à l'URL EXACTE de la ligne testée. Aucun routage,
+            # aucun fallback : si la ligne n'a pas de webhook, on le dit.
+            cfg = fetch_webhooks()
+            key = "default" if tgt == "DEFAULT" else tgt
+            url = cfg.get(key)
+            if key == "default" and not url:
+                url = os.environ.get("DISCORD_WEBHOOK_URL")
+            if not url:
+                self._send(200, json.dumps(
+                    {"sent": False, "target": key,
+                     "error": "aucun webhook configuré sur cette ligne"}
+                ).encode(), "application/json")
                 return
             fake = {"target": tgt if tgt != "DEFAULT" else "NQ",
                     "mode": "snapshot", "date": et_today().isoformat(),
@@ -282,8 +295,8 @@ class handler(BaseHTTPRequestHandler):
                     "levels": [], "pine": "",
                     "expected_move": None, "net_gex_bn": 0, "pc_oi": None,
                     "nq_price": None, "basis": 0, "basis_source": "test"}
-            ok = discord_notify(fake)
-            self._send(200, json.dumps({"sent": ok, "target": tgt}).encode(), "application/json")
+            ok = discord_send(url, fake, note=f"🧪 Test webhook — ligne {key}")
+            self._send(200, json.dumps({"sent": ok, "target": key}).encode(), "application/json")
             return
 
         if path == "/api/cron":
