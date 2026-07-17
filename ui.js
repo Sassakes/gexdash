@@ -267,6 +267,12 @@ function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify
     background:rgba(14,14,18,.96); border:1px solid var(--line-strong, #2B2B33);
     padding:6px 8px; box-shadow:0 10px 30px rgba(0,0,0,.6);
   }
+  .dpanel[hidden]{display:none}
+  .dtoolbar .dtools{display:flex; flex-direction:column; gap:4px}
+  .dtoolbar .dtools[hidden]{display:none}
+  .dtoolbar .dmore{
+    height:16px; font-size:9px; line-height:1; color:var(--faint, #5C5C66);
+  }
   .dpanel .dswatch{width:16px; height:16px; border-radius:3px; border:1px solid #2B2B33; cursor:pointer; padding:0; flex:none}
   .dpanel .dswatch.on{outline:2px solid var(--gold, #F0B90B); outline-offset:1px}
   .dpanel input[type=color]{width:20px; height:20px; padding:0; border:1px solid #2B2B33; background:#16161A; cursor:pointer; border-radius:3px}
@@ -304,11 +310,21 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
   bar.className = "dtoolbar";
   bar.innerHTML = `
     <button data-tool="" class="on" title="Curseur / déplacer">✥</button>
-    <button data-tool="trend" title="Ligne de tendance">╱</button>
-    <button data-tool="hline" title="Ligne horizontale">─</button>
-    <button data-tool="box" title="Rectangle">▭</button>
-    <button data-tool="_clear" title="Tout effacer sur ce chart">🗑</button>`;
+    <button class="dmore" title="Outils de dessin">▾</button>
+    <div class="dtools" hidden>
+      <button data-tool="trend" title="Ligne de tendance">╱</button>
+      <button data-tool="hline" title="Ligne horizontale">─</button>
+      <button data-tool="box" title="Rectangle">▭</button>
+      <button data-tool="_clear" title="Tout effacer sur ce chart">🗑</button>
+    </div>`;
   box.appendChild(bar);
+  const more = bar.querySelector(".dmore");
+  const tools = bar.querySelector(".dtools");
+  function foldTools(fold){
+    tools.hidden = fold;
+    more.textContent = fold ? "▾" : "▴";
+  }
+  more.onclick = e => { e.stopPropagation(); foldTools(!tools.hidden); };
   function cancelDraft(){
     if (st._draftMove){ window.removeEventListener("pointermove", st._draftMove); st._draftMove = null; }
     st.draft = null;
@@ -316,9 +332,10 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
   function toolReset(){
     st.tool = null;
     chart.applyOptions({handleScroll: true, handleScale: true});
-    bar.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.tool === ""));
+    bar.querySelectorAll("[data-tool]").forEach(x => x.classList.toggle("on", x.dataset.tool === ""));
+    foldTools(true);   // tracé terminé -> le menu se replie, curseur seul visible
   }
-  bar.querySelectorAll("button").forEach(b => b.onclick = e => {
+  bar.querySelectorAll("[data-tool]").forEach(b => b.onclick = e => {
     e.stopPropagation();
     cancelDraft();
     if (b.dataset.tool === "_clear"){
@@ -329,7 +346,8 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
     }
     st.tool = b.dataset.tool || null;
     st.sel = -1;
-    bar.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    bar.querySelectorAll("[data-tool]").forEach(x => x.classList.toggle("on", x === b));
+    if (!st.tool) foldTools(true);
     chart.applyOptions({handleScroll: !st.tool, handleScale: !st.tool});
     panelSync(); redraw();
   });

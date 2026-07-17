@@ -24,6 +24,7 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     text-align:center; padding:72px 20px; min-height:46vh;
   }
+  #empty[hidden]{display:none}
   #empty .empty-t{font-family:var(--disp); font-size:16px; color:var(--text); letter-spacing:.01em}
   #empty .empty-s{color:var(--muted); font-size:12.5px; margin:6px 0 22px}
   .presets{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
@@ -609,7 +610,8 @@ function render(){
   }
   board.innerHTML = "";
   $("empty").hidden = CARDS.length > 0;
-  $("empty").textContent = tx("empty");
+  const emptyT = $("empty").querySelector(".empty-t");
+  if (emptyT) emptyT.textContent = tx("empty");
   CARDS.forEach((cfg, idx) => {
     clampCard(cfg);
     const card = document.createElement("div");
