@@ -35,6 +35,34 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
+DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
+
+
+def _finra_dp_day(ymd):
+    """Volume off-exchange FINRA (fichier CNMS quotidien) pour QQQ et SPY.
+    C'est le volume exécuté hors bourses (dark pools + internalisation),
+    avec sa part shortée — la matière première du ratio type DIX.
+    Retourne {"QQQ": (short, total), "SPY": (...)} ou None. Jamais d'exception."""
+    try:
+        import requests
+        r = requests.get(
+            f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{ymd}.txt",
+            timeout=8)
+        if r.status_code != 200 or "|" not in (r.text[:200] or ""):
+            return None
+        out = {}
+        for line in r.text.splitlines():
+            p = line.split("|")
+            if len(p) >= 5 and p[1] in ("QQQ", "SPY"):
+                try:
+                    out[p[1]] = (int(p[2]), int(p[4]))
+                except ValueError:
+                    pass
+                if len(out) == 2:
+                    break
+        return out or None
+    except Exception:
+        return None
 
 
 def _finnhub_quote(sym):
@@ -588,6 +616,56 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ---- chart data: candles + last price, proxied (Yahoo blocks browser CORS) ----
+        if path == "/api/dark":
+            qs = parse_qs(urlparse(self.path).query)
+            tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            sym = DP_SYMS.get(tgt)
+            if not sym:
+                self._send(400, json.dumps({"error": "target invalide"}).encode(),
+                           "application/json")
+                return
+            try:
+                hist = json.loads(kv_get("gex:dp:hist") or "{}")
+            except Exception:
+                hist = {}
+            for s in ("QQQ", "SPY"):
+                hist.setdefault(s, [])
+            have = {x["d"] for x in hist["QQQ"]}
+            days, cur = [], et_today()
+            while len(days) < 14:                 # 14 derniers jours ouvrés
+                if cur.weekday() < 5:
+                    days.append(cur.strftime("%Y%m%d"))
+                cur -= dt.timedelta(days=1)
+            fetched = 0
+            for ymd in days:                      # récent -> ancien, max 4 fetchs
+                if ymd in have or fetched >= 4:
+                    continue
+                data = _finra_dp_day(ymd)
+                fetched += 1
+                if not data:
+                    continue                      # férié / fichier pas encore publié
+                for s, (sv, tv) in data.items():
+                    hist[s].append({"d": ymd, "sv": sv, "tv": tv,
+                                    "r": round(100.0 * sv / tv, 2) if tv else None})
+            for s in hist:
+                hist[s] = sorted(hist[s], key=lambda x: x["d"])[-60:]
+            if fetched:
+                kv_set("gex:dp:hist", json.dumps(hist), ex=45 * 86400)
+            rows = hist.get(sym, [])
+            rs = [x["r"] for x in rows if x.get("r") is not None]
+            body = json.dumps({
+                "target": tgt, "sym": sym, "days": rows[-30:],
+                "last": rows[-1] if rows else None,
+                "avg20": round(sum(rs[-20:]) / len(rs[-20:]), 2) if rs else None,
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=1800, max-age=0")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path == "/api/xr":
             qs = parse_qs(urlparse(self.path).query)
             tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()

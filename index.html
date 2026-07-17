@@ -157,6 +157,18 @@
 
   /* ============ chart ============ */
   .chartbox{height:400px; position:relative}
+  .dp{display:flex; gap:22px; align-items:center; flex-wrap:wrap}
+  .dp-big{font-family:var(--mono); font-size:30px; color:var(--text); line-height:1}
+  .dp-sub{font-size:11px; color:var(--muted); margin-top:5px}
+  .dp-tag{
+    display:inline-block; margin-top:8px; padding:3px 10px; font-size:9.5px;
+    letter-spacing:.16em; text-transform:uppercase; border:1px solid var(--line-strong);
+  }
+  .dp-tag.up{color:#26A69A; border-color:rgba(38,166,154,.45)}
+  .dp-tag.dn{color:#EF5350; border-color:rgba(239,83,80,.45)}
+  .dp-tag.mid{color:var(--muted)}
+  #dpSpark{flex:none}
+  .dp-exp{font-size:11.5px; color:var(--muted); line-height:1.55; border-top:1px solid var(--line)}
   .cbar{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 12px; border-bottom:1px solid var(--line);
@@ -538,6 +550,19 @@
     </table>
   </section>
 
+  <section class="panel" id="dpPanel">
+    <h2>Dark Pool <span class="note">FINRA off-exchange · publié J-1</span></h2>
+    <div class="pad dp">
+      <div class="dp-main">
+        <div class="dp-big" id="dpRatio">—</div>
+        <div class="dp-sub" id="dpDelta"></div>
+        <div class="dp-tag" id="dpTag" hidden></div>
+      </div>
+      <canvas id="dpSpark" width="320" height="66"></canvas>
+    </div>
+    <div class="pad dp-exp" id="dpExp"></div>
+  </section>
+
   <div class="duo">
     <section class="panel">
       <h2><span id="emTitle">Expected move</span> <span class="note" id="emNote"></span></h2>
@@ -629,6 +654,58 @@ function paintTabs(){
   });
 }
 
+async function loadDark(){
+  const big = $("dpRatio"), sub = $("dpDelta"), tag = $("dpTag"), exp = $("dpExp");
+  try{
+    const r = await fetch(`/api/dark?target=${TARGET}`);
+    const d = await r.json();
+    if (!d.last){
+      big.textContent = "—";
+      sub.textContent = "historique en construction — première donnée au prochain jour ouvré";
+      tag.hidden = true; exp.textContent = "";
+      return;
+    }
+    big.textContent = d.last.r.toFixed(1) + "%";
+    const dd = d.avg20 != null ? d.last.r - d.avg20 : 0;
+    sub.textContent = `${d.sym} · ${d.last.d.slice(6)}/${d.last.d.slice(4,6)} · moy. 20j ${d.avg20 != null ? d.avg20.toFixed(1) + "%" : "—"} (${dd >= 0 ? "+" : ""}${dd.toFixed(1)} pt)`;
+    tag.hidden = false;
+    if (dd >= 1.5){ tag.textContent = "Accumulation"; tag.className = "dp-tag up"; }
+    else if (dd <= -1.5){ tag.textContent = "Distribution"; tag.className = "dp-tag dn"; }
+    else { tag.textContent = "Neutre"; tag.className = "dp-tag mid"; }
+    exp.textContent = `Part shortée du volume off-exchange (dark pools + internalisation) sur ${d.sym}, proxy ${TARGET}. `
+      + "Lecture type DIX : un ratio ÉLEVÉ vs sa moyenne = les teneurs de marché vendent à découvert pour servir des acheteurs → pression acheteuse (accumulation). "
+      + "Un ratio faible = distribution. Donnée FINRA officielle, publiée chaque soir pour la séance écoulée.";
+    const cv = $("dpSpark"), ctx = cv.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    const W = 320, H = 66;
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const rows = d.days.filter(x => x.r != null);
+    if (rows.length >= 2){
+      const vs = rows.map(x => x.r);
+      const lo = Math.min(...vs) - .5, hi = Math.max(...vs) + .5;
+      const X = i => 6 + i * (W - 12) / (rows.length - 1);
+      const Y = v => H - 8 - (v - lo) / (hi - lo) * (H - 16);
+      if (d.avg20 != null){
+        ctx.strokeStyle = "rgba(240,185,11,.4)"; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(6, Y(d.avg20)); ctx.lineTo(W - 6, Y(d.avg20)); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.strokeStyle = "#26A69A"; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      rows.forEach((x, i) => { const px = X(i), py = Y(x.r); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+      ctx.stroke();
+      const lx = X(rows.length - 1), ly = Y(rows[rows.length - 1].r);
+      ctx.fillStyle = "#F0B90B";
+      ctx.beginPath(); ctx.arc(lx, ly, 2.6, 0, 7); ctx.fill();
+    }
+  }catch(_){
+    big.textContent = "—"; sub.textContent = "indisponible"; tag.hidden = true;
+  }
+}
+
 async function loadTarget(){
   paintTabs();
   $("status").style.display = "block";
@@ -673,10 +750,12 @@ async function load(){
     TARGET = b.dataset.t;
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
     loadTarget();
+    loadDark();
   });
   bindChips();
   loadLinks();
   await loadTarget();
+  loadDark();
 }
 
 /* ---- filtres de familles de niveaux (persistés) ---- */
