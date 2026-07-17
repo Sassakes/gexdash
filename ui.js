@@ -673,6 +673,30 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
   };
 }
 
+/* ═══ Séparateurs de session : une fine verticale pointillée à chaque
+   open daily (détectés par les gaps > 45 min entre bougies — robuste
+   quel que soit le fuseau d'affichage). ═══ */
+function sessionStarts(times){
+  const out = [];
+  for (let i = 1; i < times.length; i++)
+    if (times[i] - times[i - 1] > 2700) out.push(times[i]);
+  return out;
+}
+function drawSessionLines(ctx, chart, times, w, h){
+  if (!times || times.length < 2) return;
+  const ts = chart.timeScale();
+  ctx.save();
+  ctx.strokeStyle = "rgba(232,230,225,.16)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  for (const t of sessionStarts(times)){
+    const x = ts.timeToCoordinate(t);
+    if (x == null || x < 0 || x > w) continue;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /* ═══ Interpolation du tick : la bougie GLISSE vers le nouveau prix (easing)
    au lieu de sauter — l'effet de fluidité TradingView, côté rendu. ═══ */
 function animatePrice(holder, series, bar, newClose, ms){

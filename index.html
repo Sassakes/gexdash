@@ -767,6 +767,15 @@ async function loadBars(){
     CHART.draw.setKey("gexDraw:main:" + TARGET);
     if (bars.length)
       CHART.draw.setBars(bars.map(b => b.time), CHART.ivSec[CHART.iv]);
+    CHART._times = bars.map(b => b.time);
+    if (!CHART.sessCv){
+      CHART.sessCv = document.createElement("canvas");
+      CHART.sessCv.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0";
+      $("chartBox").prepend(CHART.sessCv);
+      CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(drawIdxSessions);
+      new ResizeObserver(drawIdxSessions).observe($("chartBox"));
+    }
+    drawIdxSessions();
     if (CHART.lastBar && CHART.iv !== "1m"){
       // 5 jours chargés (scroll arrière dispo) mais vue par défaut = journée en cours
       CHART.chart.timeScale().setVisibleRange({
@@ -783,6 +792,20 @@ async function loadBars(){
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
+}
+
+function drawIdxSessions(){
+  const cv = CHART.sessCv, box = $("chartBox");
+  if (!cv || !CHART.chart) return;
+  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  drawSessionLines(ctx, CHART.chart, CHART._times, w, h);
 }
 
 async function pollQuote(){

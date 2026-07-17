@@ -491,8 +491,6 @@ function buildCardPanel(host, cfg){
    Vert = gamma positif (aimant), rouge = négatif (accélérant),
    opacité = magnitude relative au strike dominant. */
 function bandHalf(series, prof){
-  /* demi-hauteur = moitié de l'écart MÉDIAN entre strikes adjacents :
-     les bandes ne se chevauchent jamais, quel que soit le zoom */
   const gaps = [];
   for (let i = 1; i < prof.length; i++){
     const a = series.priceToCoordinate(prof[i - 1][0]);
@@ -501,18 +499,28 @@ function bandHalf(series, prof){
   }
   if (!gaps.length) return 4;
   gaps.sort((x, y) => x - y);
-  return Math.max(1.5, Math.min(12, gaps[Math.floor(gaps.length / 2)] / 2 - 0.6));
+  return Math.max(1.5, Math.min(10, gaps[Math.floor(gaps.length / 2)] / 2 - 0.6));
 }
+/* style X-Ray : rangées de POINTS, taille + densité + alpha = intensité.
+   Le bruit (<8% du max) disparaît, les aimants deviennent des segments gras. */
 function paintProfile(ctx, series, prof, x0, x1, h, maxA, hh){
+  if (x1 - x0 < 2) return;
   for (const [k, g] of prof){
     const r = Math.abs(g) / maxA;
-    if (r < 0.06) continue;                 /* filtre : le bruit s'efface */
+    if (r < 0.08) continue;
     const y = series.priceToCoordinate(k);
     if (y == null || y < -20 || y > h + 20) continue;
-    const a = 0.05 + 0.5 * Math.pow(r, 0.7);    /* les aimants ressortent */
-    ctx.fillStyle = g >= 0 ? `rgba(38,166,154,${a})` : `rgba(239,83,80,${a})`;
-    ctx.fillRect(x0, y - hh, Math.max(1, x1 - x0), hh * 2);
+    const th = Math.max(1, Math.min(hh * 2, 1 + 6 * Math.pow(r, 0.8)));
+    const al = 0.25 + 0.6 * Math.pow(r, 0.7);
+    ctx.strokeStyle = g >= 0 ? `rgba(38,166,154,${al})` : `rgba(239,83,80,${al})`;
+    ctx.lineWidth = th;
+    ctx.setLineDash([th, th + 2.5]);
+    ctx.beginPath();
+    ctx.moveTo(x0 + 1, y);
+    ctx.lineTo(x1 - 1, y);
+    ctx.stroke();
   }
+  ctx.setLineDash([]);
 }
 function drawHeat(host, cfg){
   const cv = host._heat, series = host._series, chart = host._chart;
@@ -526,10 +534,11 @@ function drawHeat(host, cfg){
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
+  drawSessionLines(ctx, chart, host._times, w, h);   /* opens daily : toujours */
   if (!cfg.lv.xr) return;
   const ts = chart.timeScale();
   const T = host._times || [];
-  const xAt = tShifted => {                    /* temps décalé -> pixel */
+  const xAt = tShifted => {
     if (!T.length) return null;
     let lo = 0, hi = T.length - 1;
     if (tShifted <= T[0]) return ts.timeToCoordinate(T[0]);
@@ -544,21 +553,31 @@ function drawHeat(host, cfg){
     return c0 + (tShifted - T[lo]) / (T[hi] - T[lo]) * (c1 - c0);
   };
   const snaps = host._xr && host._xr.length ? host._xr : null;
-  if (snaps && snaps.length >= 2){             /* — mode évolutif : colonnes 15 min — */
+  if (snaps){                                  /* — colonnes 15 min BORNÉES — */
+    const deltas = [];
+    for (let i = 1; i < snaps.length; i++) deltas.push(snaps[i].t - snaps[i - 1].t);
+    deltas.sort((a, b) => a - b);
+    const snapSec = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 900;
     const maxA = Math.max(...snaps.flatMap(s => s.prof.map(p => Math.abs(p[1])))) || 1;
     const hh = bandHalf(series, snaps[snaps.length - 1].prof);
     for (let i = 0; i < snaps.length; i++){
       const x0 = xAt(tzShift(snaps[i].t));
-      const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t)) : w;
+      const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t))
+                                      : xAt(tzShift(snaps[i].t + snapSec));
       if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
       paintProfile(ctx, series, snaps[i].prof, Math.max(0, x0), Math.min(w, x1), h, maxA, hh);
     }
     return;
   }
-  const prof = (host._pay || {}).gex_by_strike;  /* — repli : profil courant — */
-  if (!prof || !prof.length) return;
+  /* — repli sans historique : UNE colonne "maintenant", jamais un mur — */
+  const prof = (host._pay || {}).gex_by_strike;
+  if (!prof || !prof.length || !T.length) return;
+  const lastT = T[T.length - 1];
+  const x0 = xAt(lastT), x1 = xAt(lastT + 900);
+  if (x0 == null || x1 == null) return;
   const maxA = Math.max(...prof.map(p => Math.abs(p[1]))) || 1;
-  paintProfile(ctx, series, prof, 0, w, h, maxA, bandHalf(series, prof));
+  paintProfile(ctx, series, prof, Math.max(0, x0), Math.min(w, x1), h, maxA,
+               bandHalf(series, prof));
 }
 async function fetchXr(host, cfg){
   if (!cfg.lv.xr) return;
