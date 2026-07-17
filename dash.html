@@ -501,25 +501,43 @@ function bandHalf(series, prof){
   gaps.sort((x, y) => x - y);
   return Math.max(1.5, Math.min(10, gaps[Math.floor(gaps.length / 2)] / 2 - 0.6));
 }
-/* style X-Ray : rangées de POINTS, taille + densité + alpha = intensité.
-   Le bruit (<8% du max) disparaît, les aimants deviennent des segments gras. */
-function paintProfile(ctx, series, prof, x0, x1, h, maxA, hh){
+/* Style X-Ray THE HUB : échelle par PERCENTILES (immunisée aux walls
+   géants qui écrasaient tout), rangées de points RONDS dont le diamètre,
+   la densité et l'alpha portent le rang d'exposition, halo lumineux sur
+   le top décile. rk(g) -> rang [0..1] dans la distribution du jour. */
+function rankFn(allMags){
+  const A = allMags.slice().sort((a, b) => a - b);
+  return g => {
+    const x = Math.abs(g);
+    let lo = 0, hi = A.length;
+    while (lo < hi){ const m = (lo + hi) >> 1; if (A[m] <= x) lo = m + 1; else hi = m; }
+    return A.length ? lo / A.length : 0;
+  };
+}
+function paintProfile(ctx, series, prof, x0, x1, h, rk, hh){
   if (x1 - x0 < 2) return;
+  ctx.lineCap = "round";
   for (const [k, g] of prof){
-    const r = Math.abs(g) / maxA;
-    if (r < 0.08) continue;
+    const v0 = rk(g);
+    if (v0 < 0.45) continue;                 /* sous la médiane haute : silence */
+    const v = (v0 - 0.45) / 0.55;
     const y = series.priceToCoordinate(k);
     if (y == null || y < -20 || y > h + 20) continue;
-    const th = Math.max(1, Math.min(hh * 2, 1 + 6 * Math.pow(r, 0.8)));
-    const al = 0.25 + 0.6 * Math.pow(r, 0.7);
-    ctx.strokeStyle = g >= 0 ? `rgba(38,166,154,${al})` : `rgba(239,83,80,${al})`;
-    ctx.lineWidth = th;
-    ctx.setLineDash([th, th + 2.5]);
+    const d = Math.max(1.6, Math.min(hh * 2, 1.6 + 7 * Math.pow(v, 1.2)));
+    const al = 0.22 + 0.68 * Math.pow(v, 1.1);
+    const col = g >= 0 ? `rgba(38,190,170,${al})` : `rgba(244,88,84,${al})`;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = d;
+    ctx.setLineDash([0.01, d * 2.35]);       /* dash quasi-nul + cap rond = cercles */
+    ctx.shadowColor = col;
+    ctx.shadowBlur = v0 > 0.9 ? 7 : 0;       /* les aimants BRILLENT */
     ctx.beginPath();
-    ctx.moveTo(x0 + 1, y);
-    ctx.lineTo(x1 - 1, y);
+    ctx.moveTo(x0 + 2, y);
+    ctx.lineTo(x1 - 2, y);
     ctx.stroke();
   }
+  ctx.shadowBlur = 0;
+  ctx.lineCap = "butt";
   ctx.setLineDash([]);
 }
 function drawHeat(host, cfg){
@@ -558,14 +576,14 @@ function drawHeat(host, cfg){
     for (let i = 1; i < snaps.length; i++) deltas.push(snaps[i].t - snaps[i - 1].t);
     deltas.sort((a, b) => a - b);
     const snapSec = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 900;
-    const maxA = Math.max(...snaps.flatMap(s => s.prof.map(p => Math.abs(p[1])))) || 1;
+    const rk = rankFn(snaps.flatMap(s => s.prof.map(p => Math.abs(p[1]))));
     const hh = bandHalf(series, snaps[snaps.length - 1].prof);
     for (let i = 0; i < snaps.length; i++){
       const x0 = xAt(tzShift(snaps[i].t));
       const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t))
                                       : xAt(tzShift(snaps[i].t + snapSec));
       if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
-      paintProfile(ctx, series, snaps[i].prof, Math.max(0, x0), Math.min(w, x1), h, maxA, hh);
+      paintProfile(ctx, series, snaps[i].prof, Math.max(0, x0), Math.min(w, x1), h, rk, hh);
     }
     return;
   }
@@ -575,9 +593,8 @@ function drawHeat(host, cfg){
   const lastT = T[T.length - 1];
   const x0 = xAt(lastT), x1 = xAt(lastT + 900);
   if (x0 == null || x1 == null) return;
-  const maxA = Math.max(...prof.map(p => Math.abs(p[1]))) || 1;
-  paintProfile(ctx, series, prof, Math.max(0, x0), Math.min(w, x1), h, maxA,
-               bandHalf(series, prof));
+  paintProfile(ctx, series, prof, Math.max(0, x0), Math.min(w, x1), h,
+               rankFn(prof.map(p => Math.abs(p[1]))), bandHalf(series, prof));
 }
 async function fetchXr(host, cfg){
   if (!cfg.lv.xr) return;
