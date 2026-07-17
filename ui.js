@@ -242,3 +242,366 @@ function buildGearMenu(holder, hooks){
   holder.appendChild(btn);
   return btn;
 }
+
+/* ═══════════ Outils de dessin (toutes les charts, dessins par chart) ═══════════ */
+const DRAW_COLORS = ["#F0B90B", "#26A69A", "#EF5350", "#E8E6E1", "#3B82F6", "#A855F7"];
+let DRAW_DEF = {color: "#F0B90B", width: 1, style: "solid"};
+try{ DRAW_DEF = {...DRAW_DEF, ...JSON.parse(localStorage.getItem("gexDrawStyle") || "{}")}; }catch(_){}
+function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify(DRAW_DEF)); }catch(_){} }
+
+(function(){
+  const css = `
+  .dcanvas{position:absolute; inset:0; pointer-events:none; z-index:5}
+  .dtoolbar{position:absolute; top:8px; left:8px; z-index:8; display:flex; flex-direction:column; gap:4px}
+  .dtoolbar button{
+    width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    background:rgba(17,17,20,.92); border:1px solid var(--line, #212127);
+    color:var(--faint, #5C5C66); cursor:pointer; font-size:12px; padding:0;
+    transition:color .12s ease, border-color .12s ease;
+  }
+  .dtoolbar button:hover{color:var(--text, #ECEAE4)}
+  .dtoolbar button.on{color:var(--gold, #F0B90B); border-color:rgba(240,185,11,.55)}
+  .dpanel{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:9;
+    display:flex; gap:5px; align-items:center;
+    background:rgba(14,14,18,.96); border:1px solid var(--line-strong, #2B2B33);
+    padding:6px 8px; box-shadow:0 10px 30px rgba(0,0,0,.6);
+  }
+  .dpanel .dswatch{width:16px; height:16px; border-radius:3px; border:1px solid #2B2B33; cursor:pointer; padding:0; flex:none}
+  .dpanel .dswatch.on{outline:2px solid var(--gold, #F0B90B); outline-offset:1px}
+  .dpanel input[type=color]{width:20px; height:20px; padding:0; border:1px solid #2B2B33; background:#16161A; cursor:pointer; border-radius:3px}
+  .dwb{background:#16161A; border:1px solid #212127; color:#8A8A94; font-family:inherit; font-size:10px; padding:3px 7px; cursor:pointer; flex:none}
+  .dwb.on{color:var(--gold, #F0B90B); border-color:rgba(240,185,11,.5)}
+  .dwb.ddel{color:#EF5350}
+  .dsep{width:1px; height:16px; background:#212127; flex:none}`;
+  const st = document.createElement("style");
+  st.textContent = css;
+  document.head.appendChild(st);
+})();
+
+/* Monte les outils de dessin sur un chart Lightweight Charts.
+   Ancrage temps/prix : les tracés suivent zoom & scroll, et s'étendent
+   au-delà de la dernière bougie (extrapolation via barSpacing).
+   storeKey = identité du chart -> ses dessins lui sont propres. */
+function attachDrawTools(box, chart, series, storeKey, ivSec){
+  const ts = chart.timeScale();
+  const st = {key: storeKey, iv: ivSec || 300, firstT: null, lastT: null,
+              shapes: [], tool: null, sel: -1, draft: null, _draftMove: null};
+  function load(){
+    try{ st.shapes = JSON.parse(localStorage.getItem(st.key) || "[]"); }catch(_){ st.shapes = []; }
+    if (!Array.isArray(st.shapes)) st.shapes = [];
+  }
+  function save(){ try{ localStorage.setItem(st.key, JSON.stringify(st.shapes)); }catch(_){} }
+  load();
+
+  const canvas = document.createElement("canvas");
+  canvas.className = "dcanvas";
+  box.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+
+  /* ---- barre d'outils ---- */
+  const bar = document.createElement("div");
+  bar.className = "dtoolbar";
+  bar.innerHTML = `
+    <button data-tool="" class="on" title="Curseur / déplacer">✥</button>
+    <button data-tool="trend" title="Ligne de tendance">╱</button>
+    <button data-tool="hline" title="Ligne horizontale">─</button>
+    <button data-tool="box" title="Rectangle">▭</button>
+    <button data-tool="_clear" title="Tout effacer sur ce chart">🗑</button>`;
+  box.appendChild(bar);
+  function cancelDraft(){
+    if (st._draftMove){ window.removeEventListener("pointermove", st._draftMove); st._draftMove = null; }
+    st.draft = null;
+  }
+  function toolReset(){
+    st.tool = null;
+    chart.applyOptions({handleScroll: true, handleScale: true});
+    bar.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.tool === ""));
+  }
+  bar.querySelectorAll("button").forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    cancelDraft();
+    if (b.dataset.tool === "_clear"){
+      if (st.shapes.length && confirm("Effacer tous les dessins de ce chart ?")){
+        st.shapes = []; st.sel = -1; save(); panelSync(); redraw();
+      }
+      return;
+    }
+    st.tool = b.dataset.tool || null;
+    st.sel = -1;
+    bar.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    chart.applyOptions({handleScroll: !st.tool, handleScale: !st.tool});
+    panelSync(); redraw();
+  });
+
+  /* ---- panneau de style ---- */
+  const panel = document.createElement("div");
+  panel.className = "dpanel";
+  panel.hidden = true;
+  box.appendChild(panel);
+  function curStyle(){ return st.sel >= 0 ? st.shapes[st.sel] : DRAW_DEF; }
+  function panelSync(){
+    const show = st.sel >= 0 || !!st.tool;
+    panel.hidden = !show;
+    if (!show) return;
+    const s = curStyle();
+    panel.innerHTML =
+      DRAW_COLORS.map(c => `<button class="dswatch${s.color===c ? " on" : ""}" style="background:${c}" data-c="${c}"></button>`).join("") +
+      `<input type="color" value="${s.color}" data-cc>` +
+      `<span class="dsep"></span>` +
+      [1, 2, 3].map(w => `<button class="dwb${s.width===w ? " on" : ""}" data-w="${w}">${w}px</button>`).join("") +
+      `<span class="dsep"></span>` +
+      [["solid","—"],["dashed","╌"],["dotted","┄"]].map(([v, l]) =>
+        `<button class="dwb${s.style===v ? " on" : ""}" data-s="${v}">${l}</button>`).join("") +
+      (st.sel >= 0 ? `<span class="dsep"></span><button class="dwb ddel" data-del title="Supprimer">✕</button>` : "");
+    const apply = (k, v) => {
+      if (st.sel >= 0){ st.shapes[st.sel][k] = v; save(); }
+      DRAW_DEF[k] = v; saveDrawDef();
+      panelSync(); redraw();
+    };
+    panel.querySelectorAll("[data-c]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("color", x.dataset.c); });
+    panel.querySelector("[data-cc]").oninput = e => apply("color", e.target.value);
+    panel.querySelectorAll("[data-w]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("width", +x.dataset.w); });
+    panel.querySelectorAll("[data-s]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("style", x.dataset.s); });
+    const del = panel.querySelector("[data-del]");
+    if (del) del.onclick = e => { e.stopPropagation(); st.shapes.splice(st.sel, 1); st.sel = -1; save(); panelSync(); redraw(); };
+  }
+
+  /* ---- conversions temps/prix <-> pixels (avec extrapolation hors data) ---- */
+  const yOf = p => series.priceToCoordinate(p);
+  const pOf = y => series.coordinateToPrice(y);
+  function xOf(t){
+    const c = ts.timeToCoordinate(t);
+    if (c !== null) return c;
+    const bs = ts.options().barSpacing;
+    if (st.lastT != null && t > st.lastT){
+      const c2 = ts.timeToCoordinate(st.lastT);
+      return c2 === null ? null : c2 + ((t - st.lastT) / st.iv) * bs;
+    }
+    if (st.firstT != null && t < st.firstT){
+      const c2 = ts.timeToCoordinate(st.firstT);
+      return c2 === null ? null : c2 - ((st.firstT - t) / st.iv) * bs;
+    }
+    return null;
+  }
+  function tOf(x){
+    const t = ts.coordinateToTime(x);
+    if (t !== null) return t;
+    const bs = ts.options().barSpacing;
+    if (st.lastT != null){
+      const cL = ts.timeToCoordinate(st.lastT);
+      if (cL !== null && x >= cL) return st.lastT + Math.round((x - cL) / bs) * st.iv;
+    }
+    if (st.firstT != null){
+      const cF = ts.timeToCoordinate(st.firstT);
+      if (cF !== null && x <= cF) return st.firstT - Math.round((cF - x) / bs) * st.iv;
+    }
+    return null;
+  }
+  function geo(s){
+    if (s.type === "hline"){
+      const y = yOf(s.p1.price);
+      return y == null ? null : {y};
+    }
+    const x1 = xOf(s.p1.t), y1 = yOf(s.p1.price), x2 = xOf(s.p2.t), y2 = yOf(s.p2.price);
+    if ([x1, y1, x2, y2].some(v => v == null)) return null;
+    return {x1, y1, x2, y2};
+  }
+
+  /* ---- rendu ---- */
+  function redraw(){
+    const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!w || !h) return;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)){
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const list = st.draft ? st.shapes.concat([st.draft]) : st.shapes;
+    list.forEach((s, i) => {
+      const g = geo(s);
+      if (!g) return;
+      ctx.lineWidth = s.width;
+      ctx.strokeStyle = s.color;
+      ctx.setLineDash(s.style === "dashed" ? [7, 5] : s.style === "dotted" ? [2, 4] : []);
+      ctx.beginPath();
+      if (s.type === "hline"){
+        ctx.moveTo(0, g.y); ctx.lineTo(w, g.y); ctx.stroke();
+      } else if (s.type === "trend"){
+        ctx.moveTo(g.x1, g.y1); ctx.lineTo(g.x2, g.y2); ctx.stroke();
+      } else {
+        const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2),
+              bw = Math.abs(g.x2 - g.x1), bh = Math.abs(g.y2 - g.y1);
+        ctx.globalAlpha = .12; ctx.fillStyle = s.color; ctx.fillRect(x, y, bw, bh);
+        ctx.globalAlpha = 1; ctx.strokeRect(x, y, bw, bh);
+      }
+      ctx.setLineDash([]);
+      if (i === st.sel && i < st.shapes.length){
+        const pts = s.type === "hline" ? [[10, g.y], [w - 10, g.y]] : [[g.x1, g.y1], [g.x2, g.y2]];
+        for (const [px, py] of pts){
+          ctx.fillStyle = "#0A0A0C"; ctx.fillRect(px - 4, py - 4, 8, 8);
+          ctx.fillStyle = s.color;  ctx.fillRect(px - 3, py - 3, 6, 6);
+        }
+      }
+    });
+  }
+
+  /* ---- hit-test & interactions ---- */
+  function distSeg(px, py, x1, y1, x2, y2){
+    const dx = x2 - x1, dy = y2 - y1, L2 = dx*dx + dy*dy;
+    let t = L2 ? ((px - x1)*dx + (py - y1)*dy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t*dx), py - (y1 + t*dy));
+  }
+  function hit(px, py){
+    for (let i = st.shapes.length - 1; i >= 0; i--){
+      const s = st.shapes[i], g = geo(s);
+      if (!g) continue;
+      if (s.type === "hline"){
+        if (Math.abs(py - g.y) < 6) return {i, part: "body"};
+        continue;
+      }
+      if (Math.hypot(px - g.x1, py - g.y1) < 9) return {i, part: "p1"};
+      if (Math.hypot(px - g.x2, py - g.y2) < 9) return {i, part: "p2"};
+      if (s.type === "trend"){
+        if (distSeg(px, py, g.x1, g.y1, g.x2, g.y2) < 6) return {i, part: "body"};
+      } else {
+        const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2),
+              bw = Math.abs(g.x2 - g.x1), bh = Math.abs(g.y2 - g.y1);
+        if (px > x - 6 && px < x + bw + 6 && py > y - 6 && py < y + bh + 6) return {i, part: "body"};
+      }
+    }
+    return null;
+  }
+  const evPos = e => {
+    const r = box.getBoundingClientRect();
+    return {x: e.clientX - r.left, y: e.clientY - r.top};
+  };
+
+  function onDown(e){
+    if (e.target.closest && (e.target.closest(".dtoolbar") || e.target.closest(".dpanel")
+        || e.target.closest(".cpanel") || e.target.closest(".cgear"))) return;
+    const {x, y} = evPos(e);
+    if (st.tool){                                     /* — création — */
+      e.preventDefault(); e.stopPropagation();
+      const t = tOf(x), p = pOf(y);
+      if (t == null || p == null) return;
+      if (st.tool === "hline"){
+        st.shapes.push({type: "hline", p1: {t, price: p}, p2: {t, price: p}, ...DRAW_DEF});
+        st.sel = st.shapes.length - 1;
+        toolReset(); save(); panelSync(); redraw();
+        return;
+      }
+      if (!st.draft){
+        st.draft = {type: st.tool, p1: {t, price: p}, p2: {t, price: p}, ...DRAW_DEF};
+        st._draftMove = ev => {
+          const q = evPos(ev);
+          const t2 = tOf(q.x), p2 = pOf(q.y);
+          if (t2 != null && p2 != null){ st.draft.p2 = {t: t2, price: p2}; redraw(); }
+        };
+        window.addEventListener("pointermove", st._draftMove);
+      } else {
+        const t2 = tOf(x), p2 = pOf(y);
+        if (t2 != null && p2 != null) st.draft.p2 = {t: t2, price: p2};
+        st.shapes.push(st.draft);
+        st.sel = st.shapes.length - 1;
+        cancelDraft(); toolReset(); save(); panelSync(); redraw();
+      }
+      return;
+    }
+    /* — curseur : sélection & drag si contact, sinon on laisse le chart panner — */
+    const hs = hit(x, y);
+    if (!hs){
+      if (st.sel !== -1){ st.sel = -1; panelSync(); redraw(); }
+      return;
+    }
+    e.preventDefault(); e.stopPropagation();
+    st.sel = hs.i; panelSync(); redraw();
+    const s = st.shapes[hs.i];
+    const start = {x, y, p1: {...s.p1}, p2: {...s.p2}, pv: pOf(y)};
+    const move = ev => {
+      const q = evPos(ev);
+      const pv2 = pOf(q.y);
+      if (pv2 == null || start.pv == null) return;
+      const dP = pv2 - start.pv;
+      if (s.type === "hline"){
+        s.p1.price = start.p1.price + dP;
+        s.p2 = {...s.p1};
+        redraw(); return;
+      }
+      const tA = tOf(start.x), tB = tOf(q.x);
+      const dT = (tA != null && tB != null) ? tB - tA : 0;
+      if (hs.part === "p1")      s.p1 = {t: start.p1.t + dT, price: start.p1.price + dP};
+      else if (hs.part === "p2") s.p2 = {t: start.p2.t + dT, price: start.p2.price + dP};
+      else {
+        s.p1 = {t: start.p1.t + dT, price: start.p1.price + dP};
+        s.p2 = {t: start.p2.t + dT, price: start.p2.price + dP};
+      }
+      redraw();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      save();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  box.addEventListener("pointerdown", onDown, true);
+
+  function onKey(e){
+    if (!box.isConnected){ document.removeEventListener("keydown", onKey); return; }
+    if (e.key === "Escape"){
+      cancelDraft(); toolReset(); st.sel = -1; panelSync(); redraw();
+    }
+    if ((e.key === "Delete" || e.key === "Backspace") && st.sel >= 0
+        && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "")){
+      e.preventDefault();
+      st.shapes.splice(st.sel, 1); st.sel = -1; save(); panelSync(); redraw();
+    }
+  }
+  document.addEventListener("keydown", onKey);
+
+  ts.subscribeVisibleLogicalRangeChange(redraw);
+  new ResizeObserver(redraw).observe(box);
+  redraw();
+
+  return {
+    setBars(firstT, lastT, iv){
+      if (firstT != null) st.firstT = firstT;
+      if (lastT != null) st.lastT = lastT;
+      if (iv) st.iv = iv;
+      redraw();
+    },
+    setKey(k){ st.key = k; st.sel = -1; cancelDraft(); load(); panelSync(); redraw(); },
+    redraw,
+  };
+}
+
+/* ═══ Interpolation du tick : la bougie GLISSE vers le nouveau prix (easing)
+   au lieu de sauter — l'effet de fluidité TradingView, côté rendu. ═══ */
+function animatePrice(holder, series, bar, newClose, ms){
+  if (holder._anim) cancelAnimationFrame(holder._anim);
+  const start = performance.now(), from = bar.close;
+  if (!isFinite(from) || Math.abs(newClose - from) < 1e-9){
+    bar.close = newClose;
+    bar.high = Math.max(bar.high, newClose);
+    bar.low = Math.min(bar.low, newClose);
+    series.update(bar);
+    return;
+  }
+  const step = now => {
+    const k = Math.min(1, (now - start) / ms);
+    const e = 1 - Math.pow(1 - k, 3);          /* easeOutCubic */
+    const p = from + (newClose - from) * e;
+    bar.close = p;
+    bar.high = Math.max(bar.high, p);
+    bar.low = Math.min(bar.low, p);
+    try{ series.update(bar); }catch(_){ holder._anim = null; return; }
+    holder._anim = k < 1 ? requestAnimationFrame(step) : null;
+  };
+  holder._anim = requestAnimationFrame(step);
+}

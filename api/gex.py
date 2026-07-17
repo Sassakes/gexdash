@@ -28,9 +28,44 @@ from urllib.parse import parse_qs, urlparse
 
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
-                           fetch_webhooks, kv_get, kv_set, save_webhooks)
+                           fetch_webhooks, kv_get, kv_set,
+                           refresh_daily_anchor, save_webhooks)
 
 CRON_LOG_KEY = "gex:cron:log"
+FINNHUB_CACHE_S = 2.5
+
+
+def _finnhub_quote(sym):
+    """Cote actions US quasi temps réel via Finnhub (env FINNHUB_API_KEY).
+    Micro-cache Redis de quelques secondes : quel que soit le trafic du site,
+    l'API tierce reste loin sous la limite du palier gratuit (60 req/min).
+    Retourne (prix, ts_dernier_trade) ou None — jamais d'exception."""
+    key = os.environ.get("FINNHUB_API_KEY")
+    if not key:
+        return None
+    import time as _t
+    now = _t.time()
+    ck = f"gex:fh:{sym}"
+    try:
+        cached = kv_get(ck)
+        if cached:
+            d = json.loads(cached)
+            if now - d.get("at", 0) < FINNHUB_CACHE_S and d.get("p"):
+                return d["p"], d.get("t") or int(now)
+    except Exception:
+        pass
+    try:
+        import requests
+        r = requests.get("https://finnhub.io/api/v1/quote",
+                         params={"symbol": sym, "token": key}, timeout=4)
+        j = r.json()
+        p, t = j.get("c"), j.get("t")
+        if not p:
+            return None
+        kv_set(ck, json.dumps({"p": p, "t": t, "at": now}), ex=30)
+        return p, t or int(now)
+    except Exception:
+        return None
 
 
 def _utc_now_iso():
@@ -353,8 +388,54 @@ class handler(BaseHTTPRequestHandler):
         try:
             today = et_today().isoformat()
             now_p = paris_hhmm().replace(":", "")
-            force = "force" in qs or now_p < "0300"   # nuit = refresh d'ancre
             results, computed, cache = {}, [], {}
+            # ---- NUIT / open Globex : aucune info options nouvelle. On ne
+            #      recale QUE la partie daily (Daily Open + grille sigma), le
+            #      gamma/EM/IV de 15h25 restent intouchés. Publication et
+            #      annonce News UNIQUEMENT si l'ancre a réellement bougé
+            #      (auto-dédupliquant : schedules en double et backups
+            #      redeviennent muets une fois l'ancre à jour). ----
+            if ("daily" in qs) or now_p < "0300":
+                changed_any = []
+                for target in TARGETS:
+                    latest = _latest_payload(target)
+                    if latest is None:   # premier démarrage : calcul complet
+                        payload = build_payload(target=target, mode="snapshot",
+                                                chain_cache=cache)
+                        ok, why = _upstash_set(payload)
+                        results[target] = {"daily_only": True, "bootstrap": True,
+                                           "published": ok}
+                        if ok:
+                            changed_any.append(payload)
+                        continue
+                    if refresh_daily_anchor(latest):
+                        ok, why = _upstash_set(latest)
+                        results[target] = {"daily_only": True, "changed": True,
+                                           "published": ok,
+                                           "anchor": latest["open_grid"]["anchor"]}
+                        if ok:
+                            changed_any.append(latest)
+                    else:
+                        results[target] = {"daily_only": True, "changed": False}
+                news = False
+                if changed_any:
+                    px = " · ".join(
+                        "{} {:,}".format(p["target"], round(p["open_grid"]["anchor"]))
+                        .replace(",", " ")
+                        for p in changed_any if p.get("open_grid"))
+                    news = discord_news(
+                        "🔄 **GEX Terminal** — Daily Open recalé ("
+                        + paris_hhmm() + " Paris · open Globex)"
+                        + ("\n" + px if px else "")
+                        + "\nhttps://gexdash.wealthbuilders.group")
+                journal("ok daily-only changed=%d news=%s" % (len(changed_any), news))
+                self._send(200, json.dumps({
+                    "date": today, "daily_only": True,
+                    "changed": [p["target"] for p in changed_any],
+                    "news": news, "targets": results,
+                }).encode(), "application/json")
+                return
+            force = "force" in qs
             for target in TARGETS:
                 latest = _latest_payload(target)
                 fresh = (latest is not None
@@ -495,11 +576,27 @@ class handler(BaseHTTPRequestHandler):
                         scale = next((s.get("scale") for s in pay.get("sources", [])
                                       if s.get("chain") == YETF[target] and s.get("scale")), None)
                         if scale:
-                            emeta = _yahoo_chart(YETF[target], "1m", "1d").get("meta", {})
-                            ep, et = emeta.get("regularMarketPrice"), emeta.get("regularMarketTime") or 0
+                            # 1) Finnhub (temps réel actions US), 2) ETF Yahoo en repli
+                            ep = et = None
+                            src2 = None
+                            fh = _finnhub_quote(YETF[target])
+                            if fh:
+                                ep, et, src2 = fh[0], fh[1], "finnhub"
+                            if not ep:
+                                emeta = _yahoo_chart(YETF[target], "1m", "1d").get("meta", {})
+                                ep = emeta.get("regularMarketPrice")
+                                et = emeta.get("regularMarketTime") or 0
+                                src2 = "etf"
                             if ep and et > ptime:
-                                price = round(ep / scale + (pay.get("basis") or 0), 2)
-                                ptime, source = et, "etf"
+                                derived = round(ep / scale + (pay.get("basis") or 0), 2)
+                                # garde-fou : un dérivé à >1.5% du future différé
+                                # récent = donnée corrompue, pas un vrai mouvement
+                                fut_ok = (price and ptime
+                                          and abs(derived / price - 1) <= 0.015)
+                                if fut_ok or not price:
+                                    price, ptime, source = derived, et, src2
+                                else:
+                                    source = "fut-guard"
                     except Exception:
                         pass
                     body = json.dumps({

@@ -760,6 +760,13 @@ async function loadBars(){
     const bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
+    // outils de dessin : dessins propres à CE marché (persistés par navigateur)
+    if (!CHART.draw)
+      CHART.draw = attachDrawTools($("chartBox"), CHART.chart, CHART.series,
+                                   "gexDraw:main:" + TARGET, CHART.ivSec[CHART.iv]);
+    CHART.draw.setKey("gexDraw:main:" + TARGET);
+    if (bars.length)
+      CHART.draw.setBars(bars[0].time, CHART.lastBar.time, CHART.ivSec[CHART.iv]);
     if (CHART.lastBar && CHART.iv !== "1m"){
       // 5 jours chargés (scroll arrière dispo) mais vue par défaut = journée en cours
       CHART.chart.timeScale().setVisibleRange({
@@ -787,12 +794,14 @@ async function pollQuote(){
     const sec = CHART.ivSec[CHART.iv], p = d.price;
     const bucket = Math.floor(tzShift(d.time || Date.now()/1000) / sec) * sec;
     if (bucket > CHART.lastBar.time){
+      if (CHART._anim) cancelAnimationFrame(CHART._anim);
+      CHART._anim = null;
       CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
+      CHART.series.update(CHART.lastBar);
     }else{
-      CHART.lastBar = {time:CHART.lastBar.time, open:CHART.lastBar.open,
-        high:Math.max(CHART.lastBar.high, p), low:Math.min(CHART.lastBar.low, p), close:p};
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 900);
     }
-    CHART.series.update(CHART.lastBar);
+    if (CHART.draw) CHART.draw.setBars(null, CHART.lastBar.time);
   }catch(e){}
 }
 

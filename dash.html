@@ -20,6 +20,23 @@
     --disp:"Space Grotesk", var(--mono);
   }
   *{box-sizing:border-box; margin:0; padding:0}
+  #empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:72px 20px; min-height:46vh;
+  }
+  #empty .empty-t{font-family:var(--disp); font-size:16px; color:var(--text); letter-spacing:.01em}
+  #empty .empty-s{color:var(--muted); font-size:12.5px; margin:6px 0 22px}
+  .presets{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+  .presets button{
+    background:var(--surface); border:1px solid var(--line-strong); color:var(--muted);
+    font:inherit; font-size:12px; padding:10px 16px; cursor:pointer;
+    transition:color .14s ease, border-color .14s ease, transform .14s ease;
+  }
+  .presets button:hover{color:var(--gold); border-color:var(--gold-glow); transform:translateY(-1px)}
+  .ccount{
+    font-size:10.5px; color:var(--faint); letter-spacing:.14em; text-transform:uppercase;
+    padding:2px 9px; border:1px solid var(--line); border-radius:20px; white-space:nowrap;
+  }
   body{
     background:
       radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
@@ -269,10 +286,25 @@
     <option value="Europe/London">London</option>
     <option value="UTC">UTC</option>
   </select>
+  <span class="ccount" id="ccount"></span>
   <span class="hint" id="hintLbl">Disposition sauvegardée dans ce navigateur.</span>
 </div>
 
-<div id="empty" hidden></div>
+<div id="empty" hidden>
+  <svg viewBox="0 0 100 100" width="46" height="46" aria-hidden="true" style="opacity:.5;margin-bottom:14px">
+    <rect x="10" y="14" width="34" height="24" rx="2" fill="none" stroke="#F0B90B" stroke-width="3"/>
+    <rect x="56" y="14" width="34" height="24" rx="2" fill="none" stroke="#26A69A" stroke-width="3"/>
+    <rect x="10" y="48" width="34" height="24" rx="2" fill="none" stroke="#8A8A94" stroke-width="3"/>
+    <rect x="56" y="48" width="34" height="24" rx="2" fill="none" stroke="#8A8A94" stroke-width="3"/>
+  </svg>
+  <div class="empty-t">Ton plan de travail est vide</div>
+  <div class="empty-s">Ajoute des charts un par un, ou pars d'une disposition prête.</div>
+  <div class="presets">
+    <button data-preset="focus">◻ Focus NQ</button>
+    <button data-preset="triple">▤ NQ · ES · SPX</button>
+    <button data-preset="nqmtf">▦ NQ multi-TF</button>
+  </div>
+</div>
 <div id="board"></div>
 </main>
 
@@ -312,6 +344,7 @@ if (!Array.isArray(CARDS)) CARDS = [];
 CARDS.forEach((c, i) => {
   if (c.w == null){ c.x = (i % 2) * 6; c.y = Math.floor(i / 2) * 4; c.w = 6; c.h = 4; }
   if (!c.lv) c.lv = {gex: true, em: true, open: true};
+  if (!c.id) c.id = "c" + Date.now().toString(36) + i;
   if (!c.colors) c.colors = {up: PREFS.up, dn: PREFS.dn, px: PREFS.px};
 });
 function saveCards(){ try{ localStorage.setItem("gexDashCards", JSON.stringify(CARDS)); }catch(_){} }
@@ -484,6 +517,9 @@ async function mountCard(cfg, host){
       chart.timeScale().setVisibleRange({from: lastBar.time - 30*3600, to: lastBar.time + 45*60});
     else chart.timeScale().fitContent();
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
+    host._draw = attachDrawTools(box, chart, series,
+                                 "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
+    if (bars.length) host._draw.setBars(bars[0].time, lastBar.time, IVSEC[cfg.iv]);
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
   host._pay = await getLevels(cfg.t);
@@ -498,10 +534,15 @@ async function mountCard(cfg, host){
       if (!r.ok || d.price == null) return;
       const sec = IVSEC[cfg.iv], p = d.price;
       const bucket = Math.floor(tzShift(d.time || Date.now()/1000) / sec) * sec;
-      if (bucket > lastBar.time) lastBar = {time:bucket, open:p, high:p, low:p, close:p};
-      else lastBar = {time:lastBar.time, open:lastBar.open,
-        high:Math.max(lastBar.high, p), low:Math.min(lastBar.low, p), close:p};
-      series.update(lastBar);
+      if (bucket > lastBar.time){
+        if (host._anim) cancelAnimationFrame(host._anim);
+        host._anim = null;
+        lastBar = {time:bucket, open:p, high:p, low:p, close:p};
+        series.update(lastBar);
+      } else {
+        animatePrice(host, series, lastBar, p, 900);
+      }
+      if (host._draw) host._draw.setBars(null, lastBar.time);
     }catch(_){}
   };
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
@@ -563,6 +604,7 @@ function layoutCard(card, cfg){
 function render(){
   for (const el of Array.from(board.children)){
     if (el._timer) clearInterval(el._timer);
+    if (el._anim) cancelAnimationFrame(el._anim);
     try{ el._chart && el._chart.remove(); }catch(_){}
   }
   board.innerHTML = "";
@@ -596,6 +638,7 @@ function render(){
     mountCard(cfg, card);
   });
   boardHeight();
+  updateCount();
 }
 
 function firstFreeSpot(w, h){
@@ -616,6 +659,7 @@ $("addBtn").onclick = () => {
   if (CARDS.length >= 10) return;
   const spot = firstFreeSpot(6, 4);
   CARDS.push({t: $("addT").value, iv: $("addIv").value, x: spot.x, y: spot.y, w: 6, h: 4,
+              id: "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e4),
               lv: {gex: true, em: true, open: true},
               colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
   saveCards(); render();
@@ -630,6 +674,29 @@ function paintBoardGrid(){
   } else {
     board.style.backgroundImage = "";
   }
+}
+
+const PRESETS = {
+  focus:  [{t:"NQ", iv:"5m",  x:0, y:0, w:12, h:6}],
+  triple: [{t:"NQ", iv:"5m", x:0, y:0, w:6, h:5}, {t:"ES", iv:"5m", x:6, y:0, w:6, h:5},
+           {t:"SPX", iv:"5m", x:0, y:5, w:12, h:4}],
+  nqmtf:  [{t:"NQ", iv:"1m", x:0, y:0, w:6, h:5}, {t:"NQ", iv:"5m", x:6, y:0, w:6, h:5},
+           {t:"NQ", iv:"15m", x:0, y:5, w:12, h:4}],
+};
+function applyPreset(name){
+  const p = PRESETS[name]; if (!p) return;
+  CARDS = p.map((c, i) => ({...c,
+    id: "c" + Date.now().toString(36) + i,
+    lv: {gex: true, em: true, open: true},
+    colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}}));
+  saveCards(); render();
+}
+document.querySelectorAll(".presets [data-preset]").forEach(b =>
+  b.onclick = () => applyPreset(b.dataset.preset));
+
+function updateCount(){
+  const c = $("ccount");
+  if (c) c.textContent = CARDS.length ? `${CARDS.length} chart${CARDS.length > 1 ? "s" : ""}` : "";
 }
 
 const tzD = $("tzDash");

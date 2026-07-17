@@ -688,6 +688,41 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
     ]
 
 
+def build_pine(rows, grid):
+    """Pine string from target-scale rows [(price, label, kind)] + open grid."""
+    pine_rows = list(rows)
+    if grid:
+        suf = {"iv": "σ", "atr": " ATR"}.get(grid["mode"], "%")
+        pine_rows.append((grid["anchor"], "Daily O", "opo"))
+        for g in grid["levels"]:
+            pine_rows.append((g["up"], f"+{g['mult']:g}{suf}", "opu"))
+            pine_rows.append((g["down"], f"-{g['mult']:g}{suf}", "opd"))
+    return ";".join(f"{p:.1f},{l},{k}" for p, l, k in sorted(pine_rows, key=lambda x: -x[0]))
+
+
+def refresh_daily_anchor(payload):
+    """Recalage nocturne de l'open Globex : recalcule UNIQUEMENT la partie
+    daily (Daily Open + grille sigma, avec l'IV DEJA stockée du run de 15h25).
+    Gamma, EM, straddle, IV, prix : intouchés — il n'existe aucune information
+    options nouvelle pendant la nuit. Retourne True seulement si l'ancre a
+    réellement bougé (Yahoo a créé la bougie de la nouvelle séance)."""
+    cfg = TARGETS[payload["target"]]
+    d_open, atr14 = daily_bars(cfg["ychart"])
+    if d_open is None:
+        return False
+    grid = open_grid(d_open, iv=payload.get("iv_atm"), atr=atr14)
+    if grid is None:
+        return False
+    old_anchor = (payload.get("open_grid") or {}).get("anchor")
+    if old_anchor is not None and abs(grid["anchor"] - old_anchor) < 0.6:
+        return False
+    payload["open_grid"] = grid
+    payload["daily_refresh_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    rows = [(L["price_nq"], L["label"], L["kind"]) for L in payload.get("levels", [])]
+    payload["pine"] = build_pine(rows, grid)
+    return True
+
+
 def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
                   mode="snapshot", em_bands=(0.5, 1.5), chain_cache=None,
                   iv_override=None):
@@ -823,14 +858,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         em["bands"] = bands_meta
     grid = open_grid(d_open, iv=iv, atr=atr14)
 
-    pine_rows = [(p + basis, l, k) for p, l, k in levels]
-    if grid:
-        suf = {"iv": "σ", "atr": " ATR"}.get(grid["mode"], "%")
-        pine_rows.append((grid["anchor"], "Daily O", "opo"))
-        for g in grid["levels"]:
-            pine_rows.append((g["up"], f"+{g['mult']:g}{suf}", "opu"))
-            pine_rows.append((g["down"], f"-{g['mult']:g}{suf}", "opd"))
-    pine = ";".join(f"{p:.1f},{l},{k}" for p, l, k in sorted(pine_rows, key=lambda x: -x[0]))
+    pine = build_pine([(p + basis, l, k) for p, l, k in levels], grid)
 
     return {
         "date": today.isoformat(),
