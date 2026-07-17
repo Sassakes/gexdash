@@ -505,32 +505,30 @@ function bandHalf(series, prof){
    géants qui écrasaient tout), rangées de points RONDS dont le diamètre,
    la densité et l'alpha portent le rang d'exposition, halo lumineux sur
    le top décile. rk(g) -> rang [0..1] dans la distribution du jour. */
-function rankFn(allMags){
-  const A = allMags.slice().sort((a, b) => a - b);
-  return g => {
-    const x = Math.abs(g);
-    let lo = 0, hi = A.length;
-    while (lo < hi){ const m = (lo + hi) >> 1; if (A[m] <= x) lo = m + 1; else hi = m; }
-    return A.length ? lo / A.length : 0;
-  };
+/* La règle du X-Ray, celle de ta commu : on ne montre QUE les K plus
+   fortes expositions (top 12 par colonne). Taille et halo = magnitude
+   réelle vs le max du jour (compression racine : contraste préservé). */
+function topK(prof, k){
+  return prof.slice()
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, k)
+    .sort((a, b) => a[0] - b[0]);
 }
-function paintProfile(ctx, series, prof, x0, x1, h, rk, hh){
-  if (x1 - x0 < 2) return;
+function paintProfile(ctx, series, prof, x0, x1, h, dayMax, hh){
+  if (x1 - x0 < 2 || !dayMax) return;
   ctx.lineCap = "round";
   for (const [k, g] of prof){
-    const v0 = rk(g);
-    if (v0 < 0.45) continue;                 /* sous la médiane haute : silence */
-    const v = (v0 - 0.45) / 0.55;
     const y = series.priceToCoordinate(k);
     if (y == null || y < -20 || y > h + 20) continue;
-    const d = Math.max(1.6, Math.min(hh * 2, 1.6 + 7 * Math.pow(v, 1.2)));
-    const al = 0.22 + 0.68 * Math.pow(v, 1.1);
+    const v = Math.sqrt(Math.abs(g) / dayMax);
+    const d = Math.max(2, Math.min(hh * 2, 2 + 7 * v));
+    const al = 0.3 + 0.6 * v;
     const col = g >= 0 ? `rgba(38,190,170,${al})` : `rgba(244,88,84,${al})`;
     ctx.strokeStyle = col;
     ctx.lineWidth = d;
-    ctx.setLineDash([0.01, d * 2.35]);       /* dash quasi-nul + cap rond = cercles */
+    ctx.setLineDash([0.01, d * 2.35]);       /* cap rond + dash quasi-nul = cercles */
     ctx.shadowColor = col;
-    ctx.shadowBlur = v0 > 0.9 ? 7 : 0;       /* les aimants BRILLENT */
+    ctx.shadowBlur = Math.abs(g) / dayMax > 0.55 ? 7 : 0;
     ctx.beginPath();
     ctx.moveTo(x0 + 2, y);
     ctx.lineTo(x1 - 2, y);
@@ -576,14 +574,15 @@ function drawHeat(host, cfg){
     for (let i = 1; i < snaps.length; i++) deltas.push(snaps[i].t - snaps[i - 1].t);
     deltas.sort((a, b) => a - b);
     const snapSec = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 900;
-    const rk = rankFn(snaps.flatMap(s => s.prof.map(p => Math.abs(p[1]))));
+    const tops = snaps.map(s => topK(s.prof, 12));
+    const dayMax = Math.max(...tops.flatMap(pr => pr.map(p => Math.abs(p[1])))) || 1;
     const hh = bandHalf(series, snaps[snaps.length - 1].prof);
     for (let i = 0; i < snaps.length; i++){
       const x0 = xAt(tzShift(snaps[i].t));
       const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t))
                                       : xAt(tzShift(snaps[i].t + snapSec));
       if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
-      paintProfile(ctx, series, snaps[i].prof, Math.max(0, x0), Math.min(w, x1), h, rk, hh);
+      paintProfile(ctx, series, tops[i], Math.max(0, x0), Math.min(w, x1), h, dayMax, hh);
     }
     return;
   }
@@ -593,8 +592,9 @@ function drawHeat(host, cfg){
   const lastT = T[T.length - 1];
   const x0 = xAt(lastT), x1 = xAt(lastT + 900);
   if (x0 == null || x1 == null) return;
-  paintProfile(ctx, series, prof, Math.max(0, x0), Math.min(w, x1), h,
-               rankFn(prof.map(p => Math.abs(p[1]))), bandHalf(series, prof));
+  const tp = topK(prof, 12);
+  paintProfile(ctx, series, tp, Math.max(0, x0), Math.min(w, x1), h,
+               Math.max(...tp.map(p => Math.abs(p[1]))) || 1, bandHalf(series, prof));
 }
 async function fetchXr(host, cfg){
   if (!cfg.lv.xr) return;
