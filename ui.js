@@ -14,12 +14,13 @@ function saveLvShow(){ try{ localStorage.setItem("gexLvShow", JSON.stringify(LVS
 const TZ_CITY = {"Europe/Paris": "Paris", "America/New_York": "New York",
                  "Europe/London": "London", "UTC": "UTC"};
 
-function tzShift(tSec){
+function tzShiftAs(tz, tSec){
   const d = new Date(tSec * 1000);
-  const loc = new Date(d.toLocaleString("en-US", {timeZone: PREFS.tz}));
+  const loc = new Date(d.toLocaleString("en-US", {timeZone: tz}));
   const utc = new Date(d.toLocaleString("en-US", {timeZone: "UTC"}));
   return tSec + Math.round((loc - utc) / 1000);
 }
+function tzShift(tSec){ return tzShiftAs(PREFS.tz, tSec); }
 
 const CANDLE_PAIRS = [
   ["#26A69A", "#EF5350"],
@@ -296,13 +297,31 @@ function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify
    storeKey = identité du chart -> ses dessins lui sont propres. */
 function attachDrawTools(box, chart, series, storeKey, ivSec){
   const ts = chart.timeScale();
-  const st = {key: storeKey, iv: ivSec || 300, times: [],
+  const st = {key: storeKey, iv: ivSec || 300, times: [], tz: PREFS.tz,
               shapes: [], tool: null, sel: -1, draft: null, _draftMove: null};
-  function load(){
-    try{ st.shapes = JSON.parse(localStorage.getItem(st.key) || "[]"); }catch(_){ st.shapes = []; }
-    if (!Array.isArray(st.shapes)) st.shapes = [];
+  function remapTz(from, to){
+    if (!from || from === to) return;
+    for (const s of st.shapes){
+      for (const P of [s.p1, s.p2]){
+        if (!P || P.t == null) continue;
+        const raw = P.t - (tzShiftAs(from, P.t) - P.t);
+        P.t = tzShiftAs(to, raw);
+      }
+    }
   }
-  function save(){ try{ localStorage.setItem(st.key, JSON.stringify(st.shapes)); }catch(_){} }
+  function load(){
+    let d = null;
+    try{ d = JSON.parse(localStorage.getItem(st.key) || "[]"); }catch(_){ d = []; }
+    if (Array.isArray(d)){ st.shapes = d; st.tz = PREFS.tz; }        /* héritage */
+    else {
+      st.shapes = Array.isArray(d.shapes) ? d.shapes : [];
+      st.tz = d.tz || PREFS.tz;
+      if (st.tz !== PREFS.tz){ remapTz(st.tz, PREFS.tz); st.tz = PREFS.tz; }
+    }
+  }
+  function save(){
+    try{ localStorage.setItem(st.key, JSON.stringify({tz: st.tz, shapes: st.shapes})); }catch(_){}
+  }
   load();
 
   const canvas = document.createElement("canvas");
@@ -347,6 +366,7 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
       if (st.shapes.length && confirm("Effacer tous les dessins de ce chart ?")){
         st.shapes = []; st.sel = -1; save(); panelSync(); redraw();
       }
+      foldTools(true);
       return;
     }
     st.tool = b.dataset.tool || null;
@@ -453,6 +473,7 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
 
   /* ---- rendu ---- */
   function redraw(){
+    if (st.tz !== PREFS.tz){ remapTz(st.tz, PREFS.tz); st.tz = PREFS.tz; save(); }
     const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
     if (!w || !h) return;
     if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)){
@@ -560,6 +581,11 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
       } else {
         const t2 = tOf(x), p2 = pOf(y);
         if (t2 != null && p2 != null) st.draft.p2 = {t: t2, price: p2};
+        const gg = geo(st.draft);
+        if (gg && Math.abs(gg.x2 - gg.x1) < 3 && Math.abs(gg.y2 - gg.y1) < 3){
+          cancelDraft(); toolReset(); panelSync(); redraw();   /* fantôme : rejeté */
+          return;
+        }
         st.shapes.push(st.draft);
         st.sel = st.shapes.length - 1;
         cancelDraft(); toolReset(); save(); panelSync(); redraw();
@@ -575,24 +601,31 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
     e.preventDefault(); e.stopPropagation();
     st.sel = hs.i; panelSync(); redraw();
     const s = st.shapes[hs.i];
-    const start = {x, y, p1: {...s.p1}, p2: {...s.p2}, pv: pOf(y)};
+    const g0 = geo(s);
+    if (!g0) return;
+    /* drag en espace PIXEL : chaque ancre est reconvertie à SA propre
+       position, donc les trous de séance ne créent plus aucun saut ;
+       clamp au cadre : une forme ne peut jamais devenir irrécupérable */
+    const start = {x, y, g: {...g0}};
+    const cl = (v, m) => Math.max(4, Math.min(m - 4, v));
+    const put = (P, px, py) => {
+      const t = tOf(cl(px, box.clientWidth)), pr = pOf(cl(py, box.clientHeight));
+      if (t != null) P.t = t;
+      if (pr != null) P.price = pr;
+    };
     const move = ev => {
       const q = evPos(ev);
-      const pv2 = pOf(q.y);
-      if (pv2 == null || start.pv == null) return;
-      const dP = pv2 - start.pv;
+      const dx = q.x - start.x, dy = q.y - start.y;
       if (s.type === "hline"){
-        s.p1.price = start.p1.price + dP;
-        s.p2 = {...s.p1};
+        const pr = pOf(cl(start.g.y + dy, box.clientHeight));
+        if (pr != null){ s.p1.price = pr; s.p2 = {...s.p1}; }
         redraw(); return;
       }
-      const tA = tOf(start.x), tB = tOf(q.x);
-      const dT = (tA != null && tB != null) ? tB - tA : 0;
-      if (hs.part === "p1")      s.p1 = {t: start.p1.t + dT, price: start.p1.price + dP};
-      else if (hs.part === "p2") s.p2 = {t: start.p2.t + dT, price: start.p2.price + dP};
+      if (hs.part === "p1")      put(s.p1, start.g.x1 + dx, start.g.y1 + dy);
+      else if (hs.part === "p2") put(s.p2, start.g.x2 + dx, start.g.y2 + dy);
       else {
-        s.p1 = {t: start.p1.t + dT, price: start.p1.price + dP};
-        s.p2 = {t: start.p2.t + dT, price: start.p2.price + dP};
+        put(s.p1, start.g.x1 + dx, start.g.y1 + dy);
+        put(s.p2, start.g.x2 + dx, start.g.y2 + dy);
       }
       redraw();
     };
