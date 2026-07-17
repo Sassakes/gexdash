@@ -245,7 +245,8 @@ function buildGearMenu(holder, hooks){
 
 /* ═══════════ Outils de dessin (toutes les charts, dessins par chart) ═══════════ */
 const DRAW_COLORS = ["#F0B90B", "#26A69A", "#EF5350", "#E8E6E1", "#3B82F6", "#A855F7"];
-let DRAW_DEF = {color: "#F0B90B", width: 1, style: "solid"};
+let DRAW_DEF = {color: "#F0B90B", width: 1, style: "solid",
+                fill: "#F0B90B", fillOp: 0.12, mid: false};
 try{ DRAW_DEF = {...DRAW_DEF, ...JSON.parse(localStorage.getItem("gexDrawStyle") || "{}")}; }catch(_){}
 function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify(DRAW_DEF)); }catch(_){} }
 
@@ -265,9 +266,13 @@ function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify
     position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:9;
     display:flex; gap:5px; align-items:center;
     background:rgba(14,14,18,.96); border:1px solid var(--line-strong, #2B2B33);
-    padding:6px 8px; box-shadow:0 10px 30px rgba(0,0,0,.6);
+    padding:7px 9px; box-shadow:0 10px 30px rgba(0,0,0,.6);
+    flex-direction:column; align-items:stretch;
   }
   .dpanel[hidden]{display:none}
+  .dprow{display:flex; gap:5px; align-items:center}
+  .dlab{font-size:9px; color:var(--faint, #5C5C66); letter-spacing:.1em; text-transform:uppercase; min-width:44px}
+  .dpanel input[type=range]{width:64px; accent-color:#F0B90B}
   .dtoolbar .dtools{display:flex; flex-direction:column; gap:4px}
   .dtoolbar .dtools[hidden]{display:none}
   .dtoolbar .dmore{
@@ -291,7 +296,7 @@ function saveDrawDef(){ try{ localStorage.setItem("gexDrawStyle", JSON.stringify
    storeKey = identité du chart -> ses dessins lui sont propres. */
 function attachDrawTools(box, chart, series, storeKey, ivSec){
   const ts = chart.timeScale();
-  const st = {key: storeKey, iv: ivSec || 300, firstT: null, lastT: null,
+  const st = {key: storeKey, iv: ivSec || 300, times: [],
               shapes: [], tool: null, sel: -1, draft: null, _draftMove: null};
   function load(){
     try{ st.shapes = JSON.parse(localStorage.getItem(st.key) || "[]"); }catch(_){ st.shapes = []; }
@@ -363,7 +368,8 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
     panel.hidden = !show;
     if (!show) return;
     const s = curStyle();
-    panel.innerHTML =
+    const isBox = st.sel >= 0 ? st.shapes[st.sel].type === "box" : st.tool === "box";
+    const row1 =
       DRAW_COLORS.map(c => `<button class="dswatch${s.color===c ? " on" : ""}" style="background:${c}" data-c="${c}"></button>`).join("") +
       `<input type="color" value="${s.color}" data-cc>` +
       `<span class="dsep"></span>` +
@@ -372,49 +378,68 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
       [["solid","—"],["dashed","╌"],["dotted","┄"]].map(([v, l]) =>
         `<button class="dwb${s.style===v ? " on" : ""}" data-s="${v}">${l}</button>`).join("") +
       (st.sel >= 0 ? `<span class="dsep"></span><button class="dwb ddel" data-del title="Supprimer">✕</button>` : "");
-    const apply = (k, v) => {
+    const opPct = Math.round((s.fillOp == null ? 0.12 : s.fillOp) * 100);
+    const row2 = !isBox ? "" :
+      `<span class="dlab">Fond</span>` +
+      `<input type="color" value="${s.fill || s.color}" data-fill>` +
+      `<input type="range" min="0" max="60" value="${opPct}" data-op title="Opacité du fond">` +
+      `<span class="dlab" data-oplbl style="min-width:26px">${opPct}%</span>` +
+      `<button class="dwb${s.mid ? " on" : ""}" data-mid title="Ligne médiane">┼ médiane</button>`;
+    panel.innerHTML = `<div class="dprow">${row1}</div>` + (row2 ? `<div class="dprow">${row2}</div>` : "");
+    const apply = (k, v, keepPanel) => {
       if (st.sel >= 0){ st.shapes[st.sel][k] = v; save(); }
       DRAW_DEF[k] = v; saveDrawDef();
-      panelSync(); redraw();
+      if (!keepPanel) panelSync();
+      redraw();
     };
     panel.querySelectorAll("[data-c]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("color", x.dataset.c); });
-    panel.querySelector("[data-cc]").oninput = e => apply("color", e.target.value);
+    panel.querySelector("[data-cc]").oninput = e => apply("color", e.target.value, true);
     panel.querySelectorAll("[data-w]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("width", +x.dataset.w); });
     panel.querySelectorAll("[data-s]").forEach(x => x.onclick = e => { e.stopPropagation(); apply("style", x.dataset.s); });
+    const fill = panel.querySelector("[data-fill]");
+    if (fill) fill.oninput = e => apply("fill", e.target.value, true);
+    const op = panel.querySelector("[data-op]");
+    if (op) op.oninput = e => {
+      apply("fillOp", +e.target.value / 100, true);
+      const l = panel.querySelector("[data-oplbl]");
+      if (l) l.textContent = e.target.value + "%";
+    };
+    const mid = panel.querySelector("[data-mid]");
+    if (mid) mid.onclick = e => { e.stopPropagation(); apply("mid", !curStyle().mid); };
     const del = panel.querySelector("[data-del]");
     if (del) del.onclick = e => { e.stopPropagation(); st.shapes.splice(st.sel, 1); st.sel = -1; save(); panelSync(); redraw(); };
   }
 
-  /* ---- conversions temps/prix <-> pixels (avec extrapolation hors data) ---- */
+  /* ---- conversions temps/prix <-> pixels via l'INDEX LOGIQUE des bougies :
+          défini partout (entre les bougies, hors écran, dans le futur), donc
+          un dessin déplacé ne peut jamais tomber dans un trou de séance ---- */
   const yOf = p => series.priceToCoordinate(p);
   const pOf = y => series.coordinateToPrice(y);
+  function idxOf(t){
+    const T = st.times, n = T.length;
+    if (!n) return null;
+    if (t <= T[0]) return 0 - (T[0] - t) / st.iv;
+    if (t >= T[n - 1]) return (n - 1) + (t - T[n - 1]) / st.iv;
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1){
+      const m = (lo + hi) >> 1;
+      if (T[m] <= t) lo = m; else hi = m;
+    }
+    const span = T[hi] - T[lo] || st.iv;
+    return lo + (t - T[lo]) / span;
+  }
   function xOf(t){
-    const c = ts.timeToCoordinate(t);
-    if (c !== null) return c;
-    const bs = ts.options().barSpacing;
-    if (st.lastT != null && t > st.lastT){
-      const c2 = ts.timeToCoordinate(st.lastT);
-      return c2 === null ? null : c2 + ((t - st.lastT) / st.iv) * bs;
-    }
-    if (st.firstT != null && t < st.firstT){
-      const c2 = ts.timeToCoordinate(st.firstT);
-      return c2 === null ? null : c2 - ((st.firstT - t) / st.iv) * bs;
-    }
-    return null;
+    const l = idxOf(t);
+    return l == null ? null : ts.logicalToCoordinate(l);
   }
   function tOf(x){
-    const t = ts.coordinateToTime(x);
-    if (t !== null) return t;
-    const bs = ts.options().barSpacing;
-    if (st.lastT != null){
-      const cL = ts.timeToCoordinate(st.lastT);
-      if (cL !== null && x >= cL) return st.lastT + Math.round((x - cL) / bs) * st.iv;
-    }
-    if (st.firstT != null){
-      const cF = ts.timeToCoordinate(st.firstT);
-      if (cF !== null && x <= cF) return st.firstT - Math.round((cF - x) / bs) * st.iv;
-    }
-    return null;
+    const l = ts.coordinateToLogical(x);
+    const T = st.times, n = T.length;
+    if (l == null || !n) return null;
+    if (l <= 0) return Math.round(T[0] + l * st.iv);
+    if (l >= n - 1) return Math.round(T[n - 1] + (l - (n - 1)) * st.iv);
+    const i = Math.floor(l), f = l - i;
+    return Math.round(T[i] + (T[i + 1] - T[i]) * f);
   }
   function geo(s){
     if (s.type === "hline"){
@@ -453,8 +478,19 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
       } else {
         const x = Math.min(g.x1, g.x2), y = Math.min(g.y1, g.y2),
               bw = Math.abs(g.x2 - g.x1), bh = Math.abs(g.y2 - g.y1);
-        ctx.globalAlpha = .12; ctx.fillStyle = s.color; ctx.fillRect(x, y, bw, bh);
-        ctx.globalAlpha = 1; ctx.strokeRect(x, y, bw, bh);
+        ctx.globalAlpha = s.fillOp == null ? .12 : s.fillOp;
+        ctx.fillStyle = s.fill || s.color;
+        ctx.fillRect(x, y, bw, bh);
+        ctx.globalAlpha = 1;
+        ctx.strokeRect(x, y, bw, bh);
+        if (s.mid){
+          const ym = y + bh / 2;
+          ctx.setLineDash([4, 4]);
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, ym); ctx.lineTo(x + bw, ym); ctx.stroke();
+          ctx.lineWidth = s.width;
+          ctx.setLineDash(s.style === "dashed" ? [7, 5] : s.style === "dotted" ? [2, 4] : []);
+        }
       }
       ctx.setLineDash([]);
       if (i === st.sel && i < st.shapes.length){
@@ -588,10 +624,15 @@ function attachDrawTools(box, chart, series, storeKey, ivSec){
   redraw();
 
   return {
-    setBars(firstT, lastT, iv){
-      if (firstT != null) st.firstT = firstT;
-      if (lastT != null) st.lastT = lastT;
+    setBars(times, iv){
+      if (Array.isArray(times) && times.length) st.times = times;
       if (iv) st.iv = iv;
+      redraw();
+    },
+    pushTime(t){
+      const T = st.times;
+      if (!T.length) st.times = [t];
+      else if (t > T[T.length - 1]) T.push(t);
       redraw();
     },
     setKey(k){ st.key = k; st.sel = -1; cancelDraft(); load(); panelSync(); redraw(); },

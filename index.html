@@ -766,7 +766,7 @@ async function loadBars(){
                                    "gexDraw:main:" + TARGET, CHART.ivSec[CHART.iv]);
     CHART.draw.setKey("gexDraw:main:" + TARGET);
     if (bars.length)
-      CHART.draw.setBars(bars[0].time, CHART.lastBar.time, CHART.ivSec[CHART.iv]);
+      CHART.draw.setBars(bars.map(b => b.time), CHART.ivSec[CHART.iv]);
     if (CHART.lastBar && CHART.iv !== "1m"){
       // 5 jours chargés (scroll arrière dispo) mais vue par défaut = journée en cours
       CHART.chart.timeScale().setVisibleRange({
@@ -801,7 +801,7 @@ async function pollQuote(){
     }else{
       animatePrice(CHART, CHART.series, CHART.lastBar, p, 900);
     }
-    if (CHART.draw) CHART.draw.setBars(null, CHART.lastBar.time);
+    if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
   }catch(e){}
 }
 

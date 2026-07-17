@@ -492,6 +492,7 @@ async function mountCard(cfg, host){
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
             fontFamily:"IBM Plex Mono, monospace", fontSize:10},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
+    crosshair:{mode: LightweightCharts.CrosshairMode.Normal},
     rightPriceScale:{borderColor:C.line},
     timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
   });
@@ -520,7 +521,7 @@ async function mountCard(cfg, host){
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
     host._draw = attachDrawTools(box, chart, series,
                                  "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
-    if (bars.length) host._draw.setBars(bars[0].time, lastBar.time, IVSEC[cfg.iv]);
+    if (bars.length) host._draw.setBars(bars.map(b => b.time), IVSEC[cfg.iv]);
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
   host._pay = await getLevels(cfg.t);
@@ -543,7 +544,7 @@ async function mountCard(cfg, host){
       } else {
         animatePrice(host, series, lastBar, p, 900);
       }
-      if (host._draw) host._draw.setBars(null, lastBar.time);
+      if (host._draw) host._draw.pushTime(lastBar.time);
     }catch(_){}
   };
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
