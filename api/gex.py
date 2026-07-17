@@ -19,8 +19,10 @@ path lands here. We therefore route explicitly:
 """
 
 import hmac
+import datetime as dt
 import json
 import os
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -389,6 +391,40 @@ class handler(BaseHTTPRequestHandler):
             today = et_today().isoformat()
             now_p = paris_hhmm().replace(":", "")
             results, computed, cache = {}, [], {}
+            # ---- XR : snapshot du profil GEX par strike, toutes les 15 min
+            #      (schedule dédié). N'écrit QUE l'historique du jour ; les
+            #      niveaux publiés (walls/EM de 15h25) ne bougent pas. ----
+            if "xr" in qs:
+                snaps = {}
+                for target in TARGETS:
+                    try:
+                        p = build_payload(target=target, mode="snapshot",
+                                          chain_cache=cache)
+                        prof = p.get("gex_by_strike") or []
+                        if not prof:
+                            snaps[target] = 0
+                            continue
+                        key = f"gex:xr:{target}:{today}"
+                        try:
+                            hist = json.loads(kv_get(key) or "[]")
+                        except Exception:
+                            hist = []
+                        hist.append({"t": int(time.time()),
+                                     "px": p.get("nq_price"),
+                                     "prof": prof})
+                        hist = hist[-60:]
+                        kv_set(key, json.dumps(hist), ex=3 * 86400)
+                        snaps[target] = len(hist)
+                    except Exception as e:
+                        journal(f"xr {target} KO: {e}")
+                        snaps[target] = -1
+                kv_set("gex:xr:last", json.dumps(
+                    {"utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+                     "paris": paris_hhmm(), "snaps": snaps}), ex=86400)
+                self._send(200, json.dumps({"xr": True, "date": today,
+                                            "snaps": snaps}).encode(),
+                           "application/json")
+                return
             # ---- NUIT / open Globex : aucune info options nouvelle. On ne
             #      recale QUE la partie daily (Daily Open + grille sigma), le
             #      gamma/EM/IV de 15h25 restent intouchés. Publication et
@@ -552,6 +588,27 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ---- chart data: candles + last price, proxied (Yahoo blocks browser CORS) ----
+        if path == "/api/xr":
+            qs = parse_qs(urlparse(self.path).query)
+            tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if tgt not in TARGETS:
+                self._send(400, json.dumps({"error": "target invalide"}).encode(),
+                           "application/json")
+                return
+            today = et_today().isoformat()
+            try:
+                hist = json.loads(kv_get(f"gex:xr:{tgt}:{today}") or "[]")
+            except Exception:
+                hist = []
+            body = json.dumps({"target": tgt, "date": today, "snaps": hist}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=120, max-age=0")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if path in ("/api/chart", "/api/quote"):
             qs0 = parse_qs(parsed.query)
             target = _q_target(qs0)

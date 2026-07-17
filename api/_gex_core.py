@@ -688,6 +688,16 @@ def gex_profile(spot, strikes, net, basis, band=0.045):
     ]
 
 
+def _strike_profile(strikes, net, spot, basis, window=0.04, cap=120):
+    rows = [(float(k) + basis, float(g) / 1e9)
+            for k, g in zip(strikes, net)
+            if abs(float(k) - spot) <= spot * window and abs(float(g)) > 0]
+    if len(rows) > cap:
+        rows = sorted(rows, key=lambda r: -abs(r[1]))[:cap]
+    rows.sort()
+    return [[round(k, 1), round(g, 3)] for k, g in rows]
+
+
 def build_pine(rows, grid):
     """Pine string from target-scale rows [(price, label, kind)] + open grid."""
     pine_rows = list(rows)
@@ -871,6 +881,10 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         "basis": round(basis, 2),
         "basis_source": basis_source,
         "net_gex_bn": round(net_total_bn, 2),
+        # profil par strike (échelle cible, $Bn) : fenêtre ±4% du spot ;
+        # si trop dense, on garde les 120 plus fortes expositions (jamais
+        # une troncature aveugle par prix), puis re-tri par strike
+        "gex_by_strike": _strike_profile(strikes, net, spot, basis),
         "regime": "positive" if net_total_bn > 0 else "negative",
         "pc_oi": pc_oi,
         "iv_atm": round(iv, 4) if iv is not None else None,

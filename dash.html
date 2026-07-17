@@ -345,6 +345,7 @@ if (!Array.isArray(CARDS)) CARDS = [];
 CARDS.forEach((c, i) => {
   if (c.w == null){ c.x = (i % 2) * 6; c.y = Math.floor(i / 2) * 4; c.w = 6; c.h = 4; }
   if (!c.lv) c.lv = {gex: true, em: true, open: true};
+  if (c.lv.xr == null) c.lv.xr = false;
   if (!c.id) c.id = "c" + Date.now().toString(36) + i;
   if (!c.colors) c.colors = {up: PREFS.up, dn: PREFS.dn, px: PREFS.px};
 });
@@ -486,8 +487,96 @@ function buildCardPanel(host, cfg){
   };
 }
 
+/* Heatmap GEX par strike : bandes horizontales sous les bougies.
+   Vert = gamma positif (aimant), rouge = négatif (accélérant),
+   opacité = magnitude relative au strike dominant. */
+function bandHalf(series, prof){
+  /* demi-hauteur = moitié de l'écart MÉDIAN entre strikes adjacents :
+     les bandes ne se chevauchent jamais, quel que soit le zoom */
+  const gaps = [];
+  for (let i = 1; i < prof.length; i++){
+    const a = series.priceToCoordinate(prof[i - 1][0]);
+    const b = series.priceToCoordinate(prof[i][0]);
+    if (a != null && b != null) gaps.push(Math.abs(b - a));
+  }
+  if (!gaps.length) return 4;
+  gaps.sort((x, y) => x - y);
+  return Math.max(1.5, Math.min(12, gaps[Math.floor(gaps.length / 2)] / 2 - 0.6));
+}
+function paintProfile(ctx, series, prof, x0, x1, h, maxA, hh){
+  for (const [k, g] of prof){
+    const r = Math.abs(g) / maxA;
+    if (r < 0.06) continue;                 /* filtre : le bruit s'efface */
+    const y = series.priceToCoordinate(k);
+    if (y == null || y < -20 || y > h + 20) continue;
+    const a = 0.05 + 0.5 * Math.pow(r, 0.7);    /* les aimants ressortent */
+    ctx.fillStyle = g >= 0 ? `rgba(38,166,154,${a})` : `rgba(239,83,80,${a})`;
+    ctx.fillRect(x0, y - hh, Math.max(1, x1 - x0), hh * 2);
+  }
+}
+function drawHeat(host, cfg){
+  const cv = host._heat, series = host._series, chart = host._chart;
+  if (!cv || !series || !chart) return;
+  const box = host.querySelector(".box");
+  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!cfg.lv.xr) return;
+  const ts = chart.timeScale();
+  const T = host._times || [];
+  const xAt = tShifted => {                    /* temps décalé -> pixel */
+    if (!T.length) return null;
+    let lo = 0, hi = T.length - 1;
+    if (tShifted <= T[0]) return ts.timeToCoordinate(T[0]);
+    if (tShifted >= T[hi]){
+      const c = ts.timeToCoordinate(T[hi]);
+      if (c == null) return null;
+      return c + (tShifted - T[hi]) / (host._ivSec || 300) * ts.options().barSpacing;
+    }
+    while (hi - lo > 1){ const m = (lo + hi) >> 1; if (T[m] <= tShifted) lo = m; else hi = m; }
+    const c0 = ts.timeToCoordinate(T[lo]), c1 = ts.timeToCoordinate(T[hi]);
+    if (c0 == null || c1 == null) return c0 != null ? c0 : c1;
+    return c0 + (tShifted - T[lo]) / (T[hi] - T[lo]) * (c1 - c0);
+  };
+  const snaps = host._xr && host._xr.length ? host._xr : null;
+  if (snaps && snaps.length >= 2){             /* — mode évolutif : colonnes 15 min — */
+    const maxA = Math.max(...snaps.flatMap(s => s.prof.map(p => Math.abs(p[1])))) || 1;
+    const hh = bandHalf(series, snaps[snaps.length - 1].prof);
+    for (let i = 0; i < snaps.length; i++){
+      const x0 = xAt(tzShift(snaps[i].t));
+      const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t)) : w;
+      if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
+      paintProfile(ctx, series, snaps[i].prof, Math.max(0, x0), Math.min(w, x1), h, maxA, hh);
+    }
+    return;
+  }
+  const prof = (host._pay || {}).gex_by_strike;  /* — repli : profil courant — */
+  if (!prof || !prof.length) return;
+  const maxA = Math.max(...prof.map(p => Math.abs(p[1]))) || 1;
+  paintProfile(ctx, series, prof, 0, w, h, maxA, bandHalf(series, prof));
+}
+async function fetchXr(host, cfg){
+  if (!cfg.lv.xr) return;
+  try{
+    const r = await fetch(`/api/xr?target=${cfg.t}`);
+    const d = await r.json();
+    host._xr = (d && d.snaps) || [];
+  }catch(_){ }
+  drawHeat(host, cfg);
+  if (cfg.lv.xr) fetchXr(host, cfg);
+}
+
 async function mountCard(cfg, host){
   const box = host.querySelector(".box"), note = host.querySelector(".n");
+  const heat = document.createElement("canvas");
+  heat.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0";
+  box.appendChild(heat);                       // AVANT le chart -> rendu dessous
+  host._heat = heat;
   const chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
             fontFamily:"IBM Plex Mono, monospace", fontSize:10},
@@ -503,8 +592,12 @@ async function mountCard(cfg, host){
     priceLineStyle: LightweightCharts.LineStyle.Dashed,
   });
   host._chart = chart; host._series = series; host._lines = {}; host._pay = null;
-  new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
-    .observe(box);
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawHeat(host, cfg));
+  new ResizeObserver(() => {
+    chart.applyOptions({width: box.clientWidth, height: box.clientHeight});
+    drawHeat(host, cfg);
+  if (cfg.lv.xr) fetchXr(host, cfg);
+  }).observe(box);
   buildCardPanel(host, cfg);
 
   let lastBar = null;
@@ -522,11 +615,15 @@ async function mountCard(cfg, host){
     host._draw = attachDrawTools(box, chart, series,
                                  "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
     if (bars.length) host._draw.setBars(bars.map(b => b.time), IVSEC[cfg.iv]);
+    host._times = bars.map(b => b.time);
+    host._ivSec = IVSEC[cfg.iv];
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
   host._pay = await getLevels(cfg.t);
   for (const grp of ["gex", "em", "open"])
     if (cfg.lv[grp]) host._lines[grp] = drawGroup(series, host._pay, grp);
+  drawHeat(host, cfg);
+  if (cfg.lv.xr) fetchXr(host, cfg);
 
   const tick = async () => {
     if (document.hidden || !lastBar) return;
@@ -545,6 +642,10 @@ async function mountCard(cfg, host){
         animatePrice(host, series, lastBar, p, 900);
       }
       if (host._draw) host._draw.pushTime(lastBar.time);
+      if (host._times && lastBar.time > host._times[host._times.length - 1])
+        host._times.push(lastBar.time);
+      host._xrTick = (host._xrTick || 0) + 1;
+      if (cfg.lv.xr && host._xrTick % 150 === 0) fetchXr(host, cfg);
     }catch(_){}
   };
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
@@ -623,12 +724,23 @@ function render(){
         <button data-g="gex"><i class="led"></i>GEX</button>
         <button data-g="em"><i class="led"></i>EM</button>
         <button data-g="open"><i class="led"></i>Open</button>
+        <button data-g="xr" title="Heatmap GEX par strike"><i class="led"></i>XR</button>
       </span>
       <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
       <div class="box"></div>`;
     card.querySelectorAll(".cchips button").forEach(b => {
       b.classList.toggle("on", !!cfg.lv[b.dataset.g]);
-      b.onclick = () => toggleGroup(card, cfg, b.dataset.g, b);   // CETTE carte uniquement
+      b.onclick = () => {
+        if (b.dataset.g === "xr"){
+          cfg.lv.xr = !cfg.lv.xr;
+          b.classList.toggle("on", cfg.lv.xr);
+          saveCards();
+          if (cfg.lv.xr && !card._xr) fetchXr(card, cfg);
+          else drawHeat(card, cfg);
+          return;
+        }
+        toggleGroup(card, cfg, b.dataset.g, b);   // CETTE carte uniquement
+      };
     });
     card.querySelector(".rm").onclick = () => {
       if (card._timer) clearInterval(card._timer);
