@@ -508,6 +508,74 @@ def save_webhooks(cfg):
 # --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
+def _chart_image_url(payload):
+    """URL d'une image PNG du chart (QuickChart.io, sans dépendance) : prix
+    intraday + niveaux daily (Open, EM, walls). Rendu dans l'embed Discord."""
+    try:
+        import urllib.parse
+        tgt = payload["target"]
+        bars = daily_intraday(YCHART[tgt]) if "daily_intraday" in globals() else None
+        pts = bars or []
+        data = [{"x": i, "y": round(p, 1)} for i, p in enumerate(pts)]
+        ann = []
+        grid = payload.get("open_grid") or {}
+        if grid.get("anchor"):
+            ann.append(("Daily O", grid["anchor"], "#F0B90B"))
+        for L in payload.get("levels", []):
+            if L["kind"] in ("res", "res0", "hgex"):
+                ann.append((L.get("label", "R"), L["price_nq"], "#EF5350")); break
+        for L in payload.get("levels", []):
+            if L["kind"] in ("sup", "sup0"):
+                ann.append((L.get("label", "S"), L["price_nq"], "#26A69A")); break
+        ds = [{"type": "line", "label": tgt, "data": data, "borderColor": "#E8E6E1",
+               "borderWidth": 2, "pointRadius": 0, "fill": False}]
+        lines = {}
+        for i, (lab, y, col) in enumerate(ann):
+            lines[f"l{i}"] = {"type": "line", "yMin": y, "yMax": y,
+                              "borderColor": col, "borderWidth": 1,
+                              "borderDash": [6, 4],
+                              "label": {"content": f"{lab} {y:.0f}", "enabled": True,
+                                        "position": "start", "font": {"size": 9},
+                                        "color": col, "backgroundColor": "#0A0A0C"}}
+        cfg = {"type": "line", "data": {"datasets": ds},
+               "options": {"plugins": {"legend": {"display": False},
+                                       "annotation": {"annotations": lines}},
+                           "scales": {"x": {"display": False},
+                                      "y": {"position": "right",
+                                            "grid": {"color": "rgba(255,255,255,.05)"},
+                                            "ticks": {"color": "#8A8A94"}}}}}
+        c = urllib.parse.quote(json.dumps(cfg))
+        return ("https://quickchart.io/chart?bkg=%230A0A0C&w=560&h=300&c=" + c)
+    except Exception:
+        return None
+
+
+def discord_alert(url, payload, level_label, level_price, price, note):
+    """Alerte de proximité : embed compact + image de chart, vers UN webhook
+    précis (chan NQ ou ES dédié). Ne route pas, ne lève jamais."""
+    try:
+        import requests
+        side = "au-dessus" if price < level_price else "en-dessous"
+        emb = {
+            "title": f"⚡ {payload['target']} approche {level_label}",
+            "description": (f"**{level_price:,.0f}** ({level_label})\n"
+                            f"Prix {price:,.0f} · {abs(price - level_price):.0f} pts {side}"
+                            ).replace(",", " "),
+            "color": 0xF0B90B,
+            "url": "https://gexdash.wealthbuilders.group",
+        }
+        img = _chart_image_url(payload)
+        if img:
+            emb["image"] = {"url": img}
+        body = {"embeds": [emb]}
+        if note:
+            body["content"] = note
+        r = requests.post(url, json=body, timeout=12)
+        return r.status_code in (200, 204)
+    except Exception:
+        return False
+
+
 def discord_send(url, payload, note=None,
                  dashboard_url="https://gexdash.wealthbuilders.group"):
     """Post ONE payload's embed to a SPECIFIC webhook URL — no routing, no

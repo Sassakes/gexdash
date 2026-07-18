@@ -31,9 +31,45 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks)
+                           discord_alert, refresh_daily_anchor, save_webhooks)
 
 CRON_LOG_KEY = "gex:cron:log"
+ALERT_PTS = {"NQ": 15.0, "ES": 4.0}       # seuil de proximité par marché (points)
+
+
+def _proximity_pts(target):
+    return ALERT_PTS.get(target, 10.0)
+
+
+def _alert_levels(pay):
+    """Niveaux daily à surveiller : Daily Open, EM High/Low, 1er Call/Put Wall."""
+    out = []
+    grid = pay.get("open_grid") or {}
+    if grid.get("anchor"):
+        out.append(("Daily Open", grid["anchor"]))
+    em = pay.get("expected_move") or {}
+    anc = em.get("anchor") or (grid.get("anchor"))
+    if em.get("straddle") and anc:
+        out.append(("EM High", anc + em["straddle"]))
+        out.append(("EM Low", anc - em["straddle"]))
+    for L in pay.get("levels", []):
+        if L["kind"] in ("res", "res0", "hgex"):
+            out.append((L.get("label", "Call Wall"), L["price_nq"])); break
+    for L in pay.get("levels", []):
+        if L["kind"] in ("sup", "sup0"):
+            out.append((L.get("label", "Put Wall"), L["price_nq"])); break
+    return out
+
+
+def _intraday_closes(sym):
+    """Liste des clôtures 1m du jour pour l'image de chart (via _yahoo_chart)."""
+    try:
+        res = _yahoo_chart(sym, "1m", "1d")
+        q = res.get("indicators", {}).get("quote", [{}])[0]
+        cl = [c for c in q.get("close", []) if c is not None]
+        return cl[-120:] if cl else None
+    except Exception:
+        return None
 FINNHUB_CACHE_S = 2.5
 DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 
@@ -419,6 +455,51 @@ class handler(BaseHTTPRequestHandler):
             today = et_today().isoformat()
             now_p = paris_hhmm().replace(":", "")
             results, computed, cache = {}, [], {}
+            # ---- ALERTES DE PROXIMITÉ : le prix approche un niveau daily
+            #      (Daily Open, EM High/Low, Call/Put Wall) -> ping le chan
+            #      dédié du marché avec image de chart. Anti-spam : un même
+            #      niveau ne re-ping qu'après éloignement puis re-approche. ----
+            if "alert" in qs:
+                import api._gex_core as _core
+                _core.daily_intraday = lambda sym: _intraday_closes(sym)
+                cfg_wh = fetch_webhooks()
+                fired = {}
+                for target in ("NQ", "ES"):          # NQ + ES uniquement (2 chans)
+                    url = cfg_wh.get(f"alert_{target.lower()}")
+                    if not url:
+                        continue
+                    pay = _latest_payload(target)
+                    if not pay:
+                        continue
+                    q = _yahoo_chart(YCHART[target], "1m", "1d").get("meta", {})
+                    px = q.get("regularMarketPrice")
+                    if not px:
+                        continue
+                    near = _proximity_pts(target)
+                    levels = _alert_levels(pay)
+                    state_key = f"gex:alertstate:{target}"
+                    try:
+                        state = json.loads(kv_get(state_key) or "{}")
+                    except Exception:
+                        state = {}
+                    hits = []
+                    for lab, lv in levels:
+                        d = abs(px - lv)
+                        armed = state.get(lab, True)   # armé = prêt à sonner
+                        if d <= near and armed:
+                            if discord_alert(url, pay, lab, lv, px, None):
+                                hits.append(lab)
+                            state[lab] = False           # désarmé jusqu'à éloignement
+                        elif d > near * 2.2:
+                            state[lab] = True            # ré-armé après éloignement
+                    kv_set(state_key, json.dumps(state), ex=3 * 86400)
+                    if hits:
+                        fired[target] = hits
+                journal("alert fired=%s" % (fired or "aucune"))
+                self._send(200, json.dumps({"alert": True, "fired": fired}).encode(),
+                           "application/json")
+                return
+
             # ---- XR : snapshot du profil GEX par strike, toutes les 15 min
             #      (schedule dédié). N'écrit QUE l'historique du jour ; les
             #      niveaux publiés (walls/EM de 15h25) ne bougent pas. ----
