@@ -508,16 +508,32 @@ function bandHalf(series, prof){
 /* La règle du X-Ray, celle de ta commu : on ne montre QUE les K plus
    fortes expositions (top 12 par colonne). Taille et halo = magnitude
    réelle vs le max du jour (compression racine : contraste préservé). */
-function topK(prof, k){
-  return prof.slice()
-    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-    .slice(0, k)
-    .sort((a, b) => a[0] - b[0]);
+/* top K par CÔTÉ : les plus forts aimants au-dessus (gamma+) ET en
+   dessous (gamma-) sont toujours visibles — un jour tout-négatif montre
+   quand même les résistances gamma+ dominantes, et inversement. */
+function topSided(prof, k){
+  const pos = prof.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, k);
+  const neg = prof.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]).slice(0, k);
+  return pos.concat(neg).sort((a, b) => a[0] - b[0]);
+}
+/* étiquettes de prix des 3 strikes dominants, côté gauche du chart */
+function labelTops(ctx, series, prof, h){
+  const tops = prof.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3);
+  ctx.font = "9px IBM Plex Mono, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  for (const [k, g] of tops){
+    const y = series.priceToCoordinate(k);
+    if (y == null || y < 12 || y > h - 4) continue;
+    ctx.fillStyle = g >= 0 ? "rgba(38,190,170,.9)" : "rgba(244,88,84,.9)";
+    ctx.fillText(Math.round(k).toLocaleString("fr-FR"), 44, y - 2);
+  }
 }
 function paintProfile(ctx, series, prof, x0, x1, h, dayMax, hh){
   if (x1 - x0 < 2 || !dayMax) return;
   ctx.lineCap = "round";
   for (const [k, g] of prof){
+    if (Math.abs(g) < dayMax * 0.05) continue;      /* plancher anti-bruit */
     const y = series.priceToCoordinate(k);
     if (y == null || y < -20 || y > h + 20) continue;
     const v = Math.sqrt(Math.abs(g) / dayMax);
@@ -574,7 +590,7 @@ function drawHeat(host, cfg){
     for (let i = 1; i < snaps.length; i++) deltas.push(snaps[i].t - snaps[i - 1].t);
     deltas.sort((a, b) => a - b);
     const snapSec = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 900;
-    const tops = snaps.map(s => topK(s.prof, 12));
+    const tops = snaps.map(s => topSided(s.prof, 7));
     const dayMax = Math.max(...tops.flatMap(pr => pr.map(p => Math.abs(p[1])))) || 1;
     const hh = bandHalf(series, snaps[snaps.length - 1].prof);
     for (let i = 0; i < snaps.length; i++){
@@ -584,6 +600,7 @@ function drawHeat(host, cfg){
       if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
       paintProfile(ctx, series, tops[i], Math.max(0, x0), Math.min(w, x1), h, dayMax, hh);
     }
+    labelTops(ctx, series, tops[tops.length - 1], h);
     return;
   }
   /* — repli sans historique : UNE colonne "maintenant", jamais un mur — */
@@ -592,9 +609,10 @@ function drawHeat(host, cfg){
   const lastT = T[T.length - 1];
   const x0 = xAt(lastT), x1 = xAt(lastT + 900);
   if (x0 == null || x1 == null) return;
-  const tp = topK(prof, 12);
+  const tp = topSided(prof, 7);
   paintProfile(ctx, series, tp, Math.max(0, x0), Math.min(w, x1), h,
                Math.max(...tp.map(p => Math.abs(p[1]))) || 1, bandHalf(series, prof));
+  labelTops(ctx, series, tp, h);
 }
 async function fetchXr(host, cfg){
   if (!cfg.lv.xr) return;

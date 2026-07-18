@@ -551,7 +551,7 @@
   </section>
 
   <section class="panel" id="dpPanel">
-    <h2>Dark Pool <span class="note">FINRA off-exchange · publié J-1</span></h2>
+    <h2>Dark Pool <span class="note" id="dpNoteTxt">FINRA off-exchange · publié J-1</span></h2>
     <div class="pad dp">
       <div class="dp-main">
         <div class="dp-big" id="dpRatio">—</div>
@@ -612,6 +612,11 @@ const T = {
     tv:"TradingView", dash:"Mon dashboard", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
+    dpNote:"FINRA off-exchange · publié J-1",
+    dpBuild:"historique en construction — première donnée au prochain jour ouvré",
+    dpUnavail:"indisponible", dpAvg:"moy. 20j",
+    dpAcc:"Accumulation", dpDist:"Distribution", dpNeu:"Neutre",
+    dpExp:(s,t0)=>"Part shortée du volume off-exchange (dark pools + internalisation) sur "+s+", proxy "+t0+". Lecture type DIX : un ratio ÉLEVÉ vs sa moyenne = les teneurs de marché vendent à découvert pour servir des acheteurs → pression acheteuse (accumulation). Un ratio faible = distribution. Donnée FINRA officielle, publiée chaque soir pour la séance écoulée.",
   },
   en: {
     loading:"Loading", noSnap:t0=>"No "+t0+" snapshot yet — run the GitHub Action or hit “⟳ Refresh”.",
@@ -627,6 +632,11 @@ const T = {
     tv:"TradingView", dash:"My dashboard", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
+    dpNote:"FINRA off-exchange · published T-1",
+    dpBuild:"history building — first data next trading day",
+    dpUnavail:"unavailable", dpAvg:"20d avg",
+    dpAcc:"Accumulation", dpDist:"Distribution", dpNeu:"Neutral",
+    dpExp:(s,t0)=>"Short share of off-exchange volume (dark pools + internalization) on "+s+", "+t0+" proxy. DIX-style read: a HIGH ratio vs its average = market makers selling short to fill buyers → buying pressure (accumulation). A low ratio = distribution. Official FINRA data, published nightly for the past session.",
   },
 };
 let LANG = "fr";
@@ -661,20 +671,18 @@ async function loadDark(){
     const d = await r.json();
     if (!d.last){
       big.textContent = "—";
-      sub.textContent = "historique en construction — première donnée au prochain jour ouvré";
+      sub.textContent = t("dpBuild");
       tag.hidden = true; exp.textContent = "";
       return;
     }
     big.textContent = d.last.r.toFixed(1) + "%";
     const dd = d.avg20 != null ? d.last.r - d.avg20 : 0;
-    sub.textContent = `${d.sym} · ${d.last.d.slice(6)}/${d.last.d.slice(4,6)} · moy. 20j ${d.avg20 != null ? d.avg20.toFixed(1) + "%" : "—"} (${dd >= 0 ? "+" : ""}${dd.toFixed(1)} pt)`;
+    sub.textContent = `${d.sym} · ${d.last.d.slice(6)}/${d.last.d.slice(4,6)} · ${t("dpAvg")} ${d.avg20 != null ? d.avg20.toFixed(1) + "%" : "—"} (${dd >= 0 ? "+" : ""}${dd.toFixed(1)} pt)`;
     tag.hidden = false;
-    if (dd >= 1.5){ tag.textContent = "Accumulation"; tag.className = "dp-tag up"; }
-    else if (dd <= -1.5){ tag.textContent = "Distribution"; tag.className = "dp-tag dn"; }
-    else { tag.textContent = "Neutre"; tag.className = "dp-tag mid"; }
-    exp.textContent = `Part shortée du volume off-exchange (dark pools + internalisation) sur ${d.sym}, proxy ${TARGET}. `
-      + "Lecture type DIX : un ratio ÉLEVÉ vs sa moyenne = les teneurs de marché vendent à découvert pour servir des acheteurs → pression acheteuse (accumulation). "
-      + "Un ratio faible = distribution. Donnée FINRA officielle, publiée chaque soir pour la séance écoulée.";
+    if (dd >= 1.5){ tag.textContent = t("dpAcc"); tag.className = "dp-tag up"; }
+    else if (dd <= -1.5){ tag.textContent = t("dpDist"); tag.className = "dp-tag dn"; }
+    else { tag.textContent = t("dpNeu"); tag.className = "dp-tag mid"; }
+    exp.textContent = t("dpExp")(d.sym, TARGET);
     const cv = $("dpSpark"), ctx = cv.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
     const W = 320, H = 66;
@@ -702,7 +710,7 @@ async function loadDark(){
       ctx.beginPath(); ctx.arc(lx, ly, 2.6, 0, 7); ctx.fill();
     }
   }catch(_){
-    big.textContent = "—"; sub.textContent = "indisponible"; tag.hidden = true;
+    big.textContent = "—"; sub.textContent = t("dpUnavail"); tag.hidden = true;
   }
 }
 
@@ -736,6 +744,8 @@ function applyLang(){
   $("th1").textContent = th[0]; $("th2").textContent = th[1]; $("th3").textContent = th[2];
   const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen")};
   document.querySelectorAll("#lvChips button").forEach(b => b.title = tips[b.dataset.g] || "");
+  $("dpNoteTxt").textContent = t("dpNote");
+  loadDark();
   if (LAST_D) show(LAST_D);
 }
 
