@@ -193,7 +193,19 @@
     transition:transform .16s ease;
   }
   .topnav a:hover::after{transform:scaleX(1)}
-  .addbar select, #addBtn, #editBtn{min-height:36px}
+  .addbar select, #addBtn, #addXr, #editBtn{min-height:36px}
+  #addXr{
+    background:var(--surface2); border:1px solid var(--line-strong); color:var(--muted);
+    font:inherit; font-size:13px; padding:8px 14px; cursor:pointer;
+    transition:color .14s ease, border-color .14s ease;
+  }
+  #addXr:hover{color:var(--gold); border-color:var(--gold-glow)}
+  .xrtip{
+    position:absolute; z-index:9; background:rgba(14,14,18,.97);
+    border:1px solid var(--line-strong); padding:4px 9px; font-size:10px;
+    color:var(--text); pointer-events:none; white-space:nowrap;
+    box-shadow:0 8px 24px rgba(0,0,0,.55);
+  }
   #addBtn{background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1))}
   #addBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
   #addBtn:active, #editBtn:active{transform:translateY(1px)}
@@ -280,6 +292,7 @@
   <select id="addT"><option>NQ</option><option>ES</option><option>SPX</option></select>
   <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
+  <button id="addXr">▦ Heatmap</button>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
   <select id="tzDash" title="Fuseau horaire des charts">
     <option value="Europe/Paris">Paris</option>
@@ -346,6 +359,7 @@ CARDS.forEach((c, i) => {
   if (c.w == null){ c.x = (i % 2) * 6; c.y = Math.floor(i / 2) * 4; c.w = 6; c.h = 4; }
   if (!c.lv) c.lv = {gex: true, em: true, open: true};
   if (c.lv.xr == null) c.lv.xr = false;
+  if (!c.type) c.type = "chart";
   if (!c.id) c.id = "c" + Date.now().toString(36) + i;
   if (!c.colors) c.colors = {up: PREFS.up, dn: PREFS.dn, px: PREFS.px};
 });
@@ -505,58 +519,10 @@ function bandHalf(series, prof){
    géants qui écrasaient tout), rangées de points RONDS dont le diamètre,
    la densité et l'alpha portent le rang d'exposition, halo lumineux sur
    le top décile. rk(g) -> rang [0..1] dans la distribution du jour. */
-/* La règle du X-Ray, celle de ta commu : on ne montre QUE les K plus
-   fortes expositions (top 12 par colonne). Taille et halo = magnitude
-   réelle vs le max du jour (compression racine : contraste préservé). */
-/* top K par CÔTÉ : les plus forts aimants au-dessus (gamma+) ET en
-   dessous (gamma-) sont toujours visibles — un jour tout-négatif montre
-   quand même les résistances gamma+ dominantes, et inversement. */
-function topSided(prof, k){
-  const pos = prof.filter(p => p[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, k);
-  const neg = prof.filter(p => p[1] < 0).sort((a, b) => a[1] - b[1]).slice(0, k);
-  return pos.concat(neg).sort((a, b) => a[0] - b[0]);
-}
-/* étiquettes de prix des 3 strikes dominants, côté gauche du chart */
-function labelTops(ctx, series, prof, h){
-  const tops = prof.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3);
-  ctx.font = "9px IBM Plex Mono, monospace";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "bottom";
-  for (const [k, g] of tops){
-    const y = series.priceToCoordinate(k);
-    if (y == null || y < 12 || y > h - 4) continue;
-    ctx.fillStyle = g >= 0 ? "rgba(38,190,170,.9)" : "rgba(244,88,84,.9)";
-    ctx.fillText(Math.round(k).toLocaleString("fr-FR"), 44, y - 2);
-  }
-}
-function paintProfile(ctx, series, prof, x0, x1, h, dayMax, hh){
-  if (x1 - x0 < 2 || !dayMax) return;
-  ctx.lineCap = "round";
-  for (const [k, g] of prof){
-    if (Math.abs(g) < dayMax * 0.05) continue;      /* plancher anti-bruit */
-    const y = series.priceToCoordinate(k);
-    if (y == null || y < -20 || y > h + 20) continue;
-    const v = Math.sqrt(Math.abs(g) / dayMax);
-    const d = Math.max(2, Math.min(hh * 2, 2 + 7 * v));
-    const al = 0.3 + 0.6 * v;
-    const col = g >= 0 ? `rgba(38,190,170,${al})` : `rgba(244,88,84,${al})`;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = d;
-    ctx.setLineDash([0.01, d * 2.35]);       /* cap rond + dash quasi-nul = cercles */
-    ctx.shadowColor = col;
-    ctx.shadowBlur = Math.abs(g) / dayMax > 0.55 ? 7 : 0;
-    ctx.beginPath();
-    ctx.moveTo(x0 + 2, y);
-    ctx.lineTo(x1 - 2, y);
-    ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-  ctx.lineCap = "butt";
-  ctx.setLineDash([]);
-}
-function drawHeat(host, cfg){
-  const cv = host._heat, series = host._series, chart = host._chart;
-  if (!cv || !series || !chart) return;
+/* Séparateurs de session sur les cartes chart (canvas sous les bougies) */
+function drawSess(host){
+  const cv = host._heat, chart = host._chart;
+  if (!cv || !chart) return;
   const box = host.querySelector(".box");
   const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
@@ -566,63 +532,167 @@ function drawHeat(host, cfg){
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  drawSessionLines(ctx, chart, host._times, w, h);   /* opens daily : toujours */
-  if (!cfg.lv.xr) return;
-  const ts = chart.timeScale();
-  const T = host._times || [];
-  const xAt = tShifted => {
-    if (!T.length) return null;
-    let lo = 0, hi = T.length - 1;
-    if (tShifted <= T[0]) return ts.timeToCoordinate(T[0]);
-    if (tShifted >= T[hi]){
-      const c = ts.timeToCoordinate(T[hi]);
-      if (c == null) return null;
-      return c + (tShifted - T[hi]) / (host._ivSec || 300) * ts.options().barSpacing;
-    }
-    while (hi - lo > 1){ const m = (lo + hi) >> 1; if (T[m] <= tShifted) lo = m; else hi = m; }
-    const c0 = ts.timeToCoordinate(T[lo]), c1 = ts.timeToCoordinate(T[hi]);
-    if (c0 == null || c1 == null) return c0 != null ? c0 : c1;
-    return c0 + (tShifted - T[lo]) / (T[hi] - T[lo]) * (c1 - c0);
-  };
-  const snaps = host._xr && host._xr.length ? host._xr : null;
-  if (snaps){                                  /* — colonnes 15 min BORNÉES — */
-    const deltas = [];
-    for (let i = 1; i < snaps.length; i++) deltas.push(snaps[i].t - snaps[i - 1].t);
-    deltas.sort((a, b) => a - b);
-    const snapSec = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 900;
-    const tops = snaps.map(s => topSided(s.prof, 7));
-    const dayMax = Math.max(...tops.flatMap(pr => pr.map(p => Math.abs(p[1])))) || 1;
-    const hh = bandHalf(series, snaps[snaps.length - 1].prof);
-    for (let i = 0; i < snaps.length; i++){
-      const x0 = xAt(tzShift(snaps[i].t));
-      const x1 = i + 1 < snaps.length ? xAt(tzShift(snaps[i + 1].t))
-                                      : xAt(tzShift(snaps[i].t + snapSec));
-      if (x0 == null || x1 == null || x1 <= 0 || x0 >= w) continue;
-      paintProfile(ctx, series, tops[i], Math.max(0, x0), Math.min(w, x1), h, dayMax, hh);
-    }
-    labelTops(ctx, series, tops[tops.length - 1], h);
-    return;
-  }
-  /* — repli sans historique : UNE colonne "maintenant", jamais un mur — */
-  const prof = (host._pay || {}).gex_by_strike;
-  if (!prof || !prof.length || !T.length) return;
-  const lastT = T[T.length - 1];
-  const x0 = xAt(lastT), x1 = xAt(lastT + 900);
-  if (x0 == null || x1 == null) return;
-  const tp = topSided(prof, 7);
-  paintProfile(ctx, series, tp, Math.max(0, x0), Math.min(w, x1), h,
-               Math.max(...tp.map(p => Math.abs(p[1]))) || 1, bandHalf(series, prof));
-  labelTops(ctx, series, tp, h);
+  drawSessionLines(ctx, chart, host._times, w, h);
 }
-async function fetchXr(host, cfg){
-  if (!cfg.lv.xr) return;
-  try{
-    const r = await fetch(`/api/xr?target=${cfg.t}`);
-    const d = await r.json();
-    host._xr = (d && d.snaps) || [];
-  }catch(_){ }
-  drawHeat(host, cfg);
-  if (cfg.lv.xr) fetchXr(host, cfg);
+
+/* ═══ MODULE HEATMAP X-RAY : carte dédiée, sans bougies.
+   Cellules continues temps × strike (vert = gamma+, rouge = gamma-,
+   intensité = magnitude, échelle racine), ligne de prix par-dessus,
+   axes, tooltip au survol. Données : /api/xr + /api/quote. ═══ */
+async function mountXrCard(cfg, host){
+  const box = host.querySelector(".box"), note = host.querySelector(".n");
+  const cv = document.createElement("canvas");
+  cv.style.cssText = "position:absolute;inset:0";
+  box.appendChild(cv);
+  const tip = document.createElement("div");
+  tip.className = "xrtip";
+  tip.hidden = true;
+  box.appendChild(tip);
+  const ctx = cv.getContext("2d");
+  const st = {snaps: [], path: [], live: null, geo: null};
+
+  function draw(){
+    const W = box.clientWidth, H = box.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (!W || !H) return;
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = "9px IBM Plex Mono, monospace";
+    if (!st.snaps.length){
+      ctx.fillStyle = "#5C5C66";
+      ctx.textAlign = "center";
+      ctx.fillText("En attente de snapshots X-Ray (1 toutes les 15 min en séance)", W / 2, H / 2);
+      ctx.textAlign = "left";
+      st.geo = null;
+      return;
+    }
+    const AXR = 56, AXB = 18, PW = W - AXR, PH = H - AXB;
+    const ks = st.snaps.flatMap(s => s.prof.map(p => p[0]));
+    const ps = st.path.map(q => q.p);
+    let lo = Math.min(...ks, ...(ps.length ? ps : [Infinity]));
+    let hi = Math.max(...ks, ...(ps.length ? ps : [-Infinity]));
+    const pad = (hi - lo) * 0.03 || 50;
+    lo -= pad; hi += pad;
+    const t0 = st.snaps[0].t;
+    const t1 = Math.max(st.snaps[st.snaps.length - 1].t + 900,
+                        st.live ? st.live.t : 0);
+    const X = t => (t - t0) / Math.max(1, t1 - t0) * PW;
+    const Y = p => (hi - p) / (hi - lo) * PH;
+    const k0 = st.snaps[st.snaps.length - 1].prof.map(p => p[0]);
+    let step = 25;
+    if (k0.length > 1){
+      const gaps = [];
+      for (let i = 1; i < k0.length; i++) gaps.push(k0[i] - k0[i - 1]);
+      gaps.sort((a, b) => a - b);
+      step = gaps[Math.floor(gaps.length / 2)] || 25;
+    }
+    const rowh = Math.max(1.5, step / (hi - lo) * PH);
+    const maxA = Math.max(...st.snaps.flatMap(s => s.prof.map(p => Math.abs(p[1])))) || 1;
+    for (let i = 0; i < st.snaps.length; i++){
+      const s = st.snaps[i];
+      const x0 = X(s.t);
+      const x1 = X(i + 1 < st.snaps.length ? st.snaps[i + 1].t : s.t + 900);
+      for (const [k, g] of s.prof){
+        const v = Math.sqrt(Math.abs(g) / maxA);
+        if (v < 0.06) continue;
+        const a = Math.min(1, 0.06 + 0.88 * v);
+        ctx.fillStyle = g >= 0 ? `rgba(34,197,168,${a})` : `rgba(242,82,78,${a})`;
+        ctx.fillRect(x0, Y(k) - rowh / 2, Math.max(1, x1 - x0), rowh);
+      }
+    }
+    for (let i = 0; i <= 6; i++){                        /* grille + axe prix */
+      const p = lo + (hi - lo) * i / 6, y = Y(p);
+      ctx.fillStyle = "rgba(255,255,255,.05)";
+      ctx.fillRect(0, y, PW, 1);
+      ctx.fillStyle = "#6E6E78";
+      ctx.fillText(Math.round(p).toLocaleString("fr-FR"), PW + 6, y + 3);
+    }
+    ctx.fillStyle = "#6E6E78";                           /* axe temps */
+    for (let i = 0; i <= 4; i++){
+      const tt = t0 + (t1 - t0) * i / 4;
+      const d = new Date(tzShift(tt) * 1000);
+      const lab = String(d.getUTCHours()).padStart(2, "0") + ":"
+                + String(d.getUTCMinutes()).padStart(2, "0");
+      ctx.fillText(lab, Math.min(PW - 32, Math.max(2, X(tt) - 12)), H - 5);
+    }
+    if (st.path.length > 1){                             /* ligne de prix */
+      ctx.strokeStyle = "#F0EEE8";
+      ctx.lineWidth = 1.8;
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      st.path.forEach((q, i) => {
+        const x = X(q.t), y = Y(q.p);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+      const last = st.path[st.path.length - 1];
+      const lx = X(last.t), ly = Y(last.p);
+      ctx.fillStyle = "#F0B90B";
+      ctx.beginPath(); ctx.arc(lx, ly, 3, 0, 7); ctx.fill();
+      ctx.fillRect(PW, ly - 8, AXR, 16);
+      ctx.fillStyle = "#0A0A0C";
+      ctx.fillText(Math.round(last.p).toLocaleString("fr-FR"), PW + 5, ly + 3);
+    }
+    st.geo = {X, Y, lo, hi, t0, t1, PW, PH, step};
+  }
+
+  async function loadXr(){
+    try{
+      const r = await fetch(`/api/xr?target=${cfg.t}`);
+      const d = await r.json();
+      st.snaps = (d.snaps || []).filter(s => s.prof && s.prof.length);
+      st.path = st.snaps.filter(s => s.px != null).map(s => ({t: s.t, p: s.px}));
+      if (st.live) st.path.push(st.live);
+      note.textContent = st.snaps.length ? `${st.snaps.length} snap${st.snaps.length > 1 ? "s" : ""}` : "";
+    }catch(_){}
+    draw();
+  }
+
+  box.addEventListener("pointermove", e => {             /* tooltip */
+    const g = st.geo;
+    if (!g){ tip.hidden = true; return; }
+    const r = box.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (x > g.PW || y > g.PH){ tip.hidden = true; return; }
+    const tt = g.t0 + x / g.PW * (g.t1 - g.t0);
+    let s = st.snaps[0];
+    for (const q of st.snaps){ if (q.t <= tt) s = q; else break; }
+    const price = g.hi - y / g.PH * (g.hi - g.lo);
+    let best = null;
+    for (const row of s.prof)
+      if (!best || Math.abs(row[0] - price) < Math.abs(best[0] - price)) best = row;
+    if (!best || Math.abs(best[0] - price) > g.step){ tip.hidden = true; return; }
+    const gv = best[1];
+    const gtxt = Math.abs(gv) >= 1 ? gv.toFixed(2) + " Bn$"
+                                   : Math.round(gv * 1000) + " M$";
+    const d = new Date(tzShift(s.t) * 1000);
+    tip.textContent = `Strike ${Math.round(best[0]).toLocaleString("fr-FR")}`
+      + ` · GEX ${gv >= 0 ? "+" : ""}${gtxt}`
+      + ` · ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    tip.style.left = Math.min(x + 12, box.clientWidth - 240) + "px";
+    tip.style.top = Math.max(6, y - 28) + "px";
+    tip.hidden = false;
+  });
+  box.addEventListener("pointerleave", () => { tip.hidden = true; });
+
+  new ResizeObserver(draw).observe(box);
+  loadXr();
+  host._timer = setInterval(loadXr, 60000);
+  host._timer2 = setInterval(async () => {               /* prix live */
+    if (document.hidden) return;
+    try{
+      const r = await fetch(`/api/quote?target=${cfg.t}`);
+      const d = await r.json();
+      if (d.price == null) return;
+      st.live = {t: Math.floor(d.time || Date.now() / 1000), p: d.price};
+      if (!st.path.length) return;
+      const lastP = st.path[st.path.length - 1];
+      if (st.live.t > lastP.t + 20) st.path.push(st.live);
+      else st.path[st.path.length - 1] = {t: lastP.t, p: d.price};
+      draw();
+    }catch(_){}
+  }, 2000);
 }
 
 async function mountCard(cfg, host){
@@ -646,11 +716,10 @@ async function mountCard(cfg, host){
     priceLineStyle: LightweightCharts.LineStyle.Dashed,
   });
   host._chart = chart; host._series = series; host._lines = {}; host._pay = null;
-  chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawHeat(host, cfg));
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawSess(host));
   new ResizeObserver(() => {
     chart.applyOptions({width: box.clientWidth, height: box.clientHeight});
-    drawHeat(host, cfg);
-  if (cfg.lv.xr) fetchXr(host, cfg);
+    drawSess(host);
   }).observe(box);
   buildCardPanel(host, cfg);
 
@@ -676,8 +745,7 @@ async function mountCard(cfg, host){
   host._pay = await getLevels(cfg.t);
   for (const grp of ["gex", "em", "open"])
     if (cfg.lv[grp]) host._lines[grp] = drawGroup(series, host._pay, grp);
-  drawHeat(host, cfg);
-  if (cfg.lv.xr) fetchXr(host, cfg);
+  drawSess(host);
 
   const tick = async () => {
     if (document.hidden || !lastBar) return;
@@ -698,8 +766,6 @@ async function mountCard(cfg, host){
       if (host._draw) host._draw.pushTime(lastBar.time);
       if (host._times && lastBar.time > host._times[host._times.length - 1])
         host._times.push(lastBar.time);
-      host._xrTick = (host._xrTick || 0) + 1;
-      if (cfg.lv.xr && host._xrTick % 150 === 0) fetchXr(host, cfg);
     }catch(_){}
   };
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
@@ -761,6 +827,7 @@ function layoutCard(card, cfg){
 function render(){
   for (const el of Array.from(board.children)){
     if (el._timer) clearInterval(el._timer);
+    if (el._timer2) clearInterval(el._timer2);
     if (el._anim) cancelAnimationFrame(el._anim);
     try{ el._chart && el._chart.remove(); }catch(_){}
   }
@@ -772,29 +839,34 @@ function render(){
     clampCard(cfg);
     const card = document.createElement("div");
     card.className = "card";
+    if (cfg.type === "xr"){
+      card.innerHTML = `<div class="head"><span class="t">${cfg.t} · X-RAY</span>
+        <span class="n"></span>
+        <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
+        <div class="box"></div>`;
+      card.querySelector(".rm").onclick = () => {
+        if (card._timer) clearInterval(card._timer);
+        if (card._timer2) clearInterval(card._timer2);
+        CARDS.splice(idx, 1); saveCards(); render();
+      };
+      board.appendChild(card);
+      layoutCard(card, cfg);
+      wireEdit(card, cfg);
+      mountXrCard(cfg, card);
+      return;
+    }
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
       <span class="n"></span>
       <span class="cchips">
         <button data-g="gex"><i class="led"></i>GEX</button>
         <button data-g="em"><i class="led"></i>EM</button>
         <button data-g="open"><i class="led"></i>Open</button>
-        <button data-g="xr" title="Heatmap GEX par strike"><i class="led"></i>XR</button>
       </span>
       <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
       <div class="box"></div>`;
     card.querySelectorAll(".cchips button").forEach(b => {
       b.classList.toggle("on", !!cfg.lv[b.dataset.g]);
-      b.onclick = () => {
-        if (b.dataset.g === "xr"){
-          cfg.lv.xr = !cfg.lv.xr;
-          b.classList.toggle("on", cfg.lv.xr);
-          saveCards();
-          if (cfg.lv.xr && !card._xr) fetchXr(card, cfg);
-          else drawHeat(card, cfg);
-          return;
-        }
-        toggleGroup(card, cfg, b.dataset.g, b);   // CETTE carte uniquement
-      };
+      b.onclick = () => toggleGroup(card, cfg, b.dataset.g, b);   // CETTE carte uniquement
     });
     card.querySelector(".rm").onclick = () => {
       if (card._timer) clearInterval(card._timer);
@@ -833,6 +905,17 @@ $("addBtn").onclick = () => {
               colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
   saveCards(); render();
 };
+$("addXr").onclick = () => {
+  if (CARDS.length >= 10) return;
+  const spot = firstFreeSpot(6, 4);
+  CARDS.push({type: "xr", t: $("addT").value, iv: "15m",
+              x: spot.x, y: spot.y, w: 6, h: 4,
+              id: "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e4),
+              lv: {gex: true, em: true, open: true, xr: false},
+              colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
+  saveCards(); render();
+};
+
 function paintBoardGrid(){
   if (EDIT){
     const cw = cellW();
