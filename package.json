@@ -1,0 +1,23 @@
+{
+  "name": "primary",
+  "version": "1.0.0",
+  "description": "Niveaux gamma (call/put walls, gamma flip, top strikes, expected move straddle ATM) depuis la chaîne d'options NDX (CBOE delayed, gratuit), convertis à l'échelle NQ, avec dashboard + bouton **Refresh live** à la demande.",
+  "main": "ui.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sassakes/gexdash.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Sassakes/gexdash/issues"
+  },
+  "homepage": "https://github.com/Sassakes/gexdash#readme",
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
+}
