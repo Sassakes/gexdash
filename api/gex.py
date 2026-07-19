@@ -141,6 +141,19 @@ def _encode_png(cv, w, h):
     return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", comp) + chunk(b"IEND", b"")
 
 
+def _blank_png():
+    """PNG 1x1 noir minimal — secours si le rendu échoue, jamais de crash."""
+    import zlib, struct
+    raw = b"\x00" + bytes((10, 10, 12))
+    comp = zlib.compress(raw, 9)
+    def chunk(typ, data):
+        return (struct.pack(">I", len(data)) + typ + data
+                + struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", comp) + chunk(b"IEND", b""))
+
+
 def _render_snap(target, hot=None):
     """Mini-chart PNG rendu en pur Python (zlib stdlib, AUCUNE dependance) :
     courbe de prix intraday + grille Open. Sans hot -> vue ~±2sigma ; avec hot
@@ -899,7 +912,10 @@ class handler(BaseHTTPRequestHandler):
                 hotf = float(hot) if hot else None
             except ValueError:
                 hotf = None
-            png = _render_snap(tgt, hotf)
+            try:
+                png = _render_snap(tgt, hotf)
+            except Exception:                   # jamais de crash du handler
+                png = _blank_png()
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Cache-Control", "public, s-maxage=20, max-age=0")
