@@ -61,81 +61,145 @@ def _alert_levels(pay):
     return out
 
 
+def _png_canvas(w, h, bg=(10, 10, 12)):
+    """Mini-canvas RGB en mémoire (liste de bytearray par ligne)."""
+    return [bytearray(bg * w) for _ in range(h)]
+
+
+def _px(cv, x, y, col):
+    if 0 <= y < len(cv) and 0 <= x < len(cv[0]) // 3:
+        i = x * 3
+        cv[y][i:i + 3] = bytes(col)
+
+
+def _hline(cv, x0, x1, y, col):
+    for x in range(int(x0), int(x1)):
+        _px(cv, x, int(y), col)
+
+
+def _line(cv, x0, y0, x1, y1, col):
+    x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+    dx, dy = abs(x1 - x0), abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+    while True:
+        _px(cv, x0, y0, col)
+        _px(cv, x0, y0 + 1, col)  # epaisseur 2
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy; x0 += sx
+        if e2 < dx:
+            err += dx; y0 += sy
+
+
+# police bitmap 3x5 minimale pour les labels de prix
+_FONT = {
+    "0": ["111", "101", "101", "101", "111"], "1": ["010", "110", "010", "010", "111"],
+    "2": ["111", "001", "111", "100", "111"], "3": ["111", "001", "111", "001", "111"],
+    "4": ["101", "101", "111", "001", "001"], "5": ["111", "100", "111", "001", "111"],
+    "6": ["111", "100", "111", "101", "111"], "7": ["111", "001", "010", "010", "010"],
+    "8": ["111", "101", "111", "101", "111"], "9": ["111", "101", "111", "001", "111"],
+    "+": ["000", "010", "111", "010", "000"], "-": ["000", "000", "111", "000", "000"],
+    ".": ["000", "000", "000", "000", "010"], " ": ["000", "000", "000", "000", "000"],
+    "s": ["000", "011", "010", "010", "110"], "i": ["010", "000", "010", "010", "010"],
+    "g": ["111", "101", "111", "001", "111"], "D": ["110", "101", "101", "101", "110"],
+    "a": ["000", "011", "101", "101", "011"], "y": ["000", "101", "101", "011", "110"],
+    "O": ["111", "101", "101", "101", "111"], "%": ["101", "001", "010", "100", "101"],
+    "A": ["111", "101", "111", "101", "101"], "T": ["111", "010", "010", "010", "010"],
+    "R": ["110", "101", "110", "101", "101"],
+}
+
+
+def _text(cv, x, y, s, col, scale=1):
+    cx = x
+    for ch in s:
+        g = _FONT.get(ch, _FONT[" "])
+        for ry, row in enumerate(g):
+            for rx, on in enumerate(row):
+                if on == "1":
+                    for sy in range(scale):
+                        for sx in range(scale):
+                            _px(cv, cx + rx * scale + sx, y + ry * scale + sy, col)
+        cx += (4 * scale)
+
+
+def _encode_png(cv, w, h):
+    import zlib, struct
+    raw = bytearray()
+    for row in cv:
+        raw.append(0)         # filtre 0
+        raw.extend(row)
+    comp = zlib.compress(bytes(raw), 9)
+    def chunk(typ, data):
+        c = struct.pack(">I", len(data)) + typ + data
+        return c + struct.pack(">I", zlib.crc32(typ + data) & 0xffffffff)
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)   # 8-bit RGB
+    return sig + chunk(b"IHDR", ihdr) + chunk(b"IDAT", comp) + chunk(b"IEND", b"")
+
+
 def _render_snap(target, hot=None):
-    """Rendu PNG serveur d'un mini-chart : courbe de prix intraday + grille
-    Open. Sans hot -> vue par defaut (~±2sigma). Avec hot (borne approchee)
-    -> fenetre ZOOMEE autour de cette borne et du prix, pour bien montrer ou
-    est le prix par rapport au niveau approche."""
-    from PIL import Image, ImageDraw
-    import io
-    W, H, PADR, PADB = 600, 320, 64, 4
-    PW, PH = W - PADR, H - PADB
+    """Mini-chart PNG rendu en pur Python (zlib stdlib, AUCUNE dependance) :
+    courbe de prix intraday + grille Open. Sans hot -> vue ~±2sigma ; avec hot
+    -> fenetre zoomee sur la borne approchee."""
+    W, H, PADR = 600, 300, 58
+    PW = W - PADR
     pay = _latest_payload(target) or {}
     grid = pay.get("open_grid") or {}
     closes = _intraday_closes(YCHART[target]) or []
     price_now = (closes[-1] if closes else None) or pay.get("nq_price")
     suf = {"iv": "sig", "atr": "ATR"}.get(grid.get("mode"), "%")
     anchor = grid.get("anchor")
+    GOLD, RED, TEAL, WHITE = (240, 185, 11), (239, 83, 80), (38, 166, 154), (240, 238, 232)
 
-    # tous les niveaux Open (Daily Open + grille sigma complete)
-    # chaque entree : (label, prix, couleur, |multiple|)
     alllv = []
     if anchor:
-        alllv.append(("Daily O", anchor, (240, 185, 11), 0))
+        alllv.append(("Daily O", anchor, GOLD, 0))
     for g in grid.get("levels", []):
         m = abs(g.get("mult", 9))
         if g.get("up") is not None:
-            alllv.append((f"+{g['mult']:g}{suf}", g["up"], (239, 83, 80), m))
+            alllv.append((f"+{g['mult']:g}{suf}", g["up"], RED, m))
         if g.get("down") is not None:
-            alllv.append((f"-{g['mult']:g}{suf}", g["down"], (38, 166, 154), m))
+            alllv.append((f"-{g['mult']:g}{suf}", g["down"], TEAL, m))
 
-    # --- fenetre de prix ---
     if hot is not None:
-        # ZOOM autour de la borne approchee + prix courant
-        focus = [hot] + ([price_now] if price_now else [])
-        cen = sum(focus) / len(focus)
+        cen = (hot + (price_now or hot)) / 2
         half = max(abs(hot - (price_now or hot)) * 1.8, abs(hot) * 0.0025)
         lo, hi = cen - half, cen + half
-        vis_closes = closes
     else:
-        # vue par defaut : niveaux jusqu'a ±2sigma + la courbe
         band = [p for _, p, _, m in alllv if m <= 2]
         ys = band + list(closes) + ([price_now] if price_now else [])
         ys = [y for y in ys if y] or [anchor or 0]
         lo, hi = min(ys), max(ys)
-        vis_closes = closes
-    pad = (hi - lo) * 0.06 or 20
-    lo -= pad
-    hi += pad
+    padv = (hi - lo) * 0.06 or 20
+    lo -= padv; hi += padv
     span = hi - lo or 1
-    Y = lambda p: PH - (p - lo) / span * PH
+    Y = lambda p: H - (p - lo) / span * H
 
-    img = Image.new("RGB", (W, H), (10, 10, 12))
-    d = ImageDraw.Draw(img)
-    # niveaux visibles dans la fenetre
+    cv = _png_canvas(W, H)
     for lab, price, col, _m in alllv:
         if price < lo or price > hi:
             continue
         y = Y(price)
         is_hot = hot is not None and abs(price - hot) < 0.5
-        c = (240, 185, 11) if is_hot else col
+        c = GOLD if is_hot else col
         if is_hot:
-            d.line([(0, y), (PW, y)], fill=c, width=2)
+            _hline(cv, 0, PW, y, c); _hline(cv, 0, PW, y + 1, c)
         else:
             x = 0
             while x < PW:
-                d.line([(x, y), (min(x + 5, PW), y)], fill=c, width=1)
-                x += 9
-        d.text((4, y - 12), f"{lab} {price:.0f}", fill=c)
-        d.text((PW + 4, y - 5), f"{price:.0f}", fill=c)
-    # courbe de prix
-    line = vis_closes if len(vis_closes) > 1 else closes
-    if len(line) > 1:
-        pts = [(i / (len(line) - 1) * PW, Y(v)) for i, v in enumerate(line)]
-        d.line(pts, fill=(240, 238, 232), width=2, joint="curve")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+                _hline(cv, x, min(x + 5, PW), y, c); x += 9
+        _text(cv, 3, int(y) - 8, f"{lab} {price:.0f}", c)
+        _text(cv, PW + 3, int(y) - 2, f"{price:.0f}", c)
+    if len(closes) > 1:
+        for i in range(1, len(closes)):
+            x0 = (i - 1) / (len(closes) - 1) * PW
+            x1 = i / (len(closes) - 1) * PW
+            _line(cv, x0, Y(closes[i - 1]), x1, Y(closes[i]), WHITE)
+    return _encode_png(cv, W, H)
 
 
 def _intraday_closes(sym):
