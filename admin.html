@@ -93,23 +93,6 @@
     border:1px solid transparent;
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   }
-  .stgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px}
-  .stcard{background:#16161A; border:1px solid #212127; padding:10px 12px}
-  .stk{font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#5C5C66}
-  .stk.mt{margin-top:16px; margin-bottom:6px}
-  .stv{font-family:monospace; font-size:16px; margin-top:3px; color:#ECEAE4}
-  .stv.on{color:#26A69A} .stv.off{color:#8A8A94}
-  .dim{color:#5C5C66; font-size:.82em}
-  .whrow{display:flex; flex-wrap:wrap; gap:6px}
-  .whchip{font-size:10.5px; padding:3px 9px; border:1px solid #212127; border-radius:20px}
-  .whchip.on{color:#26A69A; border-color:rgba(38,166,154,.4)}
-  .whchip.off{color:#5C5C66}
-  .pubrow{font-size:11.5px; line-height:1.7; color:#8A8A94}
-  .logbox{max-height:210px; overflow:auto; border:1px solid #212127; background:#16161A}
-  .logrow{display:flex; gap:10px; align-items:center; padding:5px 10px; font-size:11px; border-bottom:1px solid rgba(255,255,255,.03)}
-  .logico{width:16px; text-align:center; flex:none}
-  .logtime{color:#5C5C66; font-family:monospace; width:44px; flex:none}
-  .logout{color:#8A8A94; font-family:monospace}
 </style>
 </head>
 <body>
@@ -180,11 +163,8 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const ROWS = ["NQ", "ES", "SPX", "default", "news", "alert_nq", "alert_es"];
-const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", default:"Défaut",
-               news:"News (annonces refresh)",
-               alert_nq:"⚡ Alertes NQ (proximité niveaux)",
-               alert_es:"⚡ Alertes ES (proximité niveaux)"};
+const ROWS = ["NQ", "ES", "SPX", "default", "news"];
+const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", default:"Défaut", news:"News (annonces refresh)"};
 let KEY = "";
 
 function getKey(){
@@ -287,28 +267,14 @@ async function load(){
       const tg = Object.entries(d.targets).map(([t, p]) =>
         p ? `<b>${t}</b> : ${p.date} · ${(p.generated_utc||"").slice(11,16)} UTC · px ${p.px ?? "—"} · IV ${p.iv != null ? (p.iv*100).toFixed(1)+"%" : "—"}`
           : `<b>${t}</b> : aucune donnée publiée`).join("<br>");
-      const ICON = {refresh:"🔄", daily:"🌙", xr:"▦", alert:"⚡", ok:"✓"};
-      const kind = o => { const s=(o||"").toLowerCase();
-        if(s.includes("daily"))return"daily"; if(s.includes("xr"))return"xr";
-        if(s.includes("alert"))return"alert";
-        if(s.includes("notif")||s.includes("discord"))return"refresh"; return"ok"; };
-      const log = (d.cron_log || []).map(l => {
-        const k = kind(l.outcome), hh = (l.paris || (l.utc||"").slice(11,16));
-        return `<div class="logrow"><span class="logico">${ICON[k]||"·"}</span>`
-          + `<span class="logtime">${hh}</span><span class="logout">${l.outcome||""}</span></div>`;
-      }).join("") || "<i>aucun hit cron enregistré</i>";
-      const wh = d.webhooks || [];
-      const chip = (n, on) => `<span class="whchip ${on?"on":"off"}">${on?"●":"○"} ${n}</span>`;
-      const whList = ["NQ","ES","SPX","news","alert_nq","alert_es"]
-        .map(n => chip(n.replace("alert_","⚡"), wh.includes(n))).join(" ");
+      const log = (d.cron_log || []).map(l =>
+        `${(l.utc||"").slice(5,16).replace("T"," ")}Z · ${l.paris} Paris · <b>${l.outcome}</b> · ${(l.ua||"—").split("/")[0]}${l.q ? " · ?" + l.q : ""}`
+      ).join("<br>") || "<i>aucun hit cron enregistré — si les schedules QStash tournaient, il y aurait des lignes ici</i>";
       $("stBox").innerHTML =
-        `<div class="stgrid">`
-        + `<div class="stcard"><div class="stk">Heure serveur</div><div class="stv">${d.paris_now} <span class="dim">Paris</span></div></div>`
-        + `<div class="stcard"><div class="stk">Ping marchés aujourd'hui</div><div class="stv ${d.notified_today?"on":"off"}">${d.notified_today?"envoyé ✓":"pas encore"}</div></div>`
-        + `</div>`
-        + `<div class="stk mt">Webhooks configurés</div><div class="whrow">${whList}</div>`
-        + `<div class="stk mt">Dernière publication</div><div class="pubrow">${tg}</div>`
-        + `<div class="stk mt">Journal cron <span class="dim">(15 derniers)</span></div><div class="logbox">${log}</div>`;
+        `<b>${d.paris_now} Paris</b> · webhooks configurés : ${d.webhooks.join(", ") || "aucun"} · ` +
+        `ping Discord aujourd'hui : <b class="${d.notified_today ? "on" : ""}">${d.notified_today ? "oui ✓" : "non"}</b>` +
+        `<br><br><b>Dernière publication par marché</b><br>${tg}` +
+        `<br><br><b>Journal des hits cron (15 derniers)</b><br>${log}`;
     }catch(e){ $("stBox").textContent = "Statut indisponible : " + e.message; }
   }
   $("stRefresh").onclick = loadStatus;
