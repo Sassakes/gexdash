@@ -865,11 +865,13 @@ async function loadBars(){
       new ResizeObserver(drawIdxSessions).observe($("chartBox"));
     }
     drawIdxSessions();
-    if (CHART.lastBar && CHART.iv !== "1m"){
-      // 5 jours chargés (scroll arrière dispo) mais vue par défaut = journée en cours
-      CHART.chart.timeScale().setVisibleRange({
-        from: CHART.lastBar.time - 30 * 3600,
-        to: CHART.lastBar.time + 45 * 60,
+    if (bars.length){
+      // cadrage en NOMBRE DE BARRES (index logiques) : insensible aux trous
+      // de week-end qui faisaient l'hyper-zoom du dimanche soir
+      const nView = {"1m": 180, "5m": 150, "15m": 120}[CHART.iv] || 150;
+      CHART.chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, bars.length - nView),
+        to: bars.length + 6,
       });
     } else {
       CHART.chart.timeScale().fitContent();

@@ -731,9 +731,11 @@ async function mountCard(cfg, host){
     const bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
     series.setData(bars);
     lastBar = bars[bars.length - 1] || null;
-    if (lastBar && cfg.iv !== "1m")
-      chart.timeScale().setVisibleRange({from: lastBar.time - 30*3600, to: lastBar.time + 45*60});
-    else chart.timeScale().fitContent();
+    if (bars.length){
+      const nView = {"1m": 180, "5m": 150, "15m": 120}[cfg.iv] || 150;
+      chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, bars.length - nView), to: bars.length + 6});
+    } else chart.timeScale().fitContent();
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
     host._draw = attachDrawTools(box, chart, series,
                                  "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
