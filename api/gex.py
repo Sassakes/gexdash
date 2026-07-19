@@ -155,22 +155,22 @@ def _blank_png():
 
 
 def _render_snap(target, hot=None):
-    """Mini-chart PNG rendu en pur Python (zlib stdlib, AUCUNE dependance) :
-    courbe de prix intraday + grille Open. Sans hot -> vue ~±2sigma ; avec hot
-    -> fenetre zoomee sur la borne approchee."""
-    W, H, PADR = 600, 300, 58
+    """Mini-chart PNG pur Python : ligne de prix + grille Open. Toujours une
+    ligne de prix (courbe si historique dispo, sinon niveau horizontal du
+    prix courant avec marqueur). Sans hot -> vue ~±2sigma ; avec hot -> zoom."""
+    W, H, PADR = 620, 300, 66
     PW = W - PADR
     pay = _latest_payload(target) or {}
     grid = pay.get("open_grid") or {}
     closes = _intraday_closes(YCHART[target]) or []
     price_now = (closes[-1] if closes else None) or pay.get("nq_price")
-    suf = {"iv": "sig", "atr": "ATR"}.get(grid.get("mode"), "%")
+    suf = {"iv": "s", "atr": "A"}.get(grid.get("mode"), "%")
     anchor = grid.get("anchor")
-    GOLD, RED, TEAL, WHITE = (240, 185, 11), (239, 83, 80), (38, 166, 154), (240, 238, 232)
+    GOLD, RED, TEAL, WHITE = (240, 185, 11), (239, 83, 80), (38, 166, 154), (245, 245, 240)
 
     alllv = []
     if anchor:
-        alllv.append(("Daily O", anchor, GOLD, 0))
+        alllv.append(("DO", anchor, GOLD, 0))
     for g in grid.get("levels", []):
         m = abs(g.get("mult", 9))
         if g.get("up") is not None:
@@ -180,19 +180,20 @@ def _render_snap(target, hot=None):
 
     if hot is not None:
         cen = (hot + (price_now or hot)) / 2
-        half = max(abs(hot - (price_now or hot)) * 1.8, abs(hot) * 0.0025)
+        half = max(abs(hot - (price_now or hot)) * 2.0, abs(hot) * 0.003)
         lo, hi = cen - half, cen + half
     else:
         band = [p for _, p, _, m in alllv if m <= 2]
         ys = band + list(closes) + ([price_now] if price_now else [])
         ys = [y for y in ys if y] or [anchor or 0]
         lo, hi = min(ys), max(ys)
-    padv = (hi - lo) * 0.06 or 20
+    padv = (hi - lo) * 0.08 or 20
     lo -= padv; hi += padv
     span = hi - lo or 1
     Y = lambda p: H - (p - lo) / span * H
 
     cv = _png_canvas(W, H)
+    # --- niveaux ---
     for lab, price, col, _m in alllv:
         if price < lo or price > hi:
             continue
@@ -204,14 +205,32 @@ def _render_snap(target, hot=None):
         else:
             x = 0
             while x < PW:
-                _hline(cv, x, min(x + 5, PW), y, c); x += 9
-        _text(cv, 3, int(y) - 8, f"{lab} {price:.0f}", c)
-        _text(cv, PW + 3, int(y) - 2, f"{price:.0f}", c)
+                _hline(cv, x, min(x + 6, PW), y, c); x += 11
+        _text(cv, 4, int(y) - 11, f"{lab} {price:.0f}", c, scale=2)
+        _text(cv, PW + 4, int(y) - 5, f"{price:.0f}", c, scale=2)
+    # --- ligne de prix : courbe si historique, sinon horizontale au prix courant ---
     if len(closes) > 1:
-        for i in range(1, len(closes)):
-            x0 = (i - 1) / (len(closes) - 1) * PW
-            x1 = i / (len(closes) - 1) * PW
-            _line(cv, x0, Y(closes[i - 1]), x1, Y(closes[i]), WHITE)
+        # ne garder qu'un bout récent (max 80 points) pour la lisibilite
+        seg = closes[-80:]
+        for i in range(1, len(seg)):
+            x0 = (i - 1) / (len(seg) - 1) * PW
+            x1 = i / (len(seg) - 1) * PW
+            _line(cv, x0, Y(seg[i - 1]), x1, Y(seg[i]), WHITE)
+        py = Y(seg[-1])
+    elif price_now:
+        py = Y(price_now)
+        # ligne horizontale pointillee blanche = prix courant
+        x = 0
+        while x < PW:
+            _hline(cv, x, min(x + 7, PW), py, WHITE); x += 12
+    else:
+        py = None
+    # marqueur du prix courant a droite (carre plein + label)
+    if price_now and py is not None:
+        for dx in range(-3, 4):
+            for dy in range(-3, 4):
+                _px(cv, int(PW - 4 + dx), int(py + dy), WHITE)
+        _text(cv, PW + 4, int(py) - 5, f"{price_now:.0f}", WHITE, scale=2)
     return _encode_png(cv, W, H)
 
 
