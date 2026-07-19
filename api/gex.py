@@ -63,8 +63,9 @@ def _alert_levels(pay):
 
 def _render_snap(target, hot=None):
     """Rendu PNG serveur d'un mini-chart : courbe de prix intraday + grille
-    Open (Daily Open + multiples sigma), style terminal. Via Pillow (dispo
-    sur Vercel), sans navigateur — sert directement d'image dans Discord."""
+    Open. Sans hot -> vue par defaut (~±2sigma). Avec hot (borne approchee)
+    -> fenetre ZOOMEE autour de cette borne et du prix, pour bien montrer ou
+    est le prix par rapport au niveau approche."""
     from PIL import Image, ImageDraw
     import io
     W, H, PADR, PADB = 600, 320, 64, 4
@@ -72,29 +73,49 @@ def _render_snap(target, hot=None):
     pay = _latest_payload(target) or {}
     grid = pay.get("open_grid") or {}
     closes = _intraday_closes(YCHART[target]) or []
-    lv = []
-    if grid.get("anchor"):
-        lv.append(("Daily O", grid["anchor"], (240, 185, 11)))
+    price_now = (closes[-1] if closes else None) or pay.get("nq_price")
     suf = {"iv": "sig", "atr": "ATR"}.get(grid.get("mode"), "%")
+    anchor = grid.get("anchor")
+
+    # tous les niveaux Open (Daily Open + grille sigma complete)
+    # chaque entree : (label, prix, couleur, |multiple|)
+    alllv = []
+    if anchor:
+        alllv.append(("Daily O", anchor, (240, 185, 11), 0))
     for g in grid.get("levels", []):
-        if abs(g.get("mult", 9)) > 2:
-            continue
+        m = abs(g.get("mult", 9))
         if g.get("up") is not None:
-            lv.append((f"+{g['mult']:g}{suf}", g["up"], (239, 83, 80)))
+            alllv.append((f"+{g['mult']:g}{suf}", g["up"], (239, 83, 80), m))
         if g.get("down") is not None:
-            lv.append((f"-{g['mult']:g}{suf}", g["down"], (38, 166, 154)))
-    ys = [p for _, p, _ in lv] + list(closes)
-    if not ys:
-        ys = [pay.get("nq_price") or 0]
-    lo, hi = min(ys), max(ys)
-    pad = (hi - lo) * 0.04 or 20
+            alllv.append((f"-{g['mult']:g}{suf}", g["down"], (38, 166, 154), m))
+
+    # --- fenetre de prix ---
+    if hot is not None:
+        # ZOOM autour de la borne approchee + prix courant
+        focus = [hot] + ([price_now] if price_now else [])
+        cen = sum(focus) / len(focus)
+        half = max(abs(hot - (price_now or hot)) * 1.8, abs(hot) * 0.0025)
+        lo, hi = cen - half, cen + half
+        vis_closes = closes
+    else:
+        # vue par defaut : niveaux jusqu'a ±2sigma + la courbe
+        band = [p for _, p, _, m in alllv if m <= 2]
+        ys = band + list(closes) + ([price_now] if price_now else [])
+        ys = [y for y in ys if y] or [anchor or 0]
+        lo, hi = min(ys), max(ys)
+        vis_closes = closes
+    pad = (hi - lo) * 0.06 or 20
     lo -= pad
     hi += pad
     span = hi - lo or 1
     Y = lambda p: PH - (p - lo) / span * PH
+
     img = Image.new("RGB", (W, H), (10, 10, 12))
     d = ImageDraw.Draw(img)
-    for lab, price, col in lv:
+    # niveaux visibles dans la fenetre
+    for lab, price, col, _m in alllv:
+        if price < lo or price > hi:
+            continue
         y = Y(price)
         is_hot = hot is not None and abs(price - hot) < 0.5
         c = (240, 185, 11) if is_hot else col
@@ -107,8 +128,10 @@ def _render_snap(target, hot=None):
                 x += 9
         d.text((4, y - 12), f"{lab} {price:.0f}", fill=c)
         d.text((PW + 4, y - 5), f"{price:.0f}", fill=c)
-    if len(closes) > 1:
-        pts = [(i / (len(closes) - 1) * PW, Y(c)) for i, c in enumerate(closes)]
+    # courbe de prix
+    line = vis_closes if len(vis_closes) > 1 else closes
+    if len(line) > 1:
+        pts = [(i / (len(line) - 1) * PW, Y(v)) for i, v in enumerate(line)]
         d.line(pts, fill=(240, 238, 232), width=2, joint="curve")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
