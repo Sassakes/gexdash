@@ -61,6 +61,60 @@ def _alert_levels(pay):
     return out
 
 
+def _render_snap(target, hot=None):
+    """Rendu PNG serveur d'un mini-chart : courbe de prix intraday + grille
+    Open (Daily Open + multiples sigma), style terminal. Via Pillow (dispo
+    sur Vercel), sans navigateur — sert directement d'image dans Discord."""
+    from PIL import Image, ImageDraw
+    import io
+    W, H, PADR, PADB = 600, 320, 64, 4
+    PW, PH = W - PADR, H - PADB
+    pay = _latest_payload(target) or {}
+    grid = pay.get("open_grid") or {}
+    closes = _intraday_closes(YCHART[target]) or []
+    lv = []
+    if grid.get("anchor"):
+        lv.append(("Daily O", grid["anchor"], (240, 185, 11)))
+    suf = {"iv": "sig", "atr": "ATR"}.get(grid.get("mode"), "%")
+    for g in grid.get("levels", []):
+        if abs(g.get("mult", 9)) > 2:
+            continue
+        if g.get("up") is not None:
+            lv.append((f"+{g['mult']:g}{suf}", g["up"], (239, 83, 80)))
+        if g.get("down") is not None:
+            lv.append((f"-{g['mult']:g}{suf}", g["down"], (38, 166, 154)))
+    ys = [p for _, p, _ in lv] + list(closes)
+    if not ys:
+        ys = [pay.get("nq_price") or 0]
+    lo, hi = min(ys), max(ys)
+    pad = (hi - lo) * 0.04 or 20
+    lo -= pad
+    hi += pad
+    span = hi - lo or 1
+    Y = lambda p: PH - (p - lo) / span * PH
+    img = Image.new("RGB", (W, H), (10, 10, 12))
+    d = ImageDraw.Draw(img)
+    for lab, price, col in lv:
+        y = Y(price)
+        is_hot = hot is not None and abs(price - hot) < 0.5
+        c = (240, 185, 11) if is_hot else col
+        if is_hot:
+            d.line([(0, y), (PW, y)], fill=c, width=2)
+        else:
+            x = 0
+            while x < PW:
+                d.line([(x, y), (min(x + 5, PW), y)], fill=c, width=1)
+                x += 9
+        d.text((4, y - 12), f"{lab} {price:.0f}", fill=c)
+        d.text((PW + 4, y - 5), f"{price:.0f}", fill=c)
+    if len(closes) > 1:
+        pts = [(i / (len(closes) - 1) * PW, Y(c)) for i, c in enumerate(closes)]
+        d.line(pts, fill=(240, 238, 232), width=2, joint="curve")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def _intraday_closes(sym):
     """Liste des clôtures 1m du jour pour l'image de chart (via _yahoo_chart)."""
     try:
@@ -745,6 +799,26 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
+            return
+
+        if path == "/api/snap":
+            qs = parse_qs(urlparse(self.path).query)
+            tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if tgt not in TARGETS:
+                self._send(400, b"bad target", "text/plain")
+                return
+            hot = qs.get("hot", [None])[0]      # borne à mettre en évidence (prix)
+            try:
+                hotf = float(hot) if hot else None
+            except ValueError:
+                hotf = None
+            png = _render_snap(tgt, hotf)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "public, s-maxage=20, max-age=0")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(png)
             return
 
         if path == "/api/xr":
