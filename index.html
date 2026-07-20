@@ -868,18 +868,32 @@ async function loadBars(){
     }
     drawIdxSessions();
     if (bars.length){
-      // cadrage en NOMBRE DE BARRES (index logiques), appliqué DEUX fois :
-      // tout de suite, puis après l'ajustement interne de LWC qui tente de
-      // restaurer l'ancienne vue au setData (c'est lui qui laissait la chart
-      // "au milieu de rien" quand on alternait NQ/ES)
+      // Recadrage ROBUSTE des DEUX axes. Le bug venait de deux sources :
+      // (1) LWC restaure l'ancienne vue temps une frame après setData ;
+      // (2) déplacer l'échelle de prix passe le priceScale en mode manuel,
+      //     conservé au switch -> l'échelle NQ (~29000) reste plaquée sur
+      //     ES (~7500) et le prix sort de l'écran.
+      // Fix : on force l'axe temps ET on remet le priceScale en autoScale,
+      // de façon idempotente et ré-appliquée jusqu'à ce que LWC se cale.
       const nView = {"1m": 180, "5m": 150, "15m": 120}[CHART.iv] || 150;
-      const frame = () => CHART.chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, bars.length - nView),
-        to: bars.length + 6,
-      });
-      frame();
-      requestAnimationFrame(() => requestAnimationFrame(frame));
-      CHART.reframe = frame;
+      const reframe = () => {
+        CHART.chart.priceScale("right").applyOptions({autoScale: true});
+        CHART.chart.timeScale().setVisibleLogicalRange({
+          from: Math.max(0, bars.length - nView),
+          to: bars.length + 6,
+        });
+      };
+      CHART.reframe = reframe;
+      reframe();
+      // ré-application déterministe : à chaque frame pendant ~250ms, on
+      // ré-impose le cadrage tant que LWC n'a pas fini ses ajustements
+      // internes (couvre onglet lent / arrière-plan, sans dépendre du timing)
+      let tries = 0;
+      const settle = () => {
+        reframe();
+        if (++tries < 15) requestAnimationFrame(settle);
+      };
+      requestAnimationFrame(settle);
     } else {
       CHART.chart.timeScale().fitContent();
     }
