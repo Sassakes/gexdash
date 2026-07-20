@@ -193,19 +193,7 @@
     transition:transform .16s ease;
   }
   .topnav a:hover::after{transform:scaleX(1)}
-  .addbar select, #addBtn, #addXr, #editBtn{min-height:36px}
-  #addXr{
-    background:var(--surface2); border:1px solid var(--line-strong); color:var(--muted);
-    font:inherit; font-size:13px; padding:8px 14px; cursor:pointer;
-    transition:color .14s ease, border-color .14s ease;
-  }
-  #addXr:hover{color:var(--gold); border-color:var(--gold-glow)}
-  .xrtip{
-    position:absolute; z-index:9; background:rgba(14,14,18,.97);
-    border:1px solid var(--line-strong); padding:4px 9px; font-size:10px;
-    color:var(--text); pointer-events:none; white-space:nowrap;
-    box-shadow:0 8px 24px rgba(0,0,0,.55);
-  }
+  .addbar select, #addBtn, #editBtn{min-height:36px}
   #addBtn{background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1))}
   #addBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
   #addBtn:active, #editBtn:active{transform:translateY(1px)}
@@ -292,7 +280,6 @@
   <select id="addT"><option>NQ</option><option>ES</option><option>SPX</option></select>
   <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
-  <button id="addXr">▦ Heatmap</button>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
   <select id="tzDash" title="Fuseau horaire des charts">
     <option value="Europe/Paris">Paris</option>
@@ -535,219 +522,6 @@ function drawSess(host){
   drawSessionLines(ctx, chart, host._times, w, h);
 }
 
-/* ═══ MODULE HEATMAP X-RAY : carte dédiée, sans bougies.
-   Cellules continues temps × strike (vert = gamma+, rouge = gamma-,
-   intensité = magnitude, échelle racine), ligne de prix par-dessus,
-   axes, tooltip au survol. Données : /api/xr + /api/quote. ═══ */
-async function mountXrCard(cfg, host){
-  const box = host.querySelector(".box"), note = host.querySelector(".n");
-  const cv = document.createElement("canvas");
-  cv.style.cssText = "position:absolute;inset:0";
-  box.appendChild(cv);
-  const tip = document.createElement("div");
-  tip.className = "xrtip";
-  tip.hidden = true;
-  box.appendChild(tip);
-  const ctx = cv.getContext("2d");
-  const st = {snaps: [], path: [], live: null, geo: null};
-
-  function snapSecOf(snaps){
-    if (snaps.length < 2) return 900;
-    const d = [];
-    for (let i = 1; i < snaps.length; i++) d.push(snaps[i].t - snaps[i - 1].t);
-    d.sort((a, b) => a - b);
-    return d[Math.floor(d.length / 2)];
-  }
-  function draw(){
-    const W = box.clientWidth, H = box.clientHeight, dpr = window.devicePixelRatio || 1;
-    if (!W || !H) return;
-    cv.width = W * dpr; cv.height = H * dpr;
-    cv.style.width = W + "px"; cv.style.height = H + "px";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    ctx.font = "9px IBM Plex Mono, monospace";
-    if (!st.snaps.length){
-      ctx.fillStyle = "#5C5C66";
-      ctx.textAlign = "center";
-      ctx.fillText("En attente de snapshots X-Ray (1 toutes les 15 min en séance)", W / 2, H / 2);
-      ctx.textAlign = "left";
-      st.geo = null;
-      return;
-    }
-    const AXR = 56, AXB = 18, PW = W - AXR, PH = H - AXB;
-    /* domaine ancré sur le PRIX du jour, pas sur toute la chaîne de strikes :
-       c'est ce qui donne des cellules épaisses et une courbe lisible */
-    const ps = st.path.map(q => q.p);
-    const base = ps.length ? ps[ps.length - 1]
-               : (st.snaps[st.snaps.length - 1].px || st.snaps[0].prof[0][0]);
-    let plo = ps.length ? Math.min(...ps) : base;
-    let phi = ps.length ? Math.max(...ps) : base;
-    const marg = Math.max((phi - plo) * 0.6, base * 0.008);
-    let lo = plo - marg, hi = phi + marg;
-    if (hi - lo < base * 0.02){
-      const c = (hi + lo) / 2;
-      lo = c - base * 0.01; hi = c + base * 0.01;
-    }
-    const t0 = st.snaps[0].t;
-    const t1 = Math.max(st.snaps[st.snaps.length - 1].t + 900,
-                        st.live ? st.live.t : 0);
-    const X = t => (t - t0) / Math.max(1, t1 - t0) * PW;
-    const Y = p => (hi - p) / (hi - lo) * PH;
-    /* CHAMP CONTINU façon Bookmap : matrice (snaps × 72 rangées) rendue sur
-       un micro-canvas puis étirée avec interpolation bilinéaire = dégradés
-       lisses dans les deux axes. Colormap perceptuelle (noir -> sombre ->
-       vif -> incandescent), normalisation au 90e percentile : les masses
-       moyennes s'assombrissent, seuls les AIMANTS rayonnent. */
-    const span = hi - lo;
-    const ROWS = 72, TCOLS = 64;
-    /* ZONES À HAUT POTENTIEL uniquement : par snapshot, on ne garde que les
-       4 masses dominantes PAR CÔTÉ (les aimants), tout le bruit intra -> noir */
-    const zonesOf = prof => {
-      const B = new Float32Array(ROWS);
-      for (const [k, g] of prof){
-        if (k < lo || k > hi) continue;
-        const r = Math.min(ROWS - 1, Math.max(0, Math.floor((hi - k) / span * (ROWS - 1))));
-        B[r] += g;
-      }
-      const idx = [...B.keys()];
-      const pos = idx.filter(i => B[i] > 0).sort((a, b) => B[b] - B[a]).slice(0, 4);
-      const neg = idx.filter(i => B[i] < 0).sort((a, b) => B[a] - B[b]).slice(0, 4);
-      const keep = new Set([...pos, ...neg]);
-      return B.map((v, i) => keep.has(i) ? v : 0);
-    };
-    const F = st.snaps.map(s => zonesOf(s.prof));
-    /* PROJECTION VERS LE PRÉSENT : 64 tranches de temps de t0 à maintenant,
-       chaque tranche porte le dernier profil connu -> la heatmap couvre
-       toujours toute la timeline et s'ajuste à chaque refresh */
-    const M = new Float32Array(ROWS * TCOLS);
-    for (let c = 0; c < TCOLS; c++){
-      const tt = t0 + (c + 0.5) / TCOLS * (t1 - t0);
-      let si = 0;
-      for (let i = 0; i < st.snaps.length; i++) if (st.snaps[i].t <= tt) si = i;
-      for (let r = 0; r < ROWS; r++) M[r * TCOLS + c] = F[si][r];
-    }
-    const COLS = TCOLS;
-    const mags = Array.from(M, Math.abs).filter(x => x > 0).sort((a, b) => a - b);
-    const norm = mags.length ? (mags[Math.floor(mags.length * 0.95)] || mags[mags.length - 1]) : 1;
-    const ramp = v => {
-      const t = Math.pow(Math.min(1, Math.abs(v)), 1.2);
-      const S = v >= 0
-        ? [[10,10,12],[13,45,40],[34,190,168],[150,255,228]]
-        : [[10,10,12],[55,18,16],[235,80,70],[255,180,130]];
-      const x = t * 3, i = Math.min(2, Math.floor(x)), f = x - i;
-      return [S[i][0]+(S[i+1][0]-S[i][0])*f, S[i][1]+(S[i+1][1]-S[i][1])*f,
-              S[i][2]+(S[i+1][2]-S[i][2])*f];
-    };
-    const off = document.createElement("canvas");
-    off.width = COLS; off.height = ROWS;
-    const od = off.getContext("2d");
-    const idata = od.createImageData(COLS, ROWS);
-    for (let i = 0; i < ROWS * COLS; i++){
-      const [r, g, b] = ramp(Math.max(-1, Math.min(1, M[i] / norm)));
-      idata.data[i * 4] = r; idata.data[i * 4 + 1] = g;
-      idata.data[i * 4 + 2] = b; idata.data[i * 4 + 3] = 255;
-    }
-    od.putImageData(idata, 0, 0);
-    const hx0 = Math.max(0, X(t0));
-    const hx1 = Math.min(PW, X(t1));
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(off, hx0, 0, Math.max(1, hx1 - hx0), PH);
-    const dispStep = span / ROWS;
-    for (let i = 0; i <= 6; i++){                        /* grille + axe prix */
-      const p = lo + (hi - lo) * i / 6, y = Y(p);
-      ctx.fillStyle = "rgba(255,255,255,.05)";
-      ctx.fillRect(0, y, PW, 1);
-      ctx.fillStyle = "#6E6E78";
-      ctx.fillText(Math.round(p).toLocaleString("fr-FR"), PW + 6, y + 3);
-    }
-    ctx.fillStyle = "#6E6E78";                           /* axe temps */
-    for (let i = 0; i <= 4; i++){
-      const tt = t0 + (t1 - t0) * i / 4;
-      const d = new Date(tzShift(tt) * 1000);
-      const lab = String(d.getUTCHours()).padStart(2, "0") + ":"
-                + String(d.getUTCMinutes()).padStart(2, "0");
-      ctx.fillText(lab, Math.min(PW - 32, Math.max(2, X(tt) - 12)), H - 5);
-    }
-    if (st.path.length > 1){                             /* ligne de prix */
-      ctx.strokeStyle = "#F0EEE8";
-      ctx.lineWidth = 1.8;
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      st.path.forEach((q, i) => {
-        const x = X(q.t), y = Y(q.p);
-        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-      });
-      ctx.stroke();
-      const last = st.path[st.path.length - 1];
-      const lx = X(last.t), ly = Y(last.p);
-      ctx.fillStyle = "#F0B90B";
-      ctx.beginPath(); ctx.arc(lx, ly, 3, 0, 7); ctx.fill();
-      ctx.fillRect(PW, ly - 8, AXR, 16);
-      ctx.fillStyle = "#0A0A0C";
-      ctx.fillText(Math.round(last.p).toLocaleString("fr-FR"), PW + 5, ly + 3);
-    }
-    st.geo = {X, Y, lo, hi, t0, t1, PW, PH, step: dispStep};
-  }
-
-  async function loadXr(){
-    try{
-      const r = await fetch(`/api/xr?target=${cfg.t}`);
-      const d = await r.json();
-      st.snaps = (d.snaps || []).filter(s => s.prof && s.prof.length);
-      st.path = st.snaps.filter(s => s.px != null).map(s => ({t: s.t, p: s.px}));
-      if (st.live) st.path.push(st.live);
-      note.textContent = st.snaps.length ? `${st.snaps.length} snap${st.snaps.length > 1 ? "s" : ""}` : "";
-    }catch(_){}
-    draw();
-  }
-
-  box.addEventListener("pointermove", e => {             /* tooltip */
-    const g = st.geo;
-    if (!g){ tip.hidden = true; return; }
-    const r = box.getBoundingClientRect();
-    const x = e.clientX - r.left, y = e.clientY - r.top;
-    if (x > g.PW || y > g.PH){ tip.hidden = true; return; }
-    const tt = g.t0 + x / g.PW * (g.t1 - g.t0);
-    let s = st.snaps[0];
-    for (const q of st.snaps){ if (q.t <= tt) s = q; else break; }
-    const price = g.hi - y / g.PH * (g.hi - g.lo);
-    let best = null;
-    for (const row of s.prof)
-      if (!best || Math.abs(row[0] - price) < Math.abs(best[0] - price)) best = row;
-    if (!best || Math.abs(best[0] - price) > g.step){ tip.hidden = true; return; }
-    const gv = best[1];
-    const gtxt = Math.abs(gv) >= 1 ? gv.toFixed(2) + " Bn$"
-                                   : Math.round(gv * 1000) + " M$";
-    const d = new Date(tzShift(s.t) * 1000);
-    tip.textContent = `Strike ${Math.round(best[0]).toLocaleString("fr-FR")}`
-      + ` · GEX ${gv >= 0 ? "+" : ""}${gtxt}`
-      + ` · ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
-    tip.style.left = Math.min(x + 12, box.clientWidth - 240) + "px";
-    tip.style.top = Math.max(6, y - 28) + "px";
-    tip.hidden = false;
-  });
-  box.addEventListener("pointerleave", () => { tip.hidden = true; });
-
-  new ResizeObserver(draw).observe(box);
-  loadXr();
-  host._timer = setInterval(loadXr, 60000);
-  host._timer2 = setInterval(async () => {               /* prix live */
-    if (document.hidden) return;
-    try{
-      const r = await fetch(`/api/quote?target=${cfg.t}`);
-      const d = await r.json();
-      if (d.price == null) return;
-      st.live = {t: Math.floor(d.time || Date.now() / 1000), p: d.price};
-      if (!st.path.length) return;
-      const lastP = st.path[st.path.length - 1];
-      if (st.live.t > lastP.t + 20) st.path.push(st.live);
-      else st.path[st.path.length - 1] = {t: lastP.t, p: d.price};
-      draw();
-    }catch(_){}
-  }, 2000);
-}
-
 async function mountCard(cfg, host){
   const box = host.querySelector(".box"), note = host.querySelector(".n");
   const heat = document.createElement("canvas");
@@ -894,22 +668,6 @@ function render(){
     clampCard(cfg);
     const card = document.createElement("div");
     card.className = "card";
-    if (cfg.type === "xr"){
-      card.innerHTML = `<div class="head"><span class="t">${cfg.t} · X-RAY</span>
-        <span class="n"></span>
-        <span class="gh"></span><button class="rm" title="Retirer">✕</button></div>
-        <div class="box"></div>`;
-      card.querySelector(".rm").onclick = () => {
-        if (card._timer) clearInterval(card._timer);
-        if (card._timer2) clearInterval(card._timer2);
-        CARDS.splice(idx, 1); saveCards(); render();
-      };
-      board.appendChild(card);
-      layoutCard(card, cfg);
-      wireEdit(card, cfg);
-      mountXrCard(cfg, card);
-      return;
-    }
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
       <span class="n"></span>
       <span class="cchips">
@@ -960,16 +718,7 @@ $("addBtn").onclick = () => {
               colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
   saveCards(); render();
 };
-$("addXr").onclick = () => {
-  if (CARDS.length >= 10) return;
-  const spot = firstFreeSpot(6, 4);
-  CARDS.push({type: "xr", t: $("addT").value, iv: "15m",
-              x: spot.x, y: spot.y, w: 6, h: 4,
-              id: "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e4),
-              lv: {gex: true, em: true, open: true, xr: false},
-              colors: {up: PREFS.up, dn: PREFS.dn, px: PREFS.px}});
-  saveCards(); render();
-};
+
 
 function paintBoardGrid(){
   if (EDIT){

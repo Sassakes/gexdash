@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -109,6 +109,7 @@ STATIC = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/admin": ("admin.html", "text/html; charset=utf-8"),
     "/dash": ("dash.html", "text/html; charset=utf-8"),
+    "/heatmap": ("heatmap.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
     "/dash.html": ("dash.html", "text/html; charset=utf-8"),
     "/admin.html": ("admin.html", "text/html; charset=utf-8"),
@@ -616,6 +617,49 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ---- chart data: candles + last price, proxied (Yahoo blocks browser CORS) ----
+        if path == "/api/matrix":
+            qs = parse_qs(urlparse(self.path).query)
+            tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if tgt not in TARGETS:
+                self._send(400, json.dumps({"error": "target invalide"}).encode(),
+                           "application/json")
+                return
+            try:
+                data = fetch_cboe(TARGETS[tgt]["chain"])
+                spot, opts, _exps = parse_chain(data, 8, today=et_today())
+                bucket = {"NQ": 10.0, "ES": 5.0, "SPX": 5.0}.get(tgt)
+                pay = _latest_payload(tgt) or {}
+                basis = float(pay.get("basis") or 0.0)
+                dtes = sorted({o.dte for o in opts})[:6]
+                cols = [{"dte": d, "label": f"{d}DTE"} for d in dtes] + [{"dte": -1, "label": "ALL"}]
+                grids = []
+                for d in dtes:
+                    ks, net = per_strike_gex(spot, [o for o in opts if o.dte == d], bucket=bucket)
+                    grids.append(dict(zip(ks.tolist(), net.tolist())))
+                ks, net = per_strike_gex(spot, opts, bucket=bucket)
+                grids.append(dict(zip(ks.tolist(), net.tolist())))
+                win = spot * 0.03
+                ladder = sorted({k for g in grids for k in g if abs(k - spot) <= win},
+                                reverse=True)
+                rows = [{"p": round(k + basis, 1),
+                         "v": [round(g.get(k, 0.0)) for g in grids]} for k in ladder]
+                body = json.dumps({
+                    "target": tgt, "spot": round(spot + basis, 1),
+                    "chain": TARGETS[tgt]["chain"], "basis": round(basis, 1),
+                    "cols": cols, "rows": rows,
+                    "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "public, s-maxage=300, max-age=0")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as e:
+                self._send(502, json.dumps({"error": str(e)}).encode(),
+                           "application/json")
+            return
+
         if path == "/api/dark":
             qs = parse_qs(urlparse(self.path).query)
             tgt = (qs.get("target", ["NQ"])[0] or "NQ").upper()

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gexdash · Heatmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
+    --line:#212127; --line-strong:#2E2E36;
+    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
+    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
+    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
+  header{
+    display:flex; align-items:center; gap:18px; padding:14px 22px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5;
+  }
+  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  header a{color:var(--muted); font-size:12px; text-decoration:none}
+  header a:hover{color:var(--gold)}
+  #upd{margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--faint)}
+  .wrap{display:flex; gap:14px; padding:14px 22px; align-items:flex-start; flex-wrap:wrap}
+  .panel{
+    flex:1 1 460px; min-width:420px; background:var(--surface);
+    border:1px solid var(--line);
+  }
+  .phead{
+    display:flex; align-items:baseline; gap:12px; padding:10px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  .phead .sym{font-size:14px; font-weight:600; letter-spacing:.08em}
+  .phead .px{font-family:var(--mono); font-size:14px; color:var(--gold)}
+  .phead .src{margin-left:auto; font-size:9.5px; letter-spacing:.14em;
+              text-transform:uppercase; color:var(--faint)}
+  table{width:100%; border-collapse:collapse; font-family:var(--mono)}
+  thead th{
+    position:sticky; top:49px; background:var(--surface2); z-index:2;
+    font-size:9px; letter-spacing:.14em; color:var(--muted); font-weight:500;
+    padding:7px 4px; border-bottom:1px solid var(--line-strong); text-align:center;
+  }
+  thead th:first-child{text-align:right; padding-right:10px}
+  tbody td{
+    font-size:10px; padding:0 4px; height:21px; text-align:center;
+    color:var(--text); white-space:nowrap;
+  }
+  tbody td.px{
+    text-align:right; padding-right:10px; color:var(--muted); font-size:10.5px;
+    border-right:1px solid var(--line);
+  }
+  tr.spot td.px{color:var(--gold); font-weight:600}
+  tr.spot{outline:1px solid rgba(240,185,11,.55); outline-offset:-1px}
+  .cell{display:block; padding:3px 6px; border-radius:1px}
+  .loading{padding:60px; text-align:center; color:var(--faint); font-size:12px}
+  .err{padding:40px; text-align:center; color:var(--red); font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>GEX</b>DASH · HEATMAP</h1>
+  <a href="/">Terminal</a>
+  <a href="/dash">Dashboard</a>
+  <span id="upd"></span>
+</header>
+<div class="wrap">
+  <section class="panel" id="pNQ">
+    <div class="phead"><span class="sym">NQ</span><span class="px" id="pxNQ">—</span>
+      <span class="src">chaîne NDX · net GEX $/strike/échéance</span></div>
+    <div class="loading">Chargement…</div>
+  </section>
+  <section class="panel" id="pES">
+    <div class="phead"><span class="sym">ES</span><span class="px" id="pxES">—</span>
+      <span class="src">chaîne SPX · net GEX $/strike/échéance</span></div>
+    <div class="loading">Chargement…</div>
+  </section>
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* format $ compact façon terminal */
+function fmt$(v){
+  const a = Math.abs(v), s = v < 0 ? "-" : "";
+  if (a >= 1e9) return `$${s}${(a/1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `$${s}${(a/1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `$${s}${(a/1e3).toFixed(0)}k`;
+  if (a > 0)    return `$${s}${a.toFixed(0)}`;
+  return "";
+}
+
+/* couleur de cellule : bleus = négatif, orange/rouge = positif,
+   jaune incandescent = extrêmes (>= p99 de la colonne) */
+function cellStyle(v, p95, p99){
+  if (!v || !p95) return "";
+  const r = Math.min(1, Math.abs(v) / p95);
+  const t = Math.pow(r, 0.7);
+  if (Math.abs(v) >= p99)
+    return "background:#F5CE42;color:#0A0A0C;font-weight:600;" +
+           "box-shadow:0 0 10px rgba(245,206,66,.5)";
+  if (v > 0){
+    const R = Math.round(48 + 200 * t), G = Math.round(22 + 90 * t), B = 12;
+    return `background:rgb(${R},${G},${B});color:${t > .55 ? "#0A0A0C" : "#E8C9A0"}`;
+  }
+  const R = Math.round(8 + 20 * t), G = Math.round(30 + 110 * t), B = Math.round(46 + 165 * t);
+  return `background:rgb(${R},${G},${B});color:${t > .55 ? "#04121A" : "#9CC8DE"}`;
+}
+
+function pct(sorted, q){
+  return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] : 0;
+}
+
+async function loadPanel(tgt){
+  const panel = $("p" + tgt);
+  try{
+    const r = await fetch(`/api/matrix?target=${tgt}`);
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || r.status);
+    $("px" + tgt).textContent = d.spot.toLocaleString("fr-FR");
+    /* percentiles PAR COLONNE : chaque échéance a sa propre échelle */
+    const nc = d.cols.length;
+    const p95 = [], p99 = [];
+    for (let c = 0; c < nc; c++){
+      const mags = d.rows.map(rw => Math.abs(rw.v[c])).filter(x => x > 0).sort((a, b) => a - b);
+      p95.push(pct(mags, 0.95));
+      p99.push(pct(mags, 0.99));
+    }
+    let html = "<table><thead><tr><th>PX</th>"
+      + d.cols.map(c => `<th>${c.label}</th>`).join("") + "</tr></thead><tbody>";
+    /* ligne du spot : insérée entre les deux strikes qui l'encadrent */
+    let spotDone = false;
+    for (const rw of d.rows){
+      const isSpotRow = !spotDone && rw.p <= d.spot;
+      if (isSpotRow) spotDone = true;
+      html += `<tr${isSpotRow ? ' class="spot"' : ""}><td class="px">${rw.p.toLocaleString("fr-FR")}</td>`;
+      for (let c = 0; c < nc; c++){
+        const v = rw.v[c];
+        html += `<td><span class="cell" style="${cellStyle(v, p95[c], p99[c])}">${fmt$(v)}</span></td>`;
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table>";
+    panel.querySelector(".loading, .err, table")?.remove();
+    panel.insertAdjacentHTML("beforeend", html);
+    $("upd").textContent = "maj " + new Date().toLocaleTimeString("fr-FR",
+      {hour: "2-digit", minute: "2-digit"}) + " · refresh 5 min";
+  }catch(e){
+    const box = panel.querySelector(".loading, .err, table");
+    if (box) box.outerHTML = `<div class="err">Indisponible — ${e.message}</div>`;
+  }
+}
+
+function loadAll(){ loadPanel("NQ"); loadPanel("ES"); }
+loadAll();
+setInterval(loadAll, 300000);
+</script>
+</body>
+</html>
