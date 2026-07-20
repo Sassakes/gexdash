@@ -551,6 +551,13 @@ async function mountXrCard(cfg, host){
   const ctx = cv.getContext("2d");
   const st = {snaps: [], path: [], live: null, geo: null};
 
+  function snapSecOf(snaps){
+    if (snaps.length < 2) return 900;
+    const d = [];
+    for (let i = 1; i < snaps.length; i++) d.push(snaps[i].t - snaps[i - 1].t);
+    d.sort((a, b) => a - b);
+    return d[Math.floor(d.length / 2)];
+  }
   function draw(){
     const W = box.clientWidth, H = box.clientHeight, dpr = window.devicePixelRatio || 1;
     if (!W || !H) return;
@@ -568,37 +575,61 @@ async function mountXrCard(cfg, host){
       return;
     }
     const AXR = 56, AXB = 18, PW = W - AXR, PH = H - AXB;
-    const ks = st.snaps.flatMap(s => s.prof.map(p => p[0]));
+    /* domaine ancré sur le PRIX du jour, pas sur toute la chaîne de strikes :
+       c'est ce qui donne des cellules épaisses et une courbe lisible */
     const ps = st.path.map(q => q.p);
-    let lo = Math.min(...ks, ...(ps.length ? ps : [Infinity]));
-    let hi = Math.max(...ks, ...(ps.length ? ps : [-Infinity]));
-    const pad = (hi - lo) * 0.03 || 50;
-    lo -= pad; hi += pad;
+    const base = ps.length ? ps[ps.length - 1]
+               : (st.snaps[st.snaps.length - 1].px || st.snaps[0].prof[0][0]);
+    let plo = ps.length ? Math.min(...ps) : base;
+    let phi = ps.length ? Math.max(...ps) : base;
+    const marg = Math.max((phi - plo) * 0.6, base * 0.008);
+    let lo = plo - marg, hi = phi + marg;
+    if (hi - lo < base * 0.02){
+      const c = (hi + lo) / 2;
+      lo = c - base * 0.01; hi = c + base * 0.01;
+    }
     const t0 = st.snaps[0].t;
     const t1 = Math.max(st.snaps[st.snaps.length - 1].t + 900,
                         st.live ? st.live.t : 0);
     const X = t => (t - t0) / Math.max(1, t1 - t0) * PW;
     const Y = p => (hi - p) / (hi - lo) * PH;
+    /* pas d'affichage strike par strike : on AGRÈGE la chaîne en ~34 rangées
+       épaisses (somme du GEX par bucket), comme la maquette validée */
     const k0 = st.snaps[st.snaps.length - 1].prof.map(p => p[0]);
-    let step = 25;
+    let rawStep = 25;
     if (k0.length > 1){
       const gaps = [];
       for (let i = 1; i < k0.length; i++) gaps.push(k0[i] - k0[i - 1]);
       gaps.sort((a, b) => a - b);
-      step = gaps[Math.floor(gaps.length / 2)] || 25;
+      rawStep = gaps[Math.floor(gaps.length / 2)] || 25;
     }
-    const rowh = Math.max(1.5, step / (hi - lo) * PH);
-    const maxA = Math.max(...st.snaps.flatMap(s => s.prof.map(p => Math.abs(p[1])))) || 1;
-    for (let i = 0; i < st.snaps.length; i++){
-      const s = st.snaps[i];
-      const x0 = X(s.t);
-      const x1 = X(i + 1 < st.snaps.length ? st.snaps[i + 1].t : s.t + 900);
+    const span = hi - lo;
+    const dispStep = Math.max(1, Math.round(span / 34 / rawStep)) * rawStep;
+    const rowh = dispStep / span * PH;
+    const buckets = st.snaps.map(s => {
+      const b = {};
       for (const [k, g] of s.prof){
-        const v = Math.sqrt(Math.abs(g) / maxA);
-        if (v < 0.06) continue;
-        const a = Math.min(1, 0.06 + 0.88 * v);
-        ctx.fillStyle = g >= 0 ? `rgba(34,197,168,${a})` : `rgba(242,82,78,${a})`;
-        ctx.fillRect(x0, Y(k) - rowh / 2, Math.max(1, x1 - x0), rowh);
+        if (k < lo - dispStep || k > hi + dispStep) continue;
+        const idx = Math.floor((k - lo) / dispStep);
+        b[idx] = (b[idx] || 0) + g;
+      }
+      return b;
+    });
+    const maxA = Math.max(...buckets.flatMap(b => Object.values(b).map(Math.abs)), 0) || 1;
+    const xs = st.snaps.map(s => X(s.t));
+    xs.push(X(st.snaps[st.snaps.length - 1].t + snapSecOf(st.snaps)));
+    for (let i = 0; i < buckets.length; i++){
+      const x0 = xs[i], x1 = xs[i + 1];
+      if (x1 <= 0 || x0 >= PW) continue;
+      for (const idx of Object.keys(buckets[i])){
+        const v = buckets[i][idx];
+        const r = Math.abs(v) / maxA;
+        if (r < 0.02) continue;
+        const a = Math.min(1, 0.08 + 0.85 * Math.sqrt(r));
+        ctx.fillStyle = v >= 0 ? `rgba(34,197,168,${a})` : `rgba(242,82,78,${a})`;
+        const ytop = Y(lo + (Number(idx) + 1) * dispStep);
+        ctx.fillRect(Math.max(0, x0), ytop, Math.min(PW, x1) - Math.max(0, x0) + 0.5,
+                     Math.max(1, rowh - 1));
       }
     }
     for (let i = 0; i <= 6; i++){                        /* grille + axe prix */
@@ -634,7 +665,7 @@ async function mountXrCard(cfg, host){
       ctx.fillStyle = "#0A0A0C";
       ctx.fillText(Math.round(last.p).toLocaleString("fr-FR"), PW + 5, ly + 3);
     }
-    st.geo = {X, Y, lo, hi, t0, t1, PW, PH, step};
+    st.geo = {X, Y, lo, hi, t0, t1, PW, PH, step: dispStep};
   }
 
   async function loadXr(){
