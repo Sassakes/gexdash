@@ -599,18 +599,38 @@ async function mountXrCard(cfg, host){
        vif -> incandescent), normalisation au 90e percentile : les masses
        moyennes s'assombrissent, seuls les AIMANTS rayonnent. */
     const span = hi - lo;
-    const ROWS = 72, COLS = st.snaps.length;
-    const M = new Float32Array(ROWS * COLS);
-    for (let c = 0; c < COLS; c++)
-      for (const [k, g] of st.snaps[c].prof){
+    const ROWS = 72, TCOLS = 64;
+    /* ZONES À HAUT POTENTIEL uniquement : par snapshot, on ne garde que les
+       4 masses dominantes PAR CÔTÉ (les aimants), tout le bruit intra -> noir */
+    const zonesOf = prof => {
+      const B = new Float32Array(ROWS);
+      for (const [k, g] of prof){
         if (k < lo || k > hi) continue;
         const r = Math.min(ROWS - 1, Math.max(0, Math.floor((hi - k) / span * (ROWS - 1))));
-        M[r * COLS + c] += g;
+        B[r] += g;
       }
+      const idx = [...B.keys()];
+      const pos = idx.filter(i => B[i] > 0).sort((a, b) => B[b] - B[a]).slice(0, 4);
+      const neg = idx.filter(i => B[i] < 0).sort((a, b) => B[a] - B[b]).slice(0, 4);
+      const keep = new Set([...pos, ...neg]);
+      return B.map((v, i) => keep.has(i) ? v : 0);
+    };
+    const F = st.snaps.map(s => zonesOf(s.prof));
+    /* PROJECTION VERS LE PRÉSENT : 64 tranches de temps de t0 à maintenant,
+       chaque tranche porte le dernier profil connu -> la heatmap couvre
+       toujours toute la timeline et s'ajuste à chaque refresh */
+    const M = new Float32Array(ROWS * TCOLS);
+    for (let c = 0; c < TCOLS; c++){
+      const tt = t0 + (c + 0.5) / TCOLS * (t1 - t0);
+      let si = 0;
+      for (let i = 0; i < st.snaps.length; i++) if (st.snaps[i].t <= tt) si = i;
+      for (let r = 0; r < ROWS; r++) M[r * TCOLS + c] = F[si][r];
+    }
+    const COLS = TCOLS;
     const mags = Array.from(M, Math.abs).filter(x => x > 0).sort((a, b) => a - b);
-    const norm = mags.length ? (mags[Math.floor(mags.length * 0.9)] || mags[mags.length - 1]) : 1;
+    const norm = mags.length ? (mags[Math.floor(mags.length * 0.95)] || mags[mags.length - 1]) : 1;
     const ramp = v => {
-      const t = Math.pow(Math.min(1, Math.abs(v)), 1.4);
+      const t = Math.pow(Math.min(1, Math.abs(v)), 1.2);
       const S = v >= 0
         ? [[10,10,12],[13,45,40],[34,190,168],[150,255,228]]
         : [[10,10,12],[55,18,16],[235,80,70],[255,180,130]];
@@ -629,7 +649,7 @@ async function mountXrCard(cfg, host){
     }
     od.putImageData(idata, 0, 0);
     const hx0 = Math.max(0, X(t0));
-    const hx1 = Math.min(PW, X(st.snaps[COLS - 1].t + snapSecOf(st.snaps)));
+    const hx1 = Math.min(PW, X(t1));
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(off, hx0, 0, Math.max(1, hx1 - hx0), PH);
