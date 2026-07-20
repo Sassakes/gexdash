@@ -900,7 +900,7 @@ async function loadBars(){
     $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
     applyLevelLines();
     clearInterval(CHART.poll);
-    CHART.poll = setInterval(pollQuote, 2000);
+    CHART.poll = setInterval(pollQuote, 1200);
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
@@ -934,7 +934,7 @@ async function pollQuote(){
       CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
       CHART.series.update(CHART.lastBar);
     }else{
-      animatePrice(CHART, CHART.series, CHART.lastBar, p, 900);
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1300);
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
   }catch(e){}

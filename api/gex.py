@@ -766,16 +766,26 @@ class handler(BaseHTTPRequestHandler):
                                 ep = emeta.get("regularMarketPrice")
                                 et = emeta.get("regularMarketTime") or 0
                                 src2 = "etf"
-                            if ep and et > ptime:
+                            # L'ETF (Finnhub surtout) est la source la PLUS
+                            # réactive : on la PRÉFÈRE dès qu'elle est récente
+                            # dans l'absolu (< 90 s), sans exiger qu'elle batte
+                            # l'horodatage du future. C'est ce qui évite de
+                            # rester coincé sur un future périmé à l'open
+                            # (ex : gexdash 29200 alors que NQ est à 29400).
+                            import time as _tt
+                            fresh = ep and et and (_tt.time() - et) < 90
+                            if ep and (fresh or et > ptime):
                                 derived = round(ep / scale + (pay.get("basis") or 0), 2)
-                                # garde-fou : un dérivé à >1.5% du future différé
-                                # récent = donnée corrompue, pas un vrai mouvement
-                                fut_ok = (price and ptime
-                                          and abs(derived / price - 1) <= 0.015)
-                                if fut_ok or not price:
-                                    price, ptime, source = derived, et, src2
-                                else:
+                                # garde-fou anti-aberration : rejette un dérivé
+                                # très loin du future SEULEMENT si le future est
+                                # lui-même frais (< 60 s). Sur un future périmé
+                                # (open, gap), on fait confiance à l'ETF récent.
+                                fut_fresh = price and ptime and (_tt.time() - ptime) < 60
+                                far = price and abs(derived / price - 1) > 0.015
+                                if fut_fresh and far:
                                     source = "fut-guard"
+                                else:
+                                    price, ptime, source = derived, et, src2
                     except Exception:
                         pass
                     body = json.dumps({
