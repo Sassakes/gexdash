@@ -863,16 +863,23 @@ async function loadBars(){
       $("chartBox").prepend(CHART.sessCv);
       CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(drawIdxSessions);
       new ResizeObserver(drawIdxSessions).observe($("chartBox"));
+      $("chartBox").addEventListener("dblclick",
+        () => CHART.reframe && CHART.reframe());
     }
     drawIdxSessions();
     if (bars.length){
-      // cadrage en NOMBRE DE BARRES (index logiques) : insensible aux trous
-      // de week-end qui faisaient l'hyper-zoom du dimanche soir
+      // cadrage en NOMBRE DE BARRES (index logiques), appliqué DEUX fois :
+      // tout de suite, puis après l'ajustement interne de LWC qui tente de
+      // restaurer l'ancienne vue au setData (c'est lui qui laissait la chart
+      // "au milieu de rien" quand on alternait NQ/ES)
       const nView = {"1m": 180, "5m": 150, "15m": 120}[CHART.iv] || 150;
-      CHART.chart.timeScale().setVisibleLogicalRange({
+      const frame = () => CHART.chart.timeScale().setVisibleLogicalRange({
         from: Math.max(0, bars.length - nView),
         to: bars.length + 6,
       });
+      frame();
+      requestAnimationFrame(() => requestAnimationFrame(frame));
+      CHART.reframe = frame;
     } else {
       CHART.chart.timeScale().fitContent();
     }

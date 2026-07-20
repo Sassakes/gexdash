@@ -560,8 +560,12 @@ async function mountCard(cfg, host){
     lastBar = bars[bars.length - 1] || null;
     if (bars.length){
       const nView = {"1m": 180, "5m": 150, "15m": 120}[cfg.iv] || 150;
-      chart.timeScale().setVisibleLogicalRange({
+      const frame = () => chart.timeScale().setVisibleLogicalRange({
         from: Math.max(0, bars.length - nView), to: bars.length + 6});
+      frame();
+      requestAnimationFrame(() => requestAnimationFrame(frame));
+      host._reframe = frame;
+      box.addEventListener("dblclick", () => host._reframe && host._reframe());
     } else chart.timeScale().fitContent();
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
     host._draw = attachDrawTools(box, chart, series,
