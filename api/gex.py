@@ -203,33 +203,35 @@ CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
 def _clean_bars(bars):
-    """Nettoyage des prints hors marché du pré/post ETF, deux mécanismes :
-    1) MÈCHES : bornées à max(4x l'amplitude médiane, 0.12% du prix) au-delà
-       du corps — un print isolé fait une mèche de 300 pts, un vrai mouvement
-       s'accompagne d'un corps et de voisines qui suivent.
-    2) BOUGIES-PRINTS : une bougie dont le CORPS entier dévie fortement de la
-       médiane glissante de ses voisines (fenêtre ±3) est un print isolé
-       (souvent open=close, volume nul) -> supprimée. Un vrai gap/news déplace
-       aussi les voisines, donc la médiane suit et la bougie est gardée."""
-    if len(bars) < 10:
-        return bars
-    pos = sorted(r for r in (b["high"] - b["low"] for b in bars) if r > 0)
-    med = pos[len(pos) // 2] if pos else 1.0
-    closes = [b["close"] for b in bars]
+    """Nettoyage ADAPTATIF des prints hors marché (pré/post ETF).
+    Le seuil est LOCAL (fenêtre glissante ±12 bougies), pas global : en M5
+    sur 5 jours, la médiane globale est gonflée par les séances US et laisse
+    passer des spikes de 120 pts en zone calme. Localement : une mèche est
+    bornée à max(4x la médiane des voisines, 0.08% du prix) ; une bougie
+    dont le corps dévie fortement de la médiane locale des closes est un
+    print isolé -> supprimée. Un vrai mouvement entraîne ses voisines, donc
+    la médiane locale suit et il est conservé."""
     n = len(bars)
+    if n < 10:
+        return bars
+    closes = [b["close"] for b in bars]
+    ranges = [b["high"] - b["low"] for b in bars]
     out = []
     for i, b in enumerate(bars):
         px = max(abs(b["close"]), 1.0)
-        # 2) bougie-print isolée : corps loin de la médiane des voisines
-        lo_w, hi_w = max(0, i - 3), min(n, i + 4)
+        lo_w, hi_w = max(0, i - 12), min(n, i + 13)
+        loc_r = sorted(r for j, r in enumerate(ranges[lo_w:hi_w], lo_w)
+                       if j != i and r > 0)
+        locmed = loc_r[len(loc_r) // 2] if loc_r else 1.0
+        # bougie-print isolée : corps loin de la médiane locale des closes
         neigh = sorted(closes[lo_w:i] + closes[i + 1:hi_w])
         if neigh:
             ref = neigh[len(neigh) // 2]
             body_far = max(abs(b["open"] - ref), abs(b["close"] - ref))
-            if body_far > max(8.0 * med, px * 0.0025):
-                continue                      # print isolé -> on la retire
-        # 1) mèches bornées serré
-        lim = max(4.0 * med, px * 0.0012)
+            if body_far > max(8.0 * locmed, px * 0.002):
+                continue
+        # mèches bornées au contexte local
+        lim = max(4.0 * locmed, px * 0.0008)
         top = max(b["open"], b["close"])
         bot = min(b["open"], b["close"])
         if b["high"] - top > lim:
