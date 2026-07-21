@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -473,10 +473,30 @@ class handler(BaseHTTPRequestHandler):
                         if ok:
                             changed_any.append(payload)
                         continue
+                    # IV FRAÎCHE pour dimensionner la grille : le snapshot de
+                    # clôture de la chaîne (dispo à 00h01) reflète l'IV réelle
+                    # post-séance, bien plus juste que l'IV de la veille 15h25
+                    # (qui peut être gonflée un jour de selloff -> grille trop
+                    # large toute la nuit et la matinée). Repli silencieux sur
+                    # l'IV stockée si la chaîne est indisponible.
+                    iv_note = "kept"
+                    try:
+                        ch = TARGETS[target]["chain"]
+                        data = cache.get(ch)
+                        if data is None:
+                            data = fetch_cboe(ch)
+                            cache[ch] = data
+                        spot_c, opts_c, _e = parse_chain(data, 8, today=et_today())
+                        iv_fresh = atm_iv(spot_c, opts_c)
+                        if iv_fresh and 0.05 < iv_fresh < 1.5:
+                            latest["iv_atm"] = round(float(iv_fresh), 4)
+                            iv_note = f"fresh {iv_fresh:.3f}"
+                    except Exception:
+                        pass
                     if refresh_daily_anchor(latest):
                         ok, why = _upstash_set(latest)
                         results[target] = {"daily_only": True, "changed": True,
-                                           "published": ok,
+                                           "published": ok, "iv": iv_note,
                                            "anchor": latest["open_grid"]["anchor"]}
                         if ok:
                             changed_any.append(latest)
