@@ -865,6 +865,17 @@ async function loadBars(){
           }));
         }
         CHART._deriveDelta = delta;   // mémorisé pour cohérence du live
+        // BOUGIE COURANTE créée immédiatement : Yahoo est ~10min en retard,
+        // donc on ajoute tout de suite la bougie du bucket ACTUEL au prix
+        // dérivé — la chart affiche l'heure réelle dès le chargement, même
+        // si le poll live tombe en panne ensuite.
+        const sec0 = CHART.ivSec[CHART.iv];
+        const nowB = Math.floor(tzShift(Date.now() / 1000) / sec0) * sec0;
+        const lastB = bars[bars.length - 1];
+        if (lastB && nowB > lastB.time){
+          bars.push({time: nowB, open: dq.price, high: dq.price,
+                     low: dq.price, close: dq.price});
+        }
       }
     }catch(_){}
     CHART.series.setData(bars);
@@ -940,12 +951,30 @@ function drawIdxSessions(){
   drawSessionLines(ctx, CHART.chart, CHART._times, w, h);
 }
 
+function liveBadge(msg, ok){
+  let el = document.getElementById("liveBadge");
+  if (!el){
+    el = document.createElement("div");
+    el.id = "liveBadge";
+    el.style.cssText = "font:10px monospace;color:#5C5C66;padding:2px 8px;text-align:right";
+    const box = document.getElementById("chartBox");
+    if (box && box.parentNode) box.parentNode.insertBefore(el, box.nextSibling);
+  }
+  el.textContent = msg;
+  el.style.color = ok ? "#26A69A" : "#EF5350";
+}
+
 async function pollQuote(){
   if (!CHART.series || !CHART.lastBar || document.hidden) return;
   try{
     const r = await fetch(`/api/quote?target=${TARGET}`);
     const d = await r.json();
-    if (!r.ok || d.price == null) return;
+    if (!r.ok || d.price == null){
+      liveBadge("live: réponse invalide (" + r.status + ")", false);
+      return;
+    }
+    liveBadge("live: " + d.source + " · " + d.price + " · tick "
+      + new Date().toLocaleTimeString("fr-FR"), true);
     const sec = CHART.ivSec[CHART.iv], p = d.price;
     // bucket temporel de la bougie courante, basé sur l'HORLOGE (pas sur le
     // time Yahoo différé) : la bougie live suit l'heure réelle, plus de décalage
@@ -965,7 +994,7 @@ async function pollQuote(){
       animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100);
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
-  }catch(e){}
+  }catch(e){ liveBadge("live: ERREUR " + (e && e.message || e), false); }
 }
 
 function applyLevelLines(){
