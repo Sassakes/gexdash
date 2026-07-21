@@ -846,6 +846,15 @@ class handler(BaseHTTPRequestHandler):
                                 if fut_fresh and far:
                                     source = "fut-guard"
                                 else:
+                                    # basis dynamique partagée (calibrée par
+                                    # /api/chart sur le chevauchement fut/ETF)
+                                    try:
+                                        _a = kv_get(f"gex:basisadj:{target}")
+                                        if _a:
+                                            derived = round(
+                                                derived + (json.loads(_a).get("adj") or 0.0), 2)
+                                    except Exception:
+                                        pass
                                     price, ptime, source = derived, et, src2
                     except Exception:
                         pass
@@ -888,9 +897,11 @@ class handler(BaseHTTPRequestHandler):
                                       and s.get("scale")), None)
                         basis = pay.get("basis") or 0.0
                         if scale:
+                            # RTH UNIQUEMENT (pas de pré/post : c'est la source
+                            # des prints pourris). Hors séance US -> future pur.
                             rese = _yahoo_chart(YETF[target], interval,
                                                 CHART_INTERVALS[interval],
-                                                prepost=True)
+                                                prepost=False)
                             ebars = [{"time": b["time"],
                                       "open": round(b["open"] / scale + basis, 2),
                                       "high": round(b["high"] / scale + basis, 2),
@@ -898,6 +909,34 @@ class handler(BaseHTTPRequestHandler):
                                       "close": round(b["close"] / scale + basis, 2)}
                                      for b in _pb(rese)]
                             if ebars:
+                                # BASIS DYNAMIQUE : le future différé est EXACT
+                                # pour son horodatage. Sur la fenêtre où future
+                                # et ETF se chevauchent, l'écart médian mesure
+                                # la dérive réelle de la basis -> on recale tout
+                                # le dérivé dessus (et on partage la correction
+                                # avec /api/quote via Redis).
+                                fmap = {b["time"]: b["close"] for b in bars}
+                                diffs = sorted(fmap[e["time"]] - e["close"]
+                                               for e in ebars
+                                               if e["time"] in fmap)
+                                adj = 0.0
+                                if len(diffs) >= 5:
+                                    adj = diffs[len(diffs) // 2]
+                                    if abs(adj) > (ebars[-1]["close"] * 0.01):
+                                        adj = 0.0        # garde-fou aberration
+                                if adj:
+                                    ebars = [{"time": e["time"],
+                                              "open": round(e["open"] + adj, 2),
+                                              "high": round(e["high"] + adj, 2),
+                                              "low": round(e["low"] + adj, 2),
+                                              "close": round(e["close"] + adj, 2)}
+                                             for e in ebars]
+                                try:
+                                    kv_set(f"gex:basisadj:{target}",
+                                           json.dumps({"adj": round(adj, 2)}),
+                                           ex=900)
+                                except Exception:
+                                    pass
                                 emap = {b["time"] for b in ebars}
                                 bars = sorted(
                                     [b for b in bars if b["time"] not in emap]

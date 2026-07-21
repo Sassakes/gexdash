@@ -847,28 +847,14 @@ async function loadBars(){
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || r.status);
     let bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
-    // Recalage sur le dérivé QQQ+basis (temps réel) : Yahoo est différé ~10min
-    // et à un niveau légèrement différent. On aligne le dernier close sur le
-    // prix dérivé courant pour que le live prenne le relais SANS saut visible.
+    // La calibration de niveau est faite CÔTÉ SERVEUR (basis dynamique sur le
+    // chevauchement future/ETF) — plus de recalage client. On synthétise juste
+    // la bougie du bucket ACTUEL si la dernière bougie est en retard (nuit :
+    // future différé), pour que l'axe soit toujours à l'heure réelle.
     try{
       const rq = await fetch(`/api/quote?target=${TARGET}`);
       const dq = await rq.json();
       if (rq.ok && dq.price != null && bars.length){
-        const delta = dq.price - bars[bars.length - 1].close;
-        if (Math.abs(delta) > 0.01 && Math.abs(delta / bars[bars.length-1].close) < 0.02){
-          bars = bars.map(b => ({
-            time: b.time,
-            open:  +(b.open  + delta).toFixed(2),
-            high:  +(b.high  + delta).toFixed(2),
-            low:   +(b.low   + delta).toFixed(2),
-            close: +(b.close + delta).toFixed(2),
-          }));
-        }
-        CHART._deriveDelta = delta;   // mémorisé pour cohérence du live
-        // BOUGIE COURANTE créée immédiatement : Yahoo est ~10min en retard,
-        // donc on ajoute tout de suite la bougie du bucket ACTUEL au prix
-        // dérivé — la chart affiche l'heure réelle dès le chargement, même
-        // si le poll live tombe en panne ensuite.
         const sec0 = CHART.ivSec[CHART.iv];
         const nowB = Math.floor(tzShift(Date.now() / 1000) / sec0) * sec0;
         const lastB = bars[bars.length - 1];
