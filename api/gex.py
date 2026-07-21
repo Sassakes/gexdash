@@ -202,14 +202,15 @@ YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
-def _yahoo_chart(sym, interval, rng):
+def _yahoo_chart(sym, interval, rng, prepost=False):
     """Fetch Yahoo chart JSON (candles + meta). Isolated for testability."""
     import requests
     from urllib.parse import quote as _q
 
     r = requests.get(
         f"https://query1.finance.yahoo.com/v8/finance/chart/{_q(sym)}"
-        f"?interval={interval}&range={rng}",
+        f"?interval={interval}&range={rng}"
+        + ("&includePrePost=true" if prepost else ""),
         headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     r.raise_for_status()
     return r.json()["chart"]["result"][0]
@@ -814,17 +815,58 @@ class handler(BaseHTTPRequestHandler):
                     }).encode()
                     max_age = 1
                 else:
-                    ts = res.get("timestamp") or []
-                    q = (res.get("indicators", {}).get("quote") or [{}])[0]
-                    bars = []
-                    for i, t in enumerate(ts):
-                        o, h, l, c = (q.get("open") or [None])[i], (q.get("high") or [None])[i],                                      (q.get("low") or [None])[i], (q.get("close") or [None])[i]
-                        if None in (o, h, l, c):
-                            continue
-                        bars.append({"time": t, "open": round(o, 2), "high": round(h, 2),
-                                     "low": round(l, 2), "close": round(c, 2)})
+                    def _pb(rs):
+                        tts = rs.get("timestamp") or []
+                        qq = (rs.get("indicators", {}).get("quote") or [{}])[0]
+                        out = []
+                        for i, t in enumerate(tts):
+                            o = (qq.get("open") or [None])[i]
+                            h = (qq.get("high") or [None])[i]
+                            l = (qq.get("low") or [None])[i]
+                            c = (qq.get("close") or [None])[i]
+                            if None in (o, h, l, c):
+                                continue
+                            out.append({"time": t, "open": round(o, 2),
+                                        "high": round(h, 2), "low": round(l, 2),
+                                        "close": round(c, 2)})
+                        return out
+
+                    bars = _pb(res)
+                    src_flag = "fut"
+                    # BOUGIES QUASI TEMPS RÉEL : le future Yahoo est différé
+                    # ~10 min (politique CME), mais l'ETF (QQQ/SPY) est servi
+                    # quasi temps réel par Yahoo. On reconstruit l'intraday
+                    # depuis l'ETF converti (v/scale + basis) — y compris
+                    # pré/post-marché — et on garde les bougies future
+                    # UNIQUEMENT aux heures où l'ETF n'a pas coté (nuit
+                    # Globex). Repli total sur le future si quoi que ce soit
+                    # manque : jamais pire qu'avant.
+                    try:
+                        pay = _latest_payload(target) or {}
+                        scale = next((s.get("scale") for s in pay.get("sources", [])
+                                      if s.get("chain") == YETF[target]
+                                      and s.get("scale")), None)
+                        basis = pay.get("basis") or 0.0
+                        if scale:
+                            rese = _yahoo_chart(YETF[target], interval,
+                                                CHART_INTERVALS[interval],
+                                                prepost=True)
+                            ebars = [{"time": b["time"],
+                                      "open": round(b["open"] / scale + basis, 2),
+                                      "high": round(b["high"] / scale + basis, 2),
+                                      "low": round(b["low"] / scale + basis, 2),
+                                      "close": round(b["close"] / scale + basis, 2)}
+                                     for b in _pb(rese)]
+                            if ebars:
+                                emap = {b["time"] for b in ebars}
+                                bars = sorted(
+                                    [b for b in bars if b["time"] not in emap]
+                                    + ebars, key=lambda b: b["time"])
+                                src_flag = "etf+fut"
+                    except Exception:
+                        pass
                     body = json.dumps({"target": target, "interval": interval,
-                                       "bars": bars,
+                                       "bars": bars, "src": src_flag,
                                        "price": meta.get("regularMarketPrice")}).encode()
                     max_age = 12
                 self.send_response(200)
