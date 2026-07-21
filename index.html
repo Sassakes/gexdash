@@ -931,7 +931,11 @@ async function loadBars(){
     $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
     applyLevelLines();
     clearInterval(CHART.poll);
-    CHART.poll = setInterval(pollQuote, 1200);
+    // Fréquence du flux live (ms). 2000 = équilibre fluidité/quotas.
+    // Monte à 5000 pour l'économie maximale, descends à 1200 pour le max
+    // de fluidité (charge Yahoo/Redis un peu plus élevée).
+    const POLL_MS = 2000;
+    CHART.poll = setInterval(pollQuote, POLL_MS);
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
