@@ -202,6 +202,27 @@ YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
+def _clean_bars(bars):
+    """Écrête les mèches aberrantes : le pré/post-marché ETF de Yahoo contient
+    des prints isolés loin du marché (odd lots) qui, convertis, donnent des
+    barres géantes. On borne high/low à ~10x l'amplitude médiane des bougies
+    (plancher 0.35% du prix) — les vrais mouvements passent, les prints non."""
+    if len(bars) < 10:
+        return bars
+    rngs = sorted(b["high"] - b["low"] for b in bars)
+    med = rngs[len(rngs) // 2] or 1.0
+    for b in bars:
+        px = max(abs(b["close"]), 1.0)
+        lim = max(10.0 * med, px * 0.0035)
+        top = max(b["open"], b["close"])
+        bot = min(b["open"], b["close"])
+        if b["high"] - top > lim:
+            b["high"] = round(top + lim, 2)
+        if bot - b["low"] > lim:
+            b["low"] = round(bot - lim, 2)
+    return bars
+
+
 def _yahoo_chart(sym, interval, rng, prepost=False):
     """Fetch Yahoo chart JSON (candles + meta). Isolated for testability."""
     import requests
@@ -865,6 +886,7 @@ class handler(BaseHTTPRequestHandler):
                                 src_flag = "etf+fut"
                     except Exception:
                         pass
+                    bars = _clean_bars(bars)
                     body = json.dumps({"target": target, "interval": interval,
                                        "bars": bars, "src": src_flag,
                                        "price": meta.get("regularMarketPrice")}).encode()
