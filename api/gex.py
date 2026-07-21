@@ -203,24 +203,41 @@ CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
 def _clean_bars(bars):
-    """Écrête les mèches aberrantes : le pré/post-marché ETF de Yahoo contient
-    des prints isolés loin du marché (odd lots) qui, convertis, donnent des
-    barres géantes. On borne high/low à ~10x l'amplitude médiane des bougies
-    (plancher 0.35% du prix) — les vrais mouvements passent, les prints non."""
+    """Nettoyage des prints hors marché du pré/post ETF, deux mécanismes :
+    1) MÈCHES : bornées à max(4x l'amplitude médiane, 0.12% du prix) au-delà
+       du corps — un print isolé fait une mèche de 300 pts, un vrai mouvement
+       s'accompagne d'un corps et de voisines qui suivent.
+    2) BOUGIES-PRINTS : une bougie dont le CORPS entier dévie fortement de la
+       médiane glissante de ses voisines (fenêtre ±3) est un print isolé
+       (souvent open=close, volume nul) -> supprimée. Un vrai gap/news déplace
+       aussi les voisines, donc la médiane suit et la bougie est gardée."""
     if len(bars) < 10:
         return bars
-    rngs = sorted(b["high"] - b["low"] for b in bars)
-    med = rngs[len(rngs) // 2] or 1.0
-    for b in bars:
+    pos = sorted(r for r in (b["high"] - b["low"] for b in bars) if r > 0)
+    med = pos[len(pos) // 2] if pos else 1.0
+    closes = [b["close"] for b in bars]
+    n = len(bars)
+    out = []
+    for i, b in enumerate(bars):
         px = max(abs(b["close"]), 1.0)
-        lim = max(10.0 * med, px * 0.0035)
+        # 2) bougie-print isolée : corps loin de la médiane des voisines
+        lo_w, hi_w = max(0, i - 3), min(n, i + 4)
+        neigh = sorted(closes[lo_w:i] + closes[i + 1:hi_w])
+        if neigh:
+            ref = neigh[len(neigh) // 2]
+            body_far = max(abs(b["open"] - ref), abs(b["close"] - ref))
+            if body_far > max(8.0 * med, px * 0.0025):
+                continue                      # print isolé -> on la retire
+        # 1) mèches bornées serré
+        lim = max(4.0 * med, px * 0.0012)
         top = max(b["open"], b["close"])
         bot = min(b["open"], b["close"])
         if b["high"] - top > lim:
             b["high"] = round(top + lim, 2)
         if bot - b["low"] > lim:
             b["low"] = round(bot - lim, 2)
-    return bars
+        out.append(b)
+    return out
 
 
 def _yahoo_chart(sym, interval, rng, prepost=False):
