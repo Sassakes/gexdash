@@ -785,7 +785,17 @@ window.addEventListener("resize", () => {
 if (typeof LightweightCharts === "undefined"){
   $("empty").hidden = false; $("empty").textContent = tx("feedKo");
 } else {
-  render();
+if (!window._visWired){
+    window._visWired = true;
+    let hiddenAt = null;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden){ hiddenAt = Date.now(); return; }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      if (away > 60000) render();   // recharge toutes les cartes au retour
+    });
+  }
+    render();
 }
 </script>
 </body>

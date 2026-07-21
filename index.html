@@ -917,6 +917,20 @@ async function loadBars(){
     $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
     applyLevelLines();
     clearInterval(CHART.poll);
+    // REPRISE AU RETOUR SUR L'ONGLET : en arrière-plan le navigateur gèle
+    // les timers (voulu, zéro appel). Au retour, on recharge l'historique
+    // manqué (si absence > 60s) au lieu de laisser un trou dans la chart.
+    if (!window._visWired){
+      window._visWired = true;
+      let hiddenAt = null;
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden){ hiddenAt = Date.now(); return; }
+        const away = hiddenAt ? Date.now() - hiddenAt : 0;
+        hiddenAt = null;
+        if (away > 60000) loadBars();      // recharge les bougies manquées
+        else pollQuote();                  // reprise immédiate du live
+      });
+    }
     // Fréquence du flux live (ms). 2000 = équilibre fluidité/quotas.
     // Monte à 5000 pour l'économie maximale, descends à 1200 pour le max
     // de fluidité (charge Yahoo/Redis un peu plus élevée).
