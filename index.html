@@ -846,7 +846,27 @@ async function loadBars(){
     const r = await fetch(`/api/chart?target=${TARGET}&interval=${CHART.iv}`);
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || r.status);
-    const bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
+    let bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
+    // Recalage sur le dérivé QQQ+basis (temps réel) : Yahoo est différé ~10min
+    // et à un niveau légèrement différent. On aligne le dernier close sur le
+    // prix dérivé courant pour que le live prenne le relais SANS saut visible.
+    try{
+      const rq = await fetch(`/api/quote?target=${TARGET}`);
+      const dq = await rq.json();
+      if (rq.ok && dq.price != null && bars.length){
+        const delta = dq.price - bars[bars.length - 1].close;
+        if (Math.abs(delta) > 0.01 && Math.abs(delta / bars[bars.length-1].close) < 0.02){
+          bars = bars.map(b => ({
+            time: b.time,
+            open:  +(b.open  + delta).toFixed(2),
+            high:  +(b.high  + delta).toFixed(2),
+            low:   +(b.low   + delta).toFixed(2),
+            close: +(b.close + delta).toFixed(2),
+          }));
+        }
+        CHART._deriveDelta = delta;   // mémorisé pour cohérence du live
+      }
+    }catch(_){}
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
     // outils de dessin : dessins propres à CE marché (persistés par navigateur)
@@ -927,14 +947,22 @@ async function pollQuote(){
     const d = await r.json();
     if (!r.ok || d.price == null) return;
     const sec = CHART.ivSec[CHART.iv], p = d.price;
-    const bucket = Math.floor(tzShift(d.time || Date.now()/1000) / sec) * sec;
+    // bucket temporel de la bougie courante, basé sur l'HORLOGE (pas sur le
+    // time Yahoo différé) : la bougie live suit l'heure réelle, plus de décalage
+    const nowSec = Date.now() / 1000;
+    const bucket = Math.floor(tzShift(nowSec) / sec) * sec;
     if (bucket > CHART.lastBar.time){
-      if (CHART._anim) cancelAnimationFrame(CHART._anim);
-      CHART._anim = null;
-      CHART.lastBar = {time:bucket, open:p, high:p, low:p, close:p};
+      // nouvelle bougie : on fige la précédente à son close, on ouvre la neuve
+      if (CHART._anim){ cancelAnimationFrame(CHART._anim); CHART._anim = null; }
+      const prevClose = CHART.lastBar.close;
+      CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
+                       low: Math.min(prevClose, p), close: p};
       CHART.series.update(CHART.lastBar);
     }else{
-      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1300);
+      // bougie courante qui VIT : high/low s'étendent, close glisse vers p
+      CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
+      CHART.lastBar.low  = Math.min(CHART.lastBar.low, p);
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100);
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
   }catch(e){}
