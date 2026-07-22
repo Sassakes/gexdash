@@ -493,8 +493,6 @@
     <a id="tvLink" target="_blank" rel="noopener"
        href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">TradingView</span> ↗</a>
     <a id="dcLink" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4">Discord ↗</a>
-    <a id="donateBtn" href="#" hidden
-       style="color:var(--gold); border-color:rgba(240,185,11,.45)">♥ <span id="donLbl">Soutenir</span></a>
     <select id="tzTop" title="Fuseau horaire des charts">
       <option value="Europe/Paris">Paris</option>
       <option value="America/New_York">New York</option>
@@ -586,100 +584,8 @@
 </footer>
 </main>
 
-<div id="donModal" hidden
-     style="position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:60;
-            display:flex; align-items:center; justify-content:center; padding:18px">
-  <div style="background:var(--panel,#111114); border:1px solid var(--gold);
-              max-width:420px; width:100%; padding:22px 24px; position:relative">
-    <button id="donClose" aria-label="Fermer"
-            style="position:absolute; top:10px; right:12px; background:none;
-                   border:none; color:var(--muted,#8A8A94); font-size:16px;
-                   cursor:pointer">✕</button>
-    <div style="font-size:13px; letter-spacing:.18em; text-transform:uppercase;
-                color:var(--gold); margin-bottom:6px">♥ <span id="donTitle">Soutenir le projet</span></div>
-    <p id="donText" style="color:var(--muted,#8A8A94); font-size:12.5px;
-                           line-height:1.7; margin:0 0 16px"></p>
-    <div id="donBtns" style="display:flex; flex-direction:column; gap:9px"></div>
-    <div id="donCrypto" hidden style="margin-top:12px">
-      <div style="font-size:10px; letter-spacing:.1em; text-transform:uppercase;
-                  color:var(--muted,#8A8A94); margin-bottom:5px" id="donCLbl"></div>
-      <div style="display:flex; gap:8px; align-items:center">
-        <code id="donCAddr" style="font-size:10.5px; word-break:break-all;
-              color:var(--text,#ECEAE4); flex:1"></code>
-        <button id="donCCopy" style="font-size:11px; padding:5px 10px;
-                cursor:pointer">⧉</button>
-      </div>
-    </div>
-  </div>
-</div>
 <script>
- "use strict";
-
-/* ═══════════ DONATIONS — remplis tes liens ici ═══════════
-   stripe : crée un "Payment Link" dans ton dashboard Stripe
-            (Produits -> Payment Links -> "Le client choisit le montant")
-   paypal : ton lien paypal.me (optionnel)
-   crypto : adresses à afficher (optionnel)
-   Laisse "" pour masquer un moyen. Si TOUT est vide, le bouton
-   Soutenir n'apparaît pas du tout. */
-const DONATE = {
-  stripe: "",
-  paypal: "",
-  crypto: {
-    // "BTC": "bc1q...",
-    // "ETH": "0x...",
-  },
-};
-
-function initDonate(){
-  const hasCrypto = Object.keys(DONATE.crypto || {}).length > 0;
-  if (!DONATE.stripe && !DONATE.paypal && !hasCrypto) return;
-  const btn = document.getElementById("donateBtn");
-  const modal = document.getElementById("donModal");
-  btn.hidden = false;
-  const fr = (PREFS && PREFS.lang) !== "en";
-  document.getElementById("donTitle").textContent = fr ? "Soutenir le projet" : "Support the project";
-  document.getElementById("donText").textContent = fr
-    ? "gexdash est gratuit et le restera. Si l'outil t'aide au quotidien, un coup de pouce aide à couvrir les serveurs et le développement. Merci ♥"
-    : "gexdash is free and will stay free. If the tool helps your trading, a small donation helps cover servers and development. Thank you ♥";
-  const box = document.getElementById("donBtns");
-  box.innerHTML = "";
-  const mk = (label, href) => {
-    const a = document.createElement("a");
-    a.href = href; a.target = "_blank"; a.rel = "noopener";
-    a.textContent = label;
-    a.style.cssText = "display:block; text-align:center; padding:11px 14px;" +
-      "border:1px solid var(--gold); color:var(--gold); text-decoration:none;" +
-      "font-size:13px; letter-spacing:.06em";
-    box.appendChild(a);
-  };
-  if (DONATE.stripe) mk(fr ? "💳 Carte bancaire (Stripe)" : "💳 Card (Stripe)", DONATE.stripe);
-  if (DONATE.paypal) mk("PayPal", DONATE.paypal);
-  if (hasCrypto){
-    const cbox = document.getElementById("donCrypto");
-    const [sym, addr] = Object.entries(DONATE.crypto)[0];
-    const b = document.createElement("button");
-    b.textContent = "₿ Crypto";
-    b.style.cssText = "display:block; width:100%; padding:11px 14px; cursor:pointer;" +
-      "border:1px solid var(--border,#212127); background:none; color:var(--text,#ECEAE4);" +
-      "font-size:13px; letter-spacing:.06em";
-    b.onclick = () => {
-      cbox.hidden = !cbox.hidden;
-      document.getElementById("donCLbl").textContent = sym;
-      document.getElementById("donCAddr").textContent = addr;
-    };
-    box.appendChild(b);
-    document.getElementById("donCCopy").onclick = () => {
-      navigator.clipboard && navigator.clipboard.writeText(addr);
-      document.getElementById("donCCopy").textContent = "✓";
-      setTimeout(() => document.getElementById("donCCopy").textContent = "⧉", 1200);
-    };
-  }
-  btn.onclick = e => { e.preventDefault(); modal.hidden = false; };
-  document.getElementById("donClose").onclick = () => { modal.hidden = true; };
-  modal.onclick = e => { if (e.target === modal) modal.hidden = true; };
-}
-
+"use strict";
 const $ = id => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
 const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94",
@@ -858,7 +764,6 @@ async function load(){
   });
   bindChips();
   loadLinks();
-  initDonate();
   await loadTarget();
   loadDark();
 }
