@@ -68,13 +68,14 @@
     transition:color .12s ease; white-space:nowrap;
   }
   .topnav a:hover{color:var(--gold)}
-  /* Soutien : simple lien, liseré doré + halo qui respire. Aucun pop-up. */
+  /* Soutien : seul élément plein de la barre -> il capte le regard */
   .topnav a.donate{
-    color:#F0B90B; border:1px solid rgba(240,185,11,.42);
-    animation:donGlow 3.6s ease-in-out infinite;
+    color:#0A0A0C; background:#F0B90B; border:1px solid #F0B90B;
+    padding:6px 13px; font-weight:600;
+    animation:donGlow 3.8s ease-in-out infinite;
   }
   .topnav a.donate:hover{
-    color:#0A0A0C; background:#F0B90B; border-color:#F0B90B; animation:none;
+    background:#ffd23f; border-color:#ffd23f; animation:none;
   }
   @keyframes donGlow{
     0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }

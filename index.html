@@ -70,22 +70,67 @@
     margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
   }
   .topnav a{
-    color:var(--text); text-decoration:none; font-size:12px; padding:7px 14px;
-    background:var(--surface2); border:1px solid var(--line-strong);
-    transition:color .12s ease, border-color .12s ease, box-shadow .12s ease;
-    white-space:nowrap;
+    text-decoration:none; font-size:12px; white-space:nowrap;
+    display:inline-flex; align-items:center; gap:7px;
+    transition:color .12s ease, border-color .12s ease,
+               background .12s ease, box-shadow .12s ease;
   }
-  .topnav a:hover{
+  /* filet de séparation entre les 3 familles */
+  .nav-sep{
+    width:1px; height:18px; background:var(--line-strong);
+    margin:0 9px; flex:0 0 auto;
+  }
+  /* 1. section applicative : encadrée, c'est un "lieu" du produit */
+  .topnav a.nav-app{
+    color:var(--text); padding:7px 14px;
+    background:var(--surface2); border:1px solid var(--line-strong);
+  }
+  .topnav a.nav-app .ic{ color:var(--gold); font-size:11px; }
+  .topnav a.nav-app:hover{
     color:var(--gold); border-color:rgba(240,185,11,.55);
     box-shadow:0 6px 18px -10px var(--gold-glow);
   }
-  #tzTop{
-    background:var(--surface2); border:1px solid var(--line-strong); color:var(--text);
-    font:inherit; font-size:11.5px; padding:7px 8px; cursor:pointer; margin-left:8px;
+  /* 2. liens externes : sans cadre pour alléger, pastille colorée qui accroche */
+  .topnav a.nav-ext{
+    color:var(--muted); padding:7px 10px;
+    background:none; border:1px solid transparent;
   }
+  .topnav a.nav-ext .dot{
+    width:7px; height:7px; border-radius:50%; flex:0 0 auto;
+    box-shadow:0 0 8px currentColor;
+  }
+  .topnav a.nav-ext.dc .dot{ background:#5865F2; color:#5865F2; }
+  .topnav a.nav-ext.tv .dot{ background:#2962FF; color:#2962FF; }
+  .topnav a.nav-ext:hover{
+    color:var(--text); border-color:var(--line-strong);
+    background:var(--surface2);
+  }
+  /* 3. soutien : seul élément plein de la barre -> il capte le regard */
+  .topnav a.nav-support{
+    color:#0A0A0C; background:var(--gold); padding:7px 15px;
+    border:1px solid var(--gold); font-weight:600;
+    animation:donGlow 3.8s ease-in-out infinite;
+  }
+  .topnav a.nav-support:hover{
+    background:#ffd23f; border-color:#ffd23f; animation:none;
+    box-shadow:0 8px 22px -10px var(--gold-glow);
+  }
+  @keyframes donGlow{
+    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
+    50%    { box-shadow:0 0 16px rgba(240,185,11,.35); }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .topnav a.nav-support{ animation:none; }
+  }
+  #tzTop{
+    background:none; border:1px solid transparent; color:var(--muted);
+    font:inherit; font-size:11.5px; padding:6px 6px; cursor:pointer; margin-left:0;
+  }
+  #tzTop:hover{ color:var(--text); border-color:var(--line-strong); }
   #tzTop:hover{border-color:rgba(240,185,11,.55)}
   #tzTop:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-  .topnav .ivs{margin-left:8px}
+  .topnav .ivs{margin-left:6px; opacity:.8}
+  .topnav .ivs:hover{opacity:1}
   .ctxbar{
     display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
   }
@@ -508,12 +553,22 @@
     <span class="sub" id="hdrDate">—</span>
   </div>
   <nav class="topnav">
-    <a href="/dash" id="dashLbl">Mon dashboard</a>
-    <a id="donateLink" class="donate" target="_blank" rel="noopener" hidden
+    <!-- 1. espace applicatif : le dashboard est une section du produit -->
+    <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
+
+    <span class="nav-sep" aria-hidden="true"></span>
+
+    <!-- 2. communauté & outils : pastilles colorées pour accrocher l'œil -->
+    <a id="dcLink" class="nav-ext dc" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
+    <a id="tvLink" class="nav-ext tv" target="_blank" rel="noopener"
+       href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span class="dot" aria-hidden="true"></span><span id="tvLbl">TradingView</span></a>
+
+    <!-- 3. soutien : unique élément plein, c'est l'appel à l'action -->
+    <a id="donateLink" class="nav-support" target="_blank" rel="noopener" hidden
        href="#"><span aria-hidden="true">♥</span> <span id="donLbl">Soutenir</span></a>
-    <a id="tvLink" target="_blank" rel="noopener"
-       href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">TradingView</span> ↗</a>
-    <a id="dcLink" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4">Discord ↗</a>
+
+    <span class="nav-sep" aria-hidden="true"></span>
+
     <select id="tzTop" title="Fuseau horaire des charts">
       <option value="Europe/Paris">Paris</option>
       <option value="America/New_York">New York</option>
