@@ -93,6 +93,17 @@
     border:1px solid transparent;
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   }
+.tb{width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px}
+.tb th{text-align:left; color:var(--muted); font-weight:600; font-size:10px;
+       letter-spacing:.08em; text-transform:uppercase; padding:5px 8px;
+       border-bottom:1px solid var(--border)}
+.tb td{padding:5px 8px; border-bottom:1px solid rgba(255,255,255,.04);
+       font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap}
+.tb tr:last-child td{border-bottom:none}
+.tb .ok{color:#26A69A} .tb .ko{color:#EF5350} .tb .mut{color:var(--muted)}
+.chip{display:inline-block; padding:3px 9px; border:1px solid var(--border);
+      font-size:11px; margin:0 6px 6px 0; color:var(--text)}
+.chip b{color:var(--gold)}
 </style>
 </head>
 <body>
@@ -285,20 +296,51 @@ async function load(){
     finally{ btn.disabled = false; btn.textContent = "⟳ Refresh"; }
   };
 
+  function outcomeClass(o){
+    o = (o || "").toLowerCase();
+    if (o.startsWith("ok")) return "ok";
+    if (/401|error|exception|traceback|ko|fail/.test(o)) return "ko";
+    return "mut";
+  }
+  function srcLabel(ua){
+    ua = (ua || "").toLowerCase();
+    if (ua.includes("upstash") || ua.includes("qstash")) return "QStash";
+    if (ua.startsWith("vercel-cron")) return "Vercel";
+    if (ua.includes("mozilla") || ua.includes("chrome")) return "Admin";
+    return (ua.split("/")[0] || "—");
+  }
   async function loadStatus(){
     try{
       const d = await api("/api/status");
-      const tg = Object.entries(d.targets).map(([t, p]) =>
-        p ? `<b>${t}</b> : ${p.date} · ${(p.generated_utc||"").slice(11,16)} UTC · px ${p.px ?? "—"} · IV ${p.iv != null ? (p.iv*100).toFixed(1)+"%" : "—"}`
-          : `<b>${t}</b> : aucune donnée publiée`).join("<br>");
-      const log = (d.cron_log || []).map(l =>
-        `${(l.utc||"").slice(5,16).replace("T"," ")}Z · ${l.paris} Paris · <b>${l.outcome}</b> · ${(l.ua||"—").split("/")[0]}${l.q ? " · ?" + l.q : ""}`
-      ).join("<br>") || "<i>aucun hit cron enregistré — si les schedules QStash tournaient, il y aurait des lignes ici</i>";
+      const chips =
+        `<span class="chip"><b>${d.paris_now}</b> Paris</span>` +
+        `<span class="chip">webhooks : <b>${d.webhooks.length ? d.webhooks.join(", ") : "aucun"}</b></span>` +
+        `<span class="chip">ping Discord aujourd'hui : <b>${d.notified_today ? "oui ✓" : "non"}</b></span>`;
+      const tgRows = Object.entries(d.targets).map(([t, p]) =>
+        p ? `<tr><td><b>${t}</b></td><td>${p.date}</td>` +
+            `<td>${(p.generated_utc||"").slice(11,16)} UTC</td>` +
+            `<td>${p.px != null ? Number(p.px).toLocaleString("fr-FR") : "—"}</td>` +
+            `<td>${p.iv != null ? (p.iv*100).toFixed(1)+" %" : "—"}</td></tr>`
+          : `<tr><td><b>${t}</b></td><td colspan="4" class="mut">aucune donnée publiée</td></tr>`
+      ).join("");
+      const logRows = (d.cron_log || []).map(l =>
+        `<tr><td>${l.paris || "—"}</td>` +
+        `<td class="mut">${(l.utc||"").slice(5,16).replace("T"," ")}Z</td>` +
+        `<td>${srcLabel(l.ua)}</td>` +
+        `<td class="mut">${l.q ? "?" + l.q : "—"}</td>` +
+        `<td class="${outcomeClass(l.outcome)}">${l.outcome || "—"}</td></tr>`
+      ).join("");
       $("stBox").innerHTML =
-        `<b>${d.paris_now} Paris</b> · webhooks configurés : ${d.webhooks.join(", ") || "aucun"} · ` +
-        `ping Discord aujourd'hui : <b class="${d.notified_today ? "on" : ""}">${d.notified_today ? "oui ✓" : "non"}</b>` +
-        `<br><br><b>Dernière publication par marché</b><br>${tg}` +
-        `<br><br><b>Journal des hits cron (15 derniers)</b><br>${log}`;
+        chips +
+        `<table class="tb"><thead><tr><th>Marché</th><th>Date</th><th>Publié</th>` +
+        `<th>Prix</th><th>IV</th></tr></thead><tbody>${tgRows}</tbody></table>` +
+        `<div style="margin-top:14px; color:var(--muted); font-size:10px; ` +
+        `letter-spacing:.08em; text-transform:uppercase">Journal des hits cron (15 derniers)</div>` +
+        (logRows
+          ? `<div style="max-height:260px; overflow:auto"><table class="tb"><thead>` +
+            `<tr><th>Paris</th><th>UTC</th><th>Source</th><th>Requête</th><th>Résultat</th></tr>` +
+            `</thead><tbody>${logRows}</tbody></table></div>`
+          : `<div class="mut" style="margin-top:6px"><i>aucun hit cron enregistré</i></div>`);
     }catch(e){ $("stBox").textContent = "Statut indisponible : " + e.message; }
   }
   $("stRefresh").onclick = loadStatus;
@@ -313,6 +355,7 @@ async function load(){
 refreshLock(); }
   };
   loadStatus();
+  refreshLock();
 
   try{
     const L = await (await fetch("/api/links")).json();
