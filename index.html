@@ -470,6 +470,25 @@
     .brand h1 em{animation:none; color:var(--gold); background:none}
     #statusPill.live::before{animation:none}
   }
+  /* Bouton de soutien : même gabarit que les autres liens de la barre,
+     juste souligné d'un liseré doré et d'un halo qui respire lentement.
+     Aucun pop-up, aucune interruption : un simple lien externe. */
+  .topnav a.donate{
+    color:#F0B90B;
+    border-color:rgba(240,185,11,.42);
+    animation:donGlow 3.6s ease-in-out infinite;
+  }
+  .topnav a.donate:hover{
+    color:#0A0A0C; background:#F0B90B; border-color:#F0B90B;
+    animation:none;
+  }
+  @keyframes donGlow{
+    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
+    50%    { box-shadow:0 0 12px rgba(240,185,11,.28); }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .topnav a.donate{ animation:none; }
+  }
 </style>
 </head>
 <body>
@@ -490,6 +509,8 @@
   </div>
   <nav class="topnav">
     <a href="/dash" id="dashLbl">Mon dashboard</a>
+    <a id="donateLink" class="donate" target="_blank" rel="noopener" hidden
+       href="#"><span aria-hidden="true">♥</span> <span id="donLbl">Soutenir</span></a>
     <a id="tvLink" target="_blank" rel="noopener"
        href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span id="tvLbl">TradingView</span> ↗</a>
     <a id="dcLink" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4">Discord ↗</a>
@@ -609,7 +630,8 @@ const T = {
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
-    tv:"TradingView", dash:"Mon dashboard", th:["Niveau","Prix","Distance"], pts:"pts",
+    tv:"TradingView", dash:"Mon dashboard",
+    don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
     dpNote:"FINRA off-exchange · publié J-1",
@@ -629,7 +651,8 @@ const T = {
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
-    tv:"TradingView", dash:"My dashboard", th:["Level","Price","Distance"], pts:"pts",
+    tv:"TradingView", dash:"My dashboard",
+    don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
     dpNote:"FINRA off-exchange · published T-1",
@@ -740,6 +763,8 @@ function applyLang(){
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
   $("dashLbl").textContent = t("dash");
+  $("donLbl").textContent = t("don");
+  $("donateLink").title = t("donTip");
   const th = t("th");
   $("th1").textContent = th[0]; $("th2").textContent = th[1]; $("th3").textContent = th[2];
   const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen")};
@@ -1127,6 +1152,12 @@ async function loadLinks(){
     const d = await (await fetch("/api/links")).json();
     if (d.tradingview) $("tvLink").href = d.tradingview;
     if (d.discord) $("dcLink").href = d.discord;
+    if (d.donate){
+      const a = $("donateLink");
+      a.href = d.donate;
+      a.hidden = false;
+      a.title = t("donTip");
+    }
   }catch(_){}
 }
 

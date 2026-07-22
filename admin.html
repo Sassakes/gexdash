@@ -170,7 +170,14 @@
       <span></span><span></span>
       <span class="status" data-lst="tradingview">—</span>
     </div>
-    <div class="note">Invitation Discord et page du script TradingView affichées en haut du dashboard.</div>
+    <div class="row" data-l="donate">
+      <span class="t" style="font-size:11px">Soutenir ♥</span>
+      <input type="url" placeholder="https://buy.stripe.com/… ou ko-fi.com/… (vide = bouton masqué)" data-lin="donate">
+      <span></span><span></span>
+      <span class="status" data-lst="donate">—</span>
+    </div>
+    <div class="note">Invitation Discord et page du script TradingView affichées en haut du dashboard.
+      Le lien « Soutenir » n'apparaît sur le site que s'il est renseigné ici — laisse vide pour le masquer.</div>
   </section>
   <button id="saveLinksBtn">Enregistrer les liens</button>
   <div id="msg"></div>
@@ -359,7 +366,7 @@ refreshLock(); }
 
   try{
     const L = await (await fetch("/api/links")).json();
-    for (const k of ["discord","tradingview"]){
+    for (const k of ["discord","tradingview","donate"]){
       const st = document.querySelector(`[data-lst="${k}"]`);
       if (st && L[k]) st.innerHTML = `<b class="on">actif</b> · <span style="word-break:break-all">${L[k]}</span>`;
     }
@@ -367,7 +374,7 @@ refreshLock(); }
 
   $("saveLinksBtn").onclick = async () => {
     const body = {};
-    for (const k of ["discord","tradingview"]){
+    for (const k of ["discord","tradingview","donate"]){
       const v = document.querySelector(`[data-lin="${k}"]`).value.trim();
       if (v !== "") body[k] = v;
     }
@@ -375,7 +382,7 @@ refreshLock(); }
     $("saveLinksBtn").disabled = true;
     try{
       const d = await api("/api/links", {method:"POST", body: JSON.stringify(body)});
-      for (const k of ["discord","tradingview"]){
+      for (const k of ["discord","tradingview","donate"]){
         const st = document.querySelector(`[data-lst="${k}"]`);
         if (st && d.links[k]) st.innerHTML = `<b class="on">actif</b> · <span style="word-break:break-all">${d.links[k]}</span>`;
         document.querySelector(`[data-lin="${k}"]`).value = "";

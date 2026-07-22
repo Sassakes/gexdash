@@ -264,6 +264,9 @@ DEFAULT_LINKS = {
 LINK_PREFIXES = {
     "discord": ("https://discord.gg/", "https://discord.com/invite/"),
     "tradingview": ("https://www.tradingview.com/", "https://tradingview.com/"),
+    # don : Stripe Payment Link, Ko-fi, PayPal, Buy Me a Coffee...
+    # pas de défaut -> tant que c'est vide, le bouton n'existe pas sur le site
+    "donate": ("https://",),
 }
 
 
@@ -369,7 +372,7 @@ class handler(BaseHTTPRequestHandler):
                 stored = json.loads(kv_get(LINKS_KEY) or "{}")
             except Exception:
                 stored = {}
-            for k in ("discord", "tradingview"):
+            for k in ("discord", "tradingview", "donate"):
                 if k not in body:
                     continue
                 v = (body.get(k) or "").strip()
