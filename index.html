@@ -1102,11 +1102,21 @@ function drawLevelLabels(){
   const xRight = w - scaleW - 6;
   const hoverY = CHART.hoverY;
 
+  /* Référence de lecture : l'ancre Open si la grille est chargée, sinon le
+     dernier prix. Au-dessus -> l'étiquette se pose SUR la ligne ; en dessous
+     -> elle se pose SOUS la ligne. La ligne n'est jamais recouverte. */
+  const ref = (CHART.grid && CHART.grid.anchor != null) ? CHART.grid.anchor
+            : (CHART.lastBar ? CHART.lastBar.close : null);
+  const bh = fs + 7, off = bh / 2 + 3;
+
   const items = [];
   for (const m of meta){
     const y = CHART.series.priceToCoordinate(m.price);
     if (y == null || y < 6 || y > h - 6) continue;
-    items.push({...m, y, near: false});
+    const above = ref == null ? true : m.price >= ref;
+    const ly = Math.min(h - bh / 2 - 2,
+               Math.max(bh / 2 + 2, y + (above ? -off : off)));
+    items.push({...m, y, ly, near: false});
   }
   if (!items.length) return;
 
@@ -1134,17 +1144,18 @@ function drawLevelLabels(){
 
   const taken = [];
   const fits = y => !taken.some(t => Math.abs(t - y) < rowH);
+  // (on empile sur ly : c'est là que l'étiquette occupe vraiment la place)
   const placed = new Set();
   for (const it of order){
     if (anyHover){
       // niveau visé : toujours ; le reste selon le mode
       if (!it.near && MODE !== "all") continue;
-      if (!it.near && MODE === "all" && !fits(it.y)) continue;
+      if (!it.near && MODE === "all" && !fits(it.ly)) continue;
     } else {
       if (MODE === "hover") continue;              // chart nue au repos
-      if (!fits(it.y)) continue;
+      if (!fits(it.ly)) continue;
     }
-    taken.push(it.y); placed.add(it);
+    taken.push(it.ly); placed.add(it);
   }
 
   ctx.font = `${fs}px "IBM Plex Mono", monospace`;
@@ -1162,8 +1173,8 @@ function drawLevelLabels(){
     }
     const txt = (it.code ? it.code + "  " : "") + fmtPx(it.price);
     const tw = ctx.measureText(txt).width;
-    const bw = tw + padX * 2 + 3, bh = fs + 7;
-    const x0 = xRight - bw, y0 = it.y - bh / 2;
+    const bw = tw + padX * 2 + 3;
+    const x0 = xRight - bw, y0 = it.ly - bh / 2;
     // la grille Open reste volontairement en retrait
     ctx.globalAlpha = it.near ? 1
       : (anyHover ? 0.35 : (it.tier === 3 ? 0.62 : 0.9));
@@ -1172,7 +1183,7 @@ function drawLevelLabels(){
     ctx.fillStyle = it.color;
     ctx.fillRect(x0, y0, 2, bh);                    // liseré de couleur
     ctx.fillStyle = it.near ? "#FFFFFF" : it.color;
-    ctx.fillText(txt, x0 + padX + 3, it.y + 0.5);
+    ctx.fillText(txt, x0 + padX + 3, it.ly + 0.5);
   }
   ctx.globalAlpha = 1;
 }
