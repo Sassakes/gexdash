@@ -410,17 +410,16 @@ function drawGroup(series, pay, grp){
   if (!pay) return lines;
   if (grp === "open"){
     if (pay.open_grid){
-      lines.push(series.createPriceLine({price: pay.open_grid.anchor, color: C.gold,
-        lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: false, title: "Open " + pxTxt(pay.open_grid.anchor)}));
+      const soft = (price, color, title) => lines.push(series.createPriceLine({
+        price, color, lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title,
+        axisLabelColor: "#15151A", axisLabelTextColor: color}));
+      soft(pay.open_grid.anchor, C.gold, "Open");
       for (const g of pay.open_grid.levels){
         const m = g.mult != null ? g.mult : "";
-        lines.push(series.createPriceLine({price: g.up, color: "rgba(239,83,80,.5)",
-          lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: false, title: "σ+" + m + "  " + pxTxt(g.up)}));
-        lines.push(series.createPriceLine({price: g.down, color: "rgba(38,166,154,.5)",
-          lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: false, title: "σ−" + m + "  " + pxTxt(g.down)}));
+        soft(g.up,   "#EF5350", "σ+" + m);
+        soft(g.down, "#26A69A", "σ−" + m);
       }
     }
     return lines;
@@ -433,8 +432,8 @@ function drawGroup(series, pay, grp){
       price: L.price_nq, color: KIND_COLOR[L.kind] || C.muted, lineWidth: 1,
       lineStyle: DASH_KINDS.includes(L.kind) ? LightweightCharts.LineStyle.Dashed
                                              : LightweightCharts.LineStyle.Solid,
-      axisLabelVisible: ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
-      title: (SHORT[L.kind] ? SHORT[L.kind] + " " : "") + pxTxt(L.price_nq),
+      axisLabelVisible: true,
+      title: SHORT[L.kind] || "",
     }));
   }
   return lines;
@@ -550,7 +549,7 @@ async function mountCard(cfg, host){
   const chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
             fontFamily:"IBM Plex Mono, monospace",
-            fontSize: PREFS.lblSize || 11},
+            fontSize: PREFS.lblSize || 10},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
     crosshair:{mode: LightweightCharts.CrosshairMode.Normal},
     rightPriceScale:{borderColor:C.line},

@@ -884,7 +884,7 @@ function ensureChart(){
   CHART.chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
             fontFamily:"IBM Plex Mono, monospace",
-            fontSize: PREFS.lblSize || 11},
+            fontSize: PREFS.lblSize || 10},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
     rightPriceScale:{borderColor:C.line},
     timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
@@ -1102,24 +1102,28 @@ function applyLevelLines(){
     const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
-    // chaque niveau porte son code ET son prix -> plus besoin de viser l'axe
-    const code = SHORT[L.kind] || "";
+    // code dans le pane + pastille de prix sur l'axe : TOUS les niveaux
+    // affichés (GEX comme EM) ont désormais le même traitement lisible
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
-            (code ? code + " " : "") + pxTxt(L.price_nq));
+            true, SHORT[L.kind] || "");
   }
   if (LVSHOW.open && CHART.grid){
-    // ancre : étiquette discrète, pas plus grosse que le reste
-    addLine(CHART.grid.anchor, C.gold, true, false,
-            "Open " + pxTxt(CHART.grid.anchor));
+    // Grille Open : même lisibilité (code + pastille de prix), mais pastille
+    // ATTÉNUÉE — fond sombre + texte coloré au lieu du fond plein des GEX.
+    // C'est le groupe le moins prioritaire : lisible, jamais dominant.
+    const soft = (price, color, title) =>
+      CHART.lines.push(CHART.series.createPriceLine({
+        price, color, lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true, title,
+        axisLabelColor: "#15151A",
+        axisLabelTextColor: color,
+      }));
+    soft(CHART.grid.anchor, C.gold, "Open");
     for (const g of CHART.grid.levels){
-      // rouge au-dessus (zone de rejet), vert en dessous (zone de rebond)
-      // notation σ signée : on lit d'un coup l'écart-type ET le prix
       const m = g.mult != null ? g.mult : "";
-      addLine(g.up,   "rgba(239,83,80,.5)",  false, false,
-              "σ+" + m + "  " + pxTxt(g.up));
-      addLine(g.down, "rgba(38,166,154,.5)", false, false,
-              "σ−" + m + "  " + pxTxt(g.down));
+      soft(g.up,   "#EF5350", "σ+" + m);   // au-dessus : zone de rejet
+      soft(g.down, "#26A69A", "σ−" + m);   // en dessous : zone de rebond
     }
   }
 }

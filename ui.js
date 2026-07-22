@@ -3,7 +3,7 @@
 "use strict";
 
 const DEF_PREFS = {tz: "Europe/Paris", up: "#26A69A", dn: "#EF5350", px: "#FFD84D",
-                   lblSize: 11};
+                   lblSize: 10};
 let PREFS = {...DEF_PREFS};
 try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs") || "{}")}; }catch(_){}
 function savePrefs(){ try{ localStorage.setItem("gexPrefs", JSON.stringify(PREFS)); }catch(_){} }
@@ -198,7 +198,7 @@ function renderDrawer(){
     </div>
     <div class="dsec"><h4>${L.readab}</h4>
       <div class="drow"><span>${L.lblSize}</span><span class="swrow">
-        ${[[11, L.szS], [13, L.szM], [15, L.szL]].map(([v, n]) =>
+        ${[[10, L.szS], [12, L.szM], [14, L.szL]].map(([v, n]) =>
           `<button class="dtog${PREFS.lblSize === v ? " on" : ""}" data-lsz="${v}">${n}</button>`).join("")}
       </span></div>
     </div>
