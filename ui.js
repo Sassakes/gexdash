@@ -3,7 +3,7 @@
 "use strict";
 
 const DEF_PREFS = {tz: "Europe/Paris", up: "#26A69A", dn: "#EF5350", px: "#FFD84D",
-                   lblSize: 10};
+                   lblSize: 10, lblMode: ""};
 let PREFS = {...DEF_PREFS};
 try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs") || "{}")}; }catch(_){}
 function savePrefs(){ try{ localStorage.setItem("gexPrefs", JSON.stringify(PREFS)); }catch(_){} }
@@ -34,6 +34,7 @@ const PRICE_COLORS = ["#FFD84D", "#F0B90B", "#FFFFFF", "#22D3EE"];
 const DRAWER_TXT = {
   fr: {title: "Réglages chart", tz: "Fuseau horaire", levels: "Niveaux",
        readab: "Lisibilité", lblSize: "Taille des étiquettes",
+       lblMode: "Prix des niveaux", mdAuto: "Auto", mdAll: "Toujours", mdHov: "Au survol",
        szS: "Normal", szM: "Grand", szL: "Très grand",
        lvGex: "GEX", lvEm: "EM · 1D", lvOpen: "Open (grille σ)",
        candles: "Bougies", palette: "Palette", bodyUp: "Corps ↑", bodyDn: "Corps ↓",
@@ -41,6 +42,7 @@ const DRAWER_TXT = {
        reset: "Réinitialiser les couleurs", on: "On", off: "Off"},
   en: {title: "Chart settings", tz: "Timezone", levels: "Levels",
        readab: "Readability", lblSize: "Label size",
+       lblMode: "Level prices", mdAuto: "Auto", mdAll: "Always", mdHov: "On hover",
        szS: "Normal", szM: "Large", szL: "Extra large",
        lvGex: "GEX", lvEm: "EM · 1D", lvOpen: "Open (σ grid)",
        candles: "Candles", palette: "Palette", bodyUp: "Body ↑", bodyDn: "Body ↓",
@@ -197,6 +199,10 @@ function renderDrawer(){
       ${tog("gex", L.lvGex)}${tog("em", L.lvEm)}${tog("open", L.lvOpen)}
     </div>
     <div class="dsec"><h4>${L.readab}</h4>
+      <div class="drow"><span>${L.lblMode}</span><span class="swrow">
+        ${[["auto", L.mdAuto], ["all", L.mdAll], ["hover", L.mdHov]].map(([v, n]) =>
+          `<button class="dtog${(PREFS.lblMode || "auto") === v ? " on" : ""}" data-lmd="${v}">${n}</button>`).join("")}
+      </span></div>
       <div class="drow"><span>${L.lblSize}</span><span class="swrow">
         ${[[10, L.szS], [12, L.szM], [14, L.szL]].map(([v, n]) =>
           `<button class="dtog${PREFS.lblSize === v ? " on" : ""}" data-lsz="${v}">${n}</button>`).join("")}
@@ -221,6 +227,10 @@ function renderDrawer(){
     LVSHOW[b.dataset.lv] = !LVSHOW[b.dataset.lv];
     saveLvShow(); callHooks("onLevelsChanged"); renderDrawer();
   });
+  dr.querySelectorAll("[data-lmd]").forEach(b => b.onclick = () => {
+    PREFS.lblMode = b.dataset.lmd; savePrefs();
+    callHooks("applyLabelSize"); renderDrawer();
+  });
   dr.querySelectorAll("[data-lsz]").forEach(b => b.onclick = () => {
     PREFS.lblSize = +b.dataset.lsz; savePrefs();
     callHooks("applyLabelSize"); renderDrawer();
@@ -237,7 +247,7 @@ function renderDrawer(){
   dr.querySelector("[data-cpx]").oninput = e => { PREFS.px = e.target.value; savePrefs(); callHooks("applyColors"); };
   dr.querySelector(".rst").onclick = () => {
     Object.assign(PREFS, {up: DEF_PREFS.up, dn: DEF_PREFS.dn, px: DEF_PREFS.px,
-                          lblSize: DEF_PREFS.lblSize});
+                          lblSize: DEF_PREFS.lblSize, lblMode: ""});
     savePrefs(); callHooks("applyColors"); callHooks("applyLabelSize"); renderDrawer();
   };
 }

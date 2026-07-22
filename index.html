@@ -966,12 +966,45 @@ async function loadBars(){
       const redraw = () => { drawIdxSessions(); drawLevelLabels(); };
       CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
       new ResizeObserver(redraw).observe($("chartBox"));
+
+      /* Le glissement de l'ÉCHELLE DE PRIX n'émet aucun événement exploitable.
+         On surveille donc la géométrie à chaque frame : dès que la position
+         d'un prix témoin bouge (zoom, drag, autoscale, kinetic scroll), on
+         redessine. Coût négligeable, suivi parfait. */
+      const geoTick = () => {
+        if (CHART.series && (CHART.lvMeta || []).length){
+          const m = CHART.lvMeta[0];
+          const y = CHART.series.priceToCoordinate(m.price);
+          const box = $("chartBox");
+          const sig = `${y}|${box.clientHeight}|${box.clientWidth}`;
+          if (sig !== CHART._geoSig){ CHART._geoSig = sig; drawLevelLabels(); }
+        }
+        CHART._geoRaf = requestAnimationFrame(geoTick);
+      };
+      if (!CHART._geoRaf) geoTick();
+
       CHART.chart.subscribeCrosshairMove(p => {
         const y = p && p.point ? p.point.y : null;
         if (y === CHART.hoverY) return;
         CHART.hoverY = y;
         drawLevelLabels();
       });
+
+      /* MOBILE : pas de survol possible. Un appui (ou un glissé) sur la chart
+         révèle le niveau visé ; l'étiquette s'efface seule après 3 s. */
+      const box = $("chartBox");
+      const touchAt = e => {
+        const t = e.touches && e.touches[0];
+        if (!t) return;
+        CHART.hoverY = t.clientY - box.getBoundingClientRect().top;
+        drawLevelLabels();
+        clearTimeout(CHART._touchT);
+        CHART._touchT = setTimeout(() => {
+          CHART.hoverY = null; drawLevelLabels();
+        }, 3000);
+      };
+      box.addEventListener("touchstart", touchAt, {passive: true});
+      box.addEventListener("touchmove", touchAt, {passive: true});
       $("chartBox").addEventListener("dblclick",
         () => CHART.reframe && CHART.reframe());
     }
@@ -1042,6 +1075,8 @@ async function loadBars(){
    • SURVOL — approcher le curseur d'une ligne révèle son étiquette complète
      (code + prix), en pleine intensité, même si elle avait été évincée ;
      tout le reste s'estompe pour isoler la lecture.                     */
+const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
+
 function drawLevelLabels(){
   const cv = CHART.lblCv, box = $("chartBox");
   if (!cv || !CHART.chart || !CHART.series) return;
@@ -1058,6 +1093,10 @@ function drawLevelLabels(){
 
   const fs = PREFS.lblSize || 10;
   const padX = 6, rowH = fs + 9;
+  // "auto" (défaut) : majeurs affichés, le reste au survol
+  // "all"  : tout ce qui tient, en permanence (idéal mobile / un seul groupe)
+  // "hover": rien tant qu'on ne vise pas — chart nue
+  const MODE = PREFS.lblMode || (IS_TOUCH ? "all" : "auto");
   let scaleW = 62;
   try{ scaleW = CHART.chart.priceScale("right").width() || 62; }catch(_){}
   const xRight = w - scaleW - 6;
@@ -1067,11 +1106,27 @@ function drawLevelLabels(){
   for (const m of meta){
     const y = CHART.series.priceToCoordinate(m.price);
     if (y == null || y < 6 || y > h - 6) continue;
-    const near = hoverY != null && Math.abs(y - hoverY) <= 16;
-    items.push({...m, y, near});
+    items.push({...m, y, near: false});
   }
   if (!items.length) return;
-  const anyHover = items.some(i => i.near);
+
+  /* Détection du niveau visé : au lieu d'un seuil fixe (qui rate les
+     niveaux quand la chart est dézoomée et qui en attrape plusieurs
+     quand elle est serrée), on prend LE PLUS PROCHE dans une fenêtre
+     généreuse. Un seul gagnant, toujours celui qu'on vise. */
+  const REACH = IS_TOUCH ? 34 : 22;
+  let anyHover = false;
+  if (hoverY != null){
+    let best = null, bd = REACH;
+    for (const it of items){
+      const d = Math.abs(it.y - hoverY);
+      // à distance égale, le niveau le plus important l'emporte
+      if (d < bd || (d === bd && best && it.tier < best.tier)){
+        bd = d; best = it;
+      }
+    }
+    if (best){ best.near = true; anyHover = true; }
+  }
 
   // ordre de pose : survolé d'abord, puis par priorité, puis du haut vers le bas
   const order = [...items].sort((a, b) =>
@@ -1081,9 +1136,14 @@ function drawLevelLabels(){
   const fits = y => !taken.some(t => Math.abs(t - y) < rowH);
   const placed = new Set();
   for (const it of order){
-    // en survol on n'affiche QUE le niveau visé : lecture chirurgicale
-    if (anyHover && !it.near) continue;
-    if (!fits(it.y)) continue;
+    if (anyHover){
+      // niveau visé : toujours ; le reste selon le mode
+      if (!it.near && MODE !== "all") continue;
+      if (!it.near && MODE === "all" && !fits(it.y)) continue;
+    } else {
+      if (MODE === "hover") continue;              // chart nue au repos
+      if (!fits(it.y)) continue;
+    }
     taken.push(it.y); placed.add(it);
   }
 
@@ -1105,7 +1165,8 @@ function drawLevelLabels(){
     const bw = tw + padX * 2 + 3, bh = fs + 7;
     const x0 = xRight - bw, y0 = it.y - bh / 2;
     // la grille Open reste volontairement en retrait
-    ctx.globalAlpha = it.near ? 1 : (it.tier === 3 ? 0.62 : 0.9);
+    ctx.globalAlpha = it.near ? 1
+      : (anyHover ? 0.35 : (it.tier === 3 ? 0.62 : 0.9));
     ctx.fillStyle = "rgba(12,12,15,.9)";
     ctx.fillRect(x0, y0, bw, bh);
     ctx.fillStyle = it.color;
