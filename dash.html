@@ -68,6 +68,19 @@
     transition:color .12s ease; white-space:nowrap;
   }
   .topnav a:hover{color:var(--gold)}
+  /* Soutien : simple lien, liseré doré + halo qui respire. Aucun pop-up. */
+  .topnav a.donate{
+    color:#F0B90B; border:1px solid rgba(240,185,11,.42);
+    animation:donGlow 3.6s ease-in-out infinite;
+  }
+  .topnav a.donate:hover{
+    color:#0A0A0C; background:#F0B90B; border-color:#F0B90B; animation:none;
+  }
+  @keyframes donGlow{
+    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
+    50%    { box-shadow:0 0 12px rgba(240,185,11,.28); }
+  }
+  @media (prefers-reduced-motion:reduce){ .topnav a.donate{ animation:none; } }
   .addbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
   .addbar select{
     background:var(--surface2); border:1px solid var(--line); color:var(--text);
@@ -273,7 +286,9 @@
     <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
-  <nav class="topnav"><a href="/">← <span id="backLbl">Terminal</span></a></nav>
+  <nav class="topnav"><a href="/">← <span id="backLbl">Terminal</span></a>
+    <a id="donateLink" class="donate" target="_blank" rel="noopener" hidden
+       href="#"><span aria-hidden="true">♥</span> <span id="donLbl">Soutenir</span></a></nav>
 </header>
 
 <div class="addbar">
@@ -715,6 +730,17 @@ function firstFreeSpot(w, h){
 
 $("hTitle").textContent = tx("title");
 $("backLbl").textContent = tx("back");
+(async () => {
+  try{
+    const d = await (await fetch("/api/links")).json();
+    if (d.donate){
+      const a = $("donateLink");
+      a.href = d.donate;
+      a.hidden = false;
+      $("donLbl").textContent = (PREFS && PREFS.lang) === "en" ? "Support" : "Soutenir";
+    }
+  }catch(_){}
+})();
 $("addLbl").textContent = tx("add");
 $("hintLbl").textContent = tx("hint");
 $("editLbl").textContent = tx("edit");
