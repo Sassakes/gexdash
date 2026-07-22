@@ -883,8 +883,7 @@ function ensureChart(){
   const box = $("chartBox");
   CHART.chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
-            fontFamily:"IBM Plex Mono, monospace",
-            fontSize: PREFS.lblSize || 10},
+            fontFamily:"IBM Plex Mono, monospace", fontSize:10},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
     rightPriceScale:{borderColor:C.line},
     timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
@@ -917,8 +916,7 @@ function ensureChart(){
       wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px}),
     reloadBars: loadBars,
     onLevelsChanged: () => { paintChips(); applyLevelLines(); },
-    applyLabelSize: () => CHART.chart.applyOptions(
-      {layout: {fontSize: PREFS.lblSize || 11}}),
+    applyLabelSize: drawLevelLabels,
   });
   return true;
 }
@@ -961,8 +959,19 @@ async function loadBars(){
       CHART.sessCv = document.createElement("canvas");
       CHART.sessCv.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0";
       $("chartBox").prepend(CHART.sessCv);
-      CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(drawIdxSessions);
-      new ResizeObserver(drawIdxSessions).observe($("chartBox"));
+      CHART.lblCv = document.createElement("canvas");
+      CHART.lblCv.style.cssText =
+        "position:absolute;inset:0;pointer-events:none;z-index:3";
+      $("chartBox").appendChild(CHART.lblCv);
+      const redraw = () => { drawIdxSessions(); drawLevelLabels(); };
+      CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+      new ResizeObserver(redraw).observe($("chartBox"));
+      CHART.chart.subscribeCrosshairMove(p => {
+        const y = p && p.point ? p.point.y : null;
+        if (y === CHART.hoverY) return;
+        CHART.hoverY = y;
+        drawLevelLabels();
+      });
       $("chartBox").addEventListener("dblclick",
         () => CHART.reframe && CHART.reframe());
     }
@@ -1022,6 +1031,93 @@ async function loadBars(){
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
+}
+
+/* ═══ ÉTIQUETTES DE NIVEAUX ═══════════════════════════════════════════
+   Calque dédié, dessiné au-dessus de la chart. Trois principes :
+   • PRIORITÉ  — structure majeure (walls/flip) > reste GEX/EM > grille Open.
+   • ANTI-COLLISION — une étiquette n'est posée que si elle ne recouvre pas
+     une étiquette déjà posée ; les niveaux évincés laissent un simple point
+     coloré au bord droit (on sait qu'ils sont là, sans encombrer).
+   • SURVOL — approcher le curseur d'une ligne révèle son étiquette complète
+     (code + prix), en pleine intensité, même si elle avait été évincée ;
+     tout le reste s'estompe pour isoler la lecture.                     */
+function drawLevelLabels(){
+  const cv = CHART.lblCv, box = $("chartBox");
+  if (!cv || !CHART.chart || !CHART.series) return;
+  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const meta = CHART.lvMeta || [];
+  if (!meta.length) return;
+
+  const fs = PREFS.lblSize || 10;
+  const padX = 6, rowH = fs + 9;
+  let scaleW = 62;
+  try{ scaleW = CHART.chart.priceScale("right").width() || 62; }catch(_){}
+  const xRight = w - scaleW - 6;
+  const hoverY = CHART.hoverY;
+
+  const items = [];
+  for (const m of meta){
+    const y = CHART.series.priceToCoordinate(m.price);
+    if (y == null || y < 6 || y > h - 6) continue;
+    const near = hoverY != null && Math.abs(y - hoverY) <= 16;
+    items.push({...m, y, near});
+  }
+  if (!items.length) return;
+  const anyHover = items.some(i => i.near);
+
+  // ordre de pose : survolé d'abord, puis par priorité, puis du haut vers le bas
+  const order = [...items].sort((a, b) =>
+    (b.near - a.near) || (a.tier - b.tier) || (a.y - b.y));
+
+  const taken = [];
+  const fits = y => !taken.some(t => Math.abs(t - y) < rowH);
+  const placed = new Set();
+  for (const it of order){
+    // en survol on n'affiche QUE le niveau visé : lecture chirurgicale
+    if (anyHover && !it.near) continue;
+    if (!fits(it.y)) continue;
+    taken.push(it.y); placed.add(it);
+  }
+
+  ctx.font = `${fs}px "IBM Plex Mono", monospace`;
+  ctx.textBaseline = "middle";
+  for (const it of items){
+    const shown = placed.has(it);
+    if (!shown){
+      // évincée : point discret au bord droit, la ligne reste identifiable
+      ctx.globalAlpha = anyHover ? 0.12 : 0.5;
+      ctx.fillStyle = it.color;
+      ctx.beginPath();
+      ctx.arc(xRight - 2, it.y, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+    const txt = (it.code ? it.code + "  " : "") + fmtPx(it.price);
+    const tw = ctx.measureText(txt).width;
+    const bw = tw + padX * 2 + 3, bh = fs + 7;
+    const x0 = xRight - bw, y0 = it.y - bh / 2;
+    // la grille Open reste volontairement en retrait
+    ctx.globalAlpha = it.near ? 1 : (it.tier === 3 ? 0.62 : 0.9);
+    ctx.fillStyle = "rgba(12,12,15,.9)";
+    ctx.fillRect(x0, y0, bw, bh);
+    ctx.fillStyle = it.color;
+    ctx.fillRect(x0, y0, 2, bh);                    // liseré de couleur
+    ctx.fillStyle = it.near ? "#FFFFFF" : it.color;
+    ctx.fillText(txt, x0 + padX + 3, it.y + 0.5);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function fmtPx(p){
+  return Math.round(p).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
 }
 
 function drawIdxSessions(){
@@ -1089,43 +1185,37 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
-  // prix compact et lisible : "29 310" (espace fin, pas de décimales)
-  const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ");
-  const addLine = (price, color, solid, axisLbl, title) =>
+  // Les lignes ne portent AUCUNE étiquette : tout est dessiné sur un calque
+  // dédié (drawLevelLabels) qui gère priorités, collisions et survol.
+  const meta = [];
+  const addLine = (price, color, solid, code, tier) => {
     CHART.lines.push(CHART.series.createPriceLine({
-      price, color, lineWidth:1,
+      price, color, lineWidth: 1,
       lineStyle: solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
-      axisLabelVisible: axisLbl, title: title || "",
+      axisLabelVisible: false, title: "",
     }));
+    meta.push({price, color, code, tier});
+  };
 
+  // tier 1 = structure majeure (walls, flip, HGEX) · 2 = reste GEX/EM · 3 = grille Open
+  const MAJOR = ["res","sup","flip","res0","sup0","hgex"];
   for (const L of CHART.levels){
     const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
-    // code dans le pane + pastille de prix sur l'axe : TOUS les niveaux
-    // affichés (GEX comme EM) ont désormais le même traitement lisible
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            true, SHORT[L.kind] || "");
+            SHORT[L.kind] || "", MAJOR.includes(L.kind) ? 1 : 2);
   }
   if (LVSHOW.open && CHART.grid){
-    // Grille Open : même lisibilité (code + pastille de prix), mais pastille
-    // ATTÉNUÉE — fond sombre + texte coloré au lieu du fond plein des GEX.
-    // C'est le groupe le moins prioritaire : lisible, jamais dominant.
-    const soft = (price, color, title) =>
-      CHART.lines.push(CHART.series.createPriceLine({
-        price, color, lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true, title,
-        axisLabelColor: "#15151A",
-        axisLabelTextColor: color,
-      }));
-    soft(CHART.grid.anchor, C.gold, "Open");
+    addLine(CHART.grid.anchor, C.gold, true, "Open", 3);
     for (const g of CHART.grid.levels){
       const m = g.mult != null ? g.mult : "";
-      soft(g.up,   "#EF5350", "σ+" + m);   // au-dessus : zone de rejet
-      soft(g.down, "#26A69A", "σ−" + m);   // en dessous : zone de rebond
+      addLine(g.up,   "#EF5350", false, "σ+" + m, 3);
+      addLine(g.down, "#26A69A", false, "σ−" + m, 3);
     }
   }
+  CHART.lvMeta = meta;
+  drawLevelLabels();
 }
 
 function show(d){
