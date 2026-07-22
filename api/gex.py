@@ -589,9 +589,15 @@ class handler(BaseHTTPRequestHandler):
                     continue
                 payload = build_payload(target=target, mode="snapshot",
                                         chain_cache=cache)
-                # verrou GEX : hors chemin canonique 15h25 (?notify=1), les
-                # niveaux publiés restent ceux d'avant tant que c'est verrouillé
-                if ("notify" not in qs) and self._gex_locked() and latest:
+                # verrou GEX : hors chemin CANONIQUE, les niveaux publiés
+                # restent ceux d'avant tant que c'est verrouillé. Canonique =
+                # ?notify=1 (QStash 15h25) OU le cron de secours Vercel dans
+                # son créneau 15h20-18h00 — les deux doivent pouvoir publier
+                # des niveaux FRAIS même verrouillé, sinon une panne QStash
+                # figerait les niveaux de la veille.
+                canonical = ("notify" in qs) or (ok_vercel
+                                                 and "1520" <= now_p <= "1800")
+                if (not canonical) and self._gex_locked() and latest:
                     self._freeze_levels(payload, latest)
                 ok, why = _upstash_set(payload)
                 results[target] = {"skipped": False, "published": ok,
