@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GEX Terminal — Mon dashboard</title>
+<title>TheHub - GexDashboard</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -403,23 +405,30 @@ const IVSEC = {"1m":60, "5m":300, "15m":900};
 /* ---- chaque carte est INDÉPENDANTE : ses couleurs, ses filtres,
         son timer et ses lignes vivent sur son élément DOM ---- */
 
-const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ");
+const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
+const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
+const LV_MAJOR = ["res","sup","flip","res0","sup0","hgex"];
 
-function drawGroup(series, pay, grp){
+/* Les lignes ne portent aucune étiquette : tout passe par le calque
+   drawCardLabels (mêmes règles que la page principale). */
+function drawGroup(series, pay, grp, meta){
   const lines = [];
   if (!pay) return lines;
+  const push = (price, color, code, tier, solid) => {
+    lines.push(series.createPriceLine({
+      price, color, lineWidth: 1,
+      lineStyle: solid ? LightweightCharts.LineStyle.Solid
+                       : LightweightCharts.LineStyle.Dashed,
+      axisLabelVisible: false, title: ""}));
+    if (meta) meta.push({price, color, code, tier, grp});
+  };
   if (grp === "open"){
     if (pay.open_grid){
-      const soft = (price, color, title) => lines.push(series.createPriceLine({
-        price, color, lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true, title,
-        axisLabelColor: "#15151A", axisLabelTextColor: color}));
-      soft(pay.open_grid.anchor, C.gold, "Open");
+      push(pay.open_grid.anchor, C.gold, "Open", 3, true);
       for (const g of pay.open_grid.levels){
         const m = g.mult != null ? g.mult : "";
-        soft(g.up,   "#EF5350", "σ+" + m);
-        soft(g.down, "#26A69A", "σ−" + m);
+        push(g.up,   "#EF5350", "σ+" + m, 3, false);
+        push(g.down, "#26A69A", "σ−" + m, 3, false);
       }
     }
     return lines;
@@ -428,15 +437,97 @@ function drawGroup(series, pay, grp){
     const g = GROUP_KINDS.gex.includes(L.kind) ? "gex"
             : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (g !== grp) continue;
-    lines.push(series.createPriceLine({
-      price: L.price_nq, color: KIND_COLOR[L.kind] || C.muted, lineWidth: 1,
-      lineStyle: DASH_KINDS.includes(L.kind) ? LightweightCharts.LineStyle.Dashed
-                                             : LightweightCharts.LineStyle.Solid,
-      axisLabelVisible: true,
-      title: SHORT[L.kind] || "",
-    }));
+    push(L.price_nq, KIND_COLOR[L.kind] || C.muted, SHORT[L.kind] || "",
+         LV_MAJOR.includes(L.kind) ? 1 : 2, !DASH_KINDS.includes(L.kind));
   }
   return lines;
+}
+
+/* Étiquettes de niveaux d'une carte : mêmes règles que la page principale
+   (priorité, anti-collision, décalage au-dessus/en dessous de l'ancre,
+   révélation au survol ou au toucher). */
+function drawCardLabels(host){
+  const cv = host._lblCv, box = host.querySelector(".box");
+  if (!cv || !host._chart || !host._series || !box) return;
+  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
+  }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const meta = (host._lvMeta || []).filter(m => !host._cfg || host._cfg.lv[m.grp]);
+  if (!meta.length) return;
+
+  const fs = PREFS.lblSize || 10;
+  const padX = 6, rowH = fs + 9, bh = fs + 7, off = bh / 2 + 3;
+  const MODE = PREFS.lblMode || (IS_TOUCH ? "all" : "auto");
+  let scaleW = 58;
+  try{ scaleW = host._chart.priceScale("right").width() || 58; }catch(_){}
+  const xRight = w - scaleW - 5;
+  const hoverY = host._hoverY;
+  const ref = (host._pay && host._pay.open_grid) ? host._pay.open_grid.anchor
+            : (host._lastClose != null ? host._lastClose : null);
+
+  const items = [];
+  for (const m of meta){
+    const y = host._series.priceToCoordinate(m.price);
+    if (y == null || y < 6 || y > h - 6) continue;
+    const above = ref == null ? true : m.price >= ref;
+    const ly = Math.min(h - bh / 2 - 2, Math.max(bh / 2 + 2, y + (above ? -off : off)));
+    items.push({...m, y, ly, near: false});
+  }
+  if (!items.length) return;
+
+  const REACH = IS_TOUCH ? 34 : 22;
+  let anyHover = false;
+  if (hoverY != null){
+    let best = null, bd = REACH;
+    for (const it of items){
+      const d = Math.abs(it.y - hoverY);
+      if (d < bd || (d === bd && best && it.tier < best.tier)){ bd = d; best = it; }
+    }
+    if (best){ best.near = true; anyHover = true; }
+  }
+
+  const order = [...items].sort((a, b) =>
+    (b.near - a.near) || (a.tier - b.tier) || (a.y - b.y));
+  const taken = [], placed = new Set();
+  const fits = y => !taken.some(t => Math.abs(t - y) < rowH);
+  for (const it of order){
+    if (anyHover){
+      if (!it.near && MODE !== "all") continue;
+      if (!it.near && MODE === "all" && !fits(it.ly)) continue;
+    } else {
+      if (MODE === "hover") continue;
+      if (!fits(it.ly)) continue;
+    }
+    taken.push(it.ly); placed.add(it);
+  }
+
+  ctx.font = `${fs}px "IBM Plex Mono", monospace`;
+  ctx.textBaseline = "middle";
+  for (const it of items){
+    if (!placed.has(it)){
+      ctx.globalAlpha = anyHover ? 0.12 : 0.5;
+      ctx.fillStyle = it.color;
+      ctx.beginPath(); ctx.arc(xRight - 2, it.y, 1.7, 0, Math.PI * 2); ctx.fill();
+      continue;
+    }
+    const txt = (it.code ? it.code + "  " : "") + pxTxt(it.price);
+    const bw = ctx.measureText(txt).width + padX * 2 + 3;
+    const x0 = xRight - bw, y0 = it.ly - bh / 2;
+    ctx.globalAlpha = it.near ? 1 : (anyHover ? 0.35 : (it.tier === 3 ? 0.62 : 0.9));
+    ctx.fillStyle = "rgba(12,12,15,.9)";
+    ctx.fillRect(x0, y0, bw, bh);
+    ctx.fillStyle = it.color;
+    ctx.fillRect(x0, y0, 2, bh);
+    ctx.fillStyle = it.near ? "#FFFFFF" : it.color;
+    ctx.fillText(txt, x0 + padX + 3, it.ly + 0.5);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function toggleGroup(card, cfg, grp, btn){
@@ -447,9 +538,13 @@ function toggleGroup(card, cfg, grp, btn){
   if (!cfg.lv[grp]){
     (card._lines[grp] || []).forEach(l => { try{ card._series.removePriceLine(l); }catch(_){} });
     card._lines[grp] = [];
+    card._lvMeta = (card._lvMeta || []).filter(m => m.grp !== grp);
   } else {
-    card._lines[grp] = drawGroup(card._series, card._pay, grp);
+    const meta = [];
+    card._lines[grp] = drawGroup(card._series, card._pay, grp, meta);
+    card._lvMeta = (card._lvMeta || []).filter(m => m.grp !== grp).concat(meta);
   }
+  drawCardLabels(card);
 }
 
 /* panneau de réglages À L'INTÉRIEUR de la carte (couleurs de CE chart) */
@@ -562,10 +657,41 @@ async function mountCard(cfg, host){
     priceLineStyle: LightweightCharts.LineStyle.Dashed,
   });
   host._chart = chart; host._series = series; host._lines = {}; host._pay = null;
-  chart.timeScale().subscribeVisibleLogicalRangeChange(() => drawSess(host));
+  host._cfg = cfg; host._lvMeta = [];
+  const lbl = document.createElement("canvas");
+  lbl.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:3";
+  box.appendChild(lbl);
+  host._lblCv = lbl;
+  chart.timeScale().subscribeVisibleLogicalRangeChange(
+    () => { drawSess(host); drawCardLabels(host); });
+  chart.subscribeCrosshairMove(p => {
+    const y = p && p.point ? p.point.y : null;
+    if (y === host._hoverY) return;
+    host._hoverY = y; drawCardLabels(host);
+  });
+  const touchAt = e => {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    host._hoverY = t.clientY - box.getBoundingClientRect().top;
+    drawCardLabels(host);
+    clearTimeout(host._touchT);
+    host._touchT = setTimeout(() => { host._hoverY = null; drawCardLabels(host); }, 3000);
+  };
+  box.addEventListener("touchstart", touchAt, {passive: true});
+  box.addEventListener("touchmove", touchAt, {passive: true});
+  /* suivi de l'échelle de prix (drag/zoom n'émettent aucun événement) */
+  const geoTick = () => {
+    if (host.isConnected && host._series && (host._lvMeta || []).length){
+      const y = host._series.priceToCoordinate(host._lvMeta[0].price);
+      const sig = `${y}|${box.clientHeight}|${box.clientWidth}`;
+      if (sig !== host._geoSig){ host._geoSig = sig; drawCardLabels(host); }
+    }
+    if (host.isConnected) host._geoRaf = requestAnimationFrame(geoTick);
+  };
+  geoTick();
   new ResizeObserver(() => {
     chart.applyOptions({width: box.clientWidth, height: box.clientHeight});
-    drawSess(host);
+    drawSess(host); drawCardLabels(host);
   }).observe(box);
   buildCardPanel(host, cfg);
 
@@ -600,9 +726,15 @@ async function mountCard(cfg, host){
   }catch(e){ note.textContent = tx("feedKo"); return; }
 
   host._pay = await getLevels(cfg.t);
+  host._lvMeta = [];
   for (const grp of ["gex", "em", "open"])
-    if (cfg.lv[grp]) host._lines[grp] = drawGroup(series, host._pay, grp);
+    if (cfg.lv[grp]){
+      const meta = [];
+      host._lines[grp] = drawGroup(series, host._pay, grp, meta);
+      host._lvMeta = host._lvMeta.concat(meta);
+    }
   drawSess(host);
+  drawCardLabels(host);
 
   const tick = async () => {
     if (document.hidden || !lastBar) return;
