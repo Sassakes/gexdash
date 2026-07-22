@@ -294,6 +294,23 @@ def _mask(url):
 
 
 class handler(BaseHTTPRequestHandler):
+    def _gex_locked(self):
+        try:
+            return kv_get("gex:lock") == "1"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _freeze_levels(new_p, old_p):
+        """Verrou GEX actif : le nouveau payload garde les NIVEAUX du
+        précédent (GEX, grille Open, EM, pine) — prix/basis/IV/badges
+        continuent de se rafraîchir."""
+        for k in ("levels", "gex_by_strike", "open_grid",
+                  "expected_move", "pine"):
+            if old_p.get(k) is not None:
+                new_p[k] = old_p[k]
+        new_p["levels_locked"] = True
+
     def _auth_key(self, qs=None):
         """True if the request carries a valid GEX_REFRESH_KEY."""
         secret = os.environ.get("GEX_REFRESH_KEY")
@@ -572,8 +589,13 @@ class handler(BaseHTTPRequestHandler):
                     continue
                 payload = build_payload(target=target, mode="snapshot",
                                         chain_cache=cache)
+                # verrou GEX : hors chemin canonique 15h25 (?notify=1), les
+                # niveaux publiés restent ceux d'avant tant que c'est verrouillé
+                if ("notify" not in qs) and self._gex_locked() and latest:
+                    self._freeze_levels(payload, latest)
                 ok, why = _upstash_set(payload)
                 results[target] = {"skipped": False, "published": ok,
+                                   "locked": payload.get("levels_locked", False),
                                    "publish_info": why,
                                    "generated_utc": payload["generated_utc"]}
                 if ok:
@@ -592,6 +614,12 @@ class handler(BaseHTTPRequestHandler):
                 notified = discord_notify(plist) if plist else False
                 if notified is True:
                     kv_set(guard, "1", ex=172800)
+                    # verrouillage AUTOMATIQUE des niveaux après le 15h25 :
+                    # les refresh intraday suivants ne les bougeront plus
+                    try:
+                        kv_set("gex:lock", "1")
+                    except Exception:
+                        pass
             # ---- canal News : trace publique de chaque refresh effectif ----
             news = False
             if computed:
@@ -990,6 +1018,27 @@ class handler(BaseHTTPRequestHandler):
             self._cron(parsed)
             return
 
+        # ---- API: verrou des niveaux GEX ----
+        if path == "/api/lock":
+            qs = parse_qs(parsed.query)
+            if not self._auth_key(qs):
+                self._send(401, json.dumps({"error": "clé invalide"}).encode(),
+                           "application/json")
+                return
+            state = (qs.get("state", ["status"])[0] or "status").lower()
+            try:
+                if state == "on":
+                    kv_set("gex:lock", "1")
+                elif state == "off":
+                    kv_set("gex:lock", "0")
+                locked = self._gex_locked()
+                self._send(200, json.dumps({"locked": locked}).encode(),
+                           "application/json")
+            except Exception as e:
+                self._send(500, json.dumps({"error": str(e)}).encode(),
+                           "application/json")
+            return
+
         # ---- API: live recompute (protected by GEX_REFRESH_KEY if set) ----
         if path == "/api/gex":
             qs = parse_qs(parsed.query)
@@ -1023,6 +1072,10 @@ class handler(BaseHTTPRequestHandler):
                     target=target, n_expiries=n, basis_override=basis, mode="live",
                     em_bands=bands, iv_override=iv_ov
                 )
+                if q("notify") != "1" and self._gex_locked():
+                    prev = _latest_payload(target)
+                    if prev:
+                        self._freeze_levels(payload, prev)
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
                 payload["publish_info"] = why

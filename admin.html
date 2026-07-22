@@ -126,6 +126,11 @@
       </label>
       <span class="status" id="rfStatus">Recalcule et publie le marché choisi. Par défaut sans ping Discord — coche la case pour notifier.</span>
     </div>
+    <div class="row" style="grid-template-columns:auto auto 1fr; margin-top:10px; align-items:center">
+      <span id="lockPill" style="font-size:11px; padding:4px 10px; border:1px solid var(--border); color:var(--muted)">verrou : …</span>
+      <button id="lockBtn" style="font-size:12px">…</button>
+      <span class="status">Après le refresh 15h25, les niveaux (GEX, grille Open, EM) sont <b>verrouillés automatiquement</b> : les refresh intraday ne les bougent plus (prix/IV/badges continuent de vivre). Déverrouille ici pour les recalculer, ou coche « Envoyer sur Discord » (chemin canonique) qui outrepasse toujours le verrou.</span>
+    </div>
   </section>
 
   <section class="panel">
@@ -189,6 +194,25 @@ function rowHtml(t){
     <button class="ghost" data-del="${t}" title="Retirer ce webhook">✕</button>
     <span class="status" data-st="${t}">—</span>
   </div>`;
+}
+
+async function refreshLock(){
+  try{
+    const d = await api("/api/lock?state=status");
+    const on = !!d.locked;
+    const pill = document.getElementById("lockPill");
+    const btn = document.getElementById("lockBtn");
+    pill.textContent = on ? "verrou : ACTIF 🔒" : "verrou : ouvert 🔓";
+    pill.style.color = on ? "var(--gold)" : "var(--muted)";
+    btn.textContent = on ? "Déverrouiller" : "Verrouiller";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try{ await api("/api/lock?state=" + (on ? "off" : "on")); }
+      finally{ btn.disabled = false; refreshLock(); }
+    };
+  }catch(e){
+    document.getElementById("lockPill").textContent = "verrou : erreur";
+  }
 }
 
 async function api(path, opts){
@@ -285,7 +309,8 @@ async function load(){
       const d = await api("/api/cron?force=1");
       msg("Cron exécuté — Discord: " + d.discord + " · News: " + d.news, true);
     }catch(e){ msg("Cron KO : " + e.message, false); }
-    finally{ b.disabled = false; b.textContent = "▶ Exécuter le cron maintenant (silencieux)"; loadStatus(); }
+    finally{ b.disabled = false; b.textContent = "▶ Exécuter le cron maintenant (silencieux)"; loadStatus();
+refreshLock(); }
   };
   loadStatus();
 
