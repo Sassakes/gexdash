@@ -883,7 +883,8 @@ function ensureChart(){
   const box = $("chartBox");
   CHART.chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
-            fontFamily:"IBM Plex Mono, monospace", fontSize:10},
+            fontFamily:"IBM Plex Mono, monospace",
+            fontSize: PREFS.lblSize || 11},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
     rightPriceScale:{borderColor:C.line},
     timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false},
@@ -916,6 +917,8 @@ function ensureChart(){
       wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px}),
     reloadBars: loadBars,
     onLevelsChanged: () => { paintChips(); applyLevelLines(); },
+    applyLabelSize: () => CHART.chart.applyOptions(
+      {layout: {fontSize: PREFS.lblSize || 11}}),
   });
   return true;
 }
@@ -1086,6 +1089,8 @@ function applyLevelLines(){
   for (const pl of CHART.lines) CHART.series.removePriceLine(pl);
   CHART.lines = [];
   const dashKinds = ["flip","emh","eml","res0","sup0","mpain","emb","ivh","ivl"];
+  // prix compact et lisible : "29 310" (espace fin, pas de décimales)
+  const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ");
   const addLine = (price, color, solid, axisLbl, title) =>
     CHART.lines.push(CHART.series.createPriceLine({
       price, color, lineWidth:1,
@@ -1097,17 +1102,24 @@ function applyLevelLines(){
     const grp = GROUP_KINDS.gex.includes(L.kind) ? "gex"
               : GROUP_KINDS.em.includes(L.kind) ? "em" : null;
     if (grp && !LVSHOW[grp]) continue;
-    // codes courts uniquement sur les niveaux nommés — la grille et les bandes
-    // restent identifiables par couleur, sans encombrer les bougies
+    // chaque niveau porte son code ET son prix -> plus besoin de viser l'axe
+    const code = SHORT[L.kind] || "";
     addLine(L.price_nq, KIND_COLOR[L.kind] || C.muted, !dashKinds.includes(L.kind),
-            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind), SHORT[L.kind]);
+            ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
+            (code ? code + " " : "") + pxTxt(L.price_nq));
   }
   if (LVSHOW.open && CHART.grid){
-    addLine(CHART.grid.anchor, C.gold, true, true, "Daily O");
+    // ancre : étiquette discrète, pas plus grosse que le reste
+    addLine(CHART.grid.anchor, C.gold, true, false,
+            "Open " + pxTxt(CHART.grid.anchor));
     for (const g of CHART.grid.levels){
       // rouge au-dessus (zone de rejet), vert en dessous (zone de rebond)
-      addLine(g.up,   "rgba(239,83,80,.5)",  false, false);
-      addLine(g.down, "rgba(38,166,154,.5)", false, false);
+      // notation σ signée : on lit d'un coup l'écart-type ET le prix
+      const m = g.mult != null ? g.mult : "";
+      addLine(g.up,   "rgba(239,83,80,.5)",  false, false,
+              "σ+" + m + "  " + pxTxt(g.up));
+      addLine(g.down, "rgba(38,166,154,.5)", false, false,
+              "σ−" + m + "  " + pxTxt(g.down));
     }
   }
 }

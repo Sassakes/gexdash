@@ -2,7 +2,8 @@
    panneau de réglages latéral (drawer). Chargé par index.html et dash.html. */
 "use strict";
 
-const DEF_PREFS = {tz: "Europe/Paris", up: "#26A69A", dn: "#EF5350", px: "#FFD84D"};
+const DEF_PREFS = {tz: "Europe/Paris", up: "#26A69A", dn: "#EF5350", px: "#FFD84D",
+                   lblSize: 11};
 let PREFS = {...DEF_PREFS};
 try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs") || "{}")}; }catch(_){}
 function savePrefs(){ try{ localStorage.setItem("gexPrefs", JSON.stringify(PREFS)); }catch(_){} }
@@ -32,11 +33,15 @@ const PRICE_COLORS = ["#FFD84D", "#F0B90B", "#FFFFFF", "#22D3EE"];
 
 const DRAWER_TXT = {
   fr: {title: "Réglages chart", tz: "Fuseau horaire", levels: "Niveaux",
+       readab: "Lisibilité", lblSize: "Taille des étiquettes",
+       szS: "Normal", szM: "Grand", szL: "Très grand",
        lvGex: "GEX", lvEm: "EM · 1D", lvOpen: "Open (grille σ)",
        candles: "Bougies", palette: "Palette", bodyUp: "Corps ↑", bodyDn: "Corps ↓",
        price: "Ligne de prix", presets: "Prédéfinies", custom: "Personnalisée",
        reset: "Réinitialiser les couleurs", on: "On", off: "Off"},
   en: {title: "Chart settings", tz: "Timezone", levels: "Levels",
+       readab: "Readability", lblSize: "Label size",
+       szS: "Normal", szM: "Large", szL: "Extra large",
        lvGex: "GEX", lvEm: "EM · 1D", lvOpen: "Open (σ grid)",
        candles: "Candles", palette: "Palette", bodyUp: "Body ↑", bodyDn: "Body ↓",
        price: "Price line", presets: "Presets", custom: "Custom",
@@ -191,6 +196,12 @@ function renderDrawer(){
     <div class="dsec"><h4>${L.levels}</h4>
       ${tog("gex", L.lvGex)}${tog("em", L.lvEm)}${tog("open", L.lvOpen)}
     </div>
+    <div class="dsec"><h4>${L.readab}</h4>
+      <div class="drow"><span>${L.lblSize}</span><span class="swrow">
+        ${[[11, L.szS], [13, L.szM], [15, L.szL]].map(([v, n]) =>
+          `<button class="dtog${PREFS.lblSize === v ? " on" : ""}" data-lsz="${v}">${n}</button>`).join("")}
+      </span></div>
+    </div>
     <div class="dsec"><h4>${L.candles}</h4>
       <div class="drow"><span>${L.presets}</span><span class="swrow">${pairs}</span></div>
       <div class="drow"><span>${L.bodyUp}</span><input type="color" data-cup value="${PREFS.up}"></div>
@@ -210,6 +221,10 @@ function renderDrawer(){
     LVSHOW[b.dataset.lv] = !LVSHOW[b.dataset.lv];
     saveLvShow(); callHooks("onLevelsChanged"); renderDrawer();
   });
+  dr.querySelectorAll("[data-lsz]").forEach(b => b.onclick = () => {
+    PREFS.lblSize = +b.dataset.lsz; savePrefs();
+    callHooks("applyLabelSize"); renderDrawer();
+  });
   dr.querySelectorAll("[data-pair]").forEach(b => b.onclick = () => {
     const [a, c] = CANDLE_PAIRS[+b.dataset.pair];
     PREFS.up = a; PREFS.dn = c; savePrefs(); callHooks("applyColors"); renderDrawer();
@@ -221,8 +236,9 @@ function renderDrawer(){
   dr.querySelector("[data-cdn]").oninput = e => { PREFS.dn = e.target.value; savePrefs(); callHooks("applyColors"); };
   dr.querySelector("[data-cpx]").oninput = e => { PREFS.px = e.target.value; savePrefs(); callHooks("applyColors"); };
   dr.querySelector(".rst").onclick = () => {
-    Object.assign(PREFS, {up: DEF_PREFS.up, dn: DEF_PREFS.dn, px: DEF_PREFS.px});
-    savePrefs(); callHooks("applyColors"); renderDrawer();
+    Object.assign(PREFS, {up: DEF_PREFS.up, dn: DEF_PREFS.dn, px: DEF_PREFS.px,
+                          lblSize: DEF_PREFS.lblSize});
+    savePrefs(); callHooks("applyColors"); callHooks("applyLabelSize"); renderDrawer();
   };
 }
 

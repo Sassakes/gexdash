@@ -403,6 +403,8 @@ const IVSEC = {"1m":60, "5m":300, "15m":900};
 /* ---- chaque carte est INDÉPENDANTE : ses couleurs, ses filtres,
         son timer et ses lignes vivent sur son élément DOM ---- */
 
+const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ");
+
 function drawGroup(series, pay, grp){
   const lines = [];
   if (!pay) return lines;
@@ -410,14 +412,15 @@ function drawGroup(series, pay, grp){
     if (pay.open_grid){
       lines.push(series.createPriceLine({price: pay.open_grid.anchor, color: C.gold,
         lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: true, title: "Daily O"}));
+        axisLabelVisible: false, title: "Open " + pxTxt(pay.open_grid.anchor)}));
       for (const g of pay.open_grid.levels){
+        const m = g.mult != null ? g.mult : "";
         lines.push(series.createPriceLine({price: g.up, color: "rgba(239,83,80,.5)",
           lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: false, title: ""}));
+          axisLabelVisible: false, title: "σ+" + m + "  " + pxTxt(g.up)}));
         lines.push(series.createPriceLine({price: g.down, color: "rgba(38,166,154,.5)",
           lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-          axisLabelVisible: false, title: ""}));
+          axisLabelVisible: false, title: "σ−" + m + "  " + pxTxt(g.down)}));
       }
     }
     return lines;
@@ -431,7 +434,7 @@ function drawGroup(series, pay, grp){
       lineStyle: DASH_KINDS.includes(L.kind) ? LightweightCharts.LineStyle.Dashed
                                              : LightweightCharts.LineStyle.Solid,
       axisLabelVisible: ["res","sup","flip","res0","sup0","hgex"].includes(L.kind),
-      title: SHORT[L.kind] || "",
+      title: (SHORT[L.kind] ? SHORT[L.kind] + " " : "") + pxTxt(L.price_nq),
     }));
   }
   return lines;
@@ -546,7 +549,8 @@ async function mountCard(cfg, host){
   host._heat = heat;
   const chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
-            fontFamily:"IBM Plex Mono, monospace", fontSize:10},
+            fontFamily:"IBM Plex Mono, monospace",
+            fontSize: PREFS.lblSize || 11},
     grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
     crosshair:{mode: LightweightCharts.CrosshairMode.Normal},
     rightPriceScale:{borderColor:C.line},
