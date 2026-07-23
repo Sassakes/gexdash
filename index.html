@@ -998,35 +998,67 @@ async function loadBars(){
       CHART.sessCv = document.createElement("canvas");
       CHART.sessCv.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0";
       $("chartBox").prepend(CHART.sessCv);
+      CHART._boxW = $("chartBox").clientWidth;
+      CHART._boxH = $("chartBox").clientHeight;
       CHART.lblCv = document.createElement("canvas");
       CHART.lblCv.style.cssText =
         "position:absolute;inset:0;pointer-events:none;z-index:3";
       $("chartBox").appendChild(CHART.lblCv);
-      const redraw = () => { drawIdxSessions(); drawLevelLabels(); };
+      /* Redessins COALESCÉS : la souris peut émettre des dizaines
+         d'événements par seconde ; on n'exécute au plus qu'un rendu par
+         frame d'affichage, ce qui suffit à l'œil et divise le travail. */
+      CHART._paint = () => {
+        if (CHART._raf) return;
+        CHART._raf = requestAnimationFrame(() => {
+          CHART._raf = 0; drawIdxSessions(); drawLevelLabels();
+        });
+      };
+      const redraw = CHART._paint;
       CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
-      new ResizeObserver(redraw).observe($("chartBox"));
+      new ResizeObserver(() => {
+        const b = $("chartBox");
+        CHART._boxW = b.clientWidth; CHART._boxH = b.clientHeight;
+        redraw();
+      }).observe($("chartBox"));
 
       /* Le glissement de l'ÉCHELLE DE PRIX n'émet aucun événement exploitable.
          On surveille donc la géométrie à chaque frame : dès que la position
          d'un prix témoin bouge (zoom, drag, autoscale, kinetic scroll), on
          redessine. Coût négligeable, suivi parfait. */
-      const geoTick = () => {
-        if (CHART.series && (CHART.lvMeta || []).length){
-          const m = CHART.lvMeta[0];
-          const y = CHART.series.priceToCoordinate(m.price);
-          const box = $("chartBox");
-          const sig = `${y}|${box.clientHeight}|${box.clientWidth}`;
-          if (sig !== CHART._geoSig){ CHART._geoSig = sig; drawLevelLabels(); }
-        }
-        CHART._geoRaf = requestAnimationFrame(geoTick);
+      /* Suivi de l'échelle de prix : le glissement de l'axe n'émet aucun
+         événement, d'où cette vérification. Mais la faire 60 fois par seconde
+         en permanence était du gaspillage pur (et de la batterie sur mobile).
+         Elle ne tourne désormais QUE pendant une interaction, plus un filet
+         de sécurité deux fois par seconde. Le suivi reste parfait. */
+      const geoCheck = () => {
+        if (!CHART.series || !(CHART.lvMeta || []).length) return;
+        const y = CHART.series.priceToCoordinate(CHART.lvMeta[0].price);
+        const sig = `${y}|${CHART._boxH}|${CHART._boxW}`;
+        if (sig !== CHART._geoSig){ CHART._geoSig = sig; CHART._paint(); }
       };
-      if (!CHART._geoRaf) geoTick();
+      let geoUntil = 0;
+      const geoLoop = () => {
+        CHART._geoRaf = requestAnimationFrame(() => {
+          geoCheck();
+          if (performance.now() < geoUntil) geoLoop();
+          else CHART._geoRaf = 0;
+        });
+      };
+      const geoKick = () => {
+        geoUntil = performance.now() + 800;   // couvre l'inertie du scroll
+        if (!CHART._geoRaf) geoLoop();
+      };
+      for (const ev of ["pointerdown", "wheel", "touchstart", "touchmove"])
+        $("chartBox").addEventListener(ev, geoKick, {passive: true});
+      window.addEventListener("pointerup", geoKick, {passive: true});
+      clearInterval(CHART._geoSafe);
+      CHART._geoSafe = setInterval(geoCheck, 500);
 
       CHART.chart.subscribeCrosshairMove(p => {
         const y = p && p.point ? p.point.y : null;
         if (y === CHART.hoverY) return;
         CHART.hoverY = y;
-        drawLevelLabels();
+        CHART._paint();
       });
 
       /* MOBILE : pas de survol possible. Un appui (ou un glissé) sur la chart
@@ -1036,10 +1068,10 @@ async function loadBars(){
         const t = e.touches && e.touches[0];
         if (!t) return;
         CHART.hoverY = t.clientY - box.getBoundingClientRect().top;
-        drawLevelLabels();
+        CHART._paint();
         clearTimeout(CHART._touchT);
         CHART._touchT = setTimeout(() => {
-          CHART.hoverY = null; drawLevelLabels();
+          CHART.hoverY = null; CHART._paint();
         }, 3000);
       };
       box.addEventListener("touchstart", touchAt, {passive: true});
@@ -1133,7 +1165,12 @@ const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
 function drawLevelLabels(){
   const cv = CHART.lblCv, box = $("chartBox");
   if (!cv || !CHART.chart || !CHART.series) return;
-  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  // Dimensions MÉMORISÉES : lire clientWidth force le navigateur à recalculer
+  // la mise en page (reflow). C'était fait à chaque frame et à chaque mouvement
+  // de souris — le poste le plus coûteux du rendu. Le ResizeObserver les met
+  // à jour, elles ne peuvent pas être périmées.
+  const w = CHART._boxW || box.clientWidth, h = CHART._boxH || box.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
     cv.style.width = w + "px"; cv.style.height = h + "px";
