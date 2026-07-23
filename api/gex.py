@@ -35,6 +35,7 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
+_BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
 DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 
 
@@ -874,7 +875,14 @@ class handler(BaseHTTPRequestHandler):
             if interval not in CHART_INTERVALS:
                 interval = "5m"
             try:
-                res = _yahoo_chart(YCHART[target], interval, CHART_INTERVALS[interval])
+                # /api/quote n'a besoin que de meta.regularMarketPrice : inutile
+                # de télécharger 5 jours de bougies 5m (~1150 chandelles) à
+                # chaque poll. Une seule bougie journalière porte le même meta
+                # pour une fraction du coût de parsing.
+                if path == "/api/quote":
+                    res = _yahoo_chart(YCHART[target], "1d", "1d")
+                else:
+                    res = _yahoo_chart(YCHART[target], interval, CHART_INTERVALS[interval])
                 meta = res.get("meta", {})
                 if path == "/api/quote":
                     price = meta.get("regularMarketPrice")
@@ -894,7 +902,7 @@ class handler(BaseHTTPRequestHandler):
                             if fh:
                                 ep, et, src2 = fh[0], fh[1], "finnhub"
                             if not ep:
-                                emeta = _yahoo_chart(YETF[target], "1m", "1d").get("meta", {})
+                                emeta = _yahoo_chart(YETF[target], "1d", "1d").get("meta", {})
                                 ep = emeta.get("regularMarketPrice")
                                 et = emeta.get("regularMarketTime") or 0
                                 src2 = "etf"
@@ -919,11 +927,21 @@ class handler(BaseHTTPRequestHandler):
                                 else:
                                     # basis dynamique partagée (calibrée par
                                     # /api/chart sur le chevauchement fut/ETF)
+                                    # correctif de basis : lu au plus une fois
+                                    # par minute et mémorisé dans le process
+                                    # (les instances restent chaudes), au lieu
+                                    # d'une lecture Redis à chaque poll
                                     try:
-                                        _a = kv_get(f"gex:basisadj:{target}")
-                                        if _a:
-                                            derived = round(
-                                                derived + (json.loads(_a).get("adj") or 0.0), 2)
+                                        import time as _t
+                                        _n = _t.time()
+                                        _c = _BASIS_ADJ.get(target)
+                                        if not _c or _n - _c[1] > 60:
+                                            _a = kv_get(f"gex:basisadj:{target}")
+                                            _v = (json.loads(_a).get("adj") or 0.0) if _a else 0.0
+                                            _BASIS_ADJ[target] = (_v, _n)
+                                            _c = _BASIS_ADJ[target]
+                                        if _c[0]:
+                                            derived = round(derived + _c[0], 2)
                                     except Exception:
                                         pass
                                     price, ptime, source = derived, et, src2
@@ -933,7 +951,7 @@ class handler(BaseHTTPRequestHandler):
                         "target": target, "price": price,
                         "time": ptime, "source": source,
                     }).encode()
-                    max_age = 1
+                    max_age = 3
                 else:
                     def _pb(rs):
                         tts = rs.get("timestamp") or []
@@ -1019,10 +1037,13 @@ class handler(BaseHTTPRequestHandler):
                     body = json.dumps({"target": target, "interval": interval,
                                        "bars": bars, "src": src_flag,
                                        "price": meta.get("regularMarketPrice")}).encode()
-                    max_age = 12
+                    max_age = 32
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Cache-Control", f"public, s-maxage={max_age}, max-age=0")
+                self.send_header(
+                    "Cache-Control",
+                    f"public, s-maxage={max_age}, max-age=0, "
+                    f"stale-while-revalidate={max_age * 10}")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
