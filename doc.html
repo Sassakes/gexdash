@@ -58,7 +58,7 @@
   /* ── mise en page sommaire + contenu ── */
   .wrap{display:grid; grid-template-columns:216px 1fr; gap:34px;
         max-width:1180px; margin:0 auto; padding:26px 20px 90px; align-items:start}
-  .toc{position:sticky; top:70px}
+  .toc{position:sticky; top:70px; max-height:calc(100vh - 92px); overflow-y:auto}
   .toc .lbl{font-size:9px; letter-spacing:.16em; text-transform:uppercase;
             color:var(--faint); padding:0 10px 8px}
   .toc a{display:flex; gap:9px; align-items:baseline; padding:7px 10px; font-size:12.5px;
@@ -189,7 +189,6 @@
   <nav class="nav">
     <a href="/" id="nTerm">Terminal</a>
     <a href="/dash" id="nDash">Dashboard</a>
-    <a href="/heatmap" id="nHeat">Heatmap</a>
     <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
   </nav>
 </header>
@@ -257,7 +256,7 @@ function tickCd(){
 /* ───── contenu structuré en blocs ───── */
 const T = {
 fr: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  title:"Documentation", term:"Terminal", dash:"Dashboard",
   heroT:"Comment lire et utiliser le terminal",
   heroP:"Les niveaux, leur signification, l'export vers TradingView et le calendrier exact des mises à jour.",
   cd1k:"Prochain recalcul daily · Open + EM", cd1s:"00h11 Paris · lundi → vendredi",
@@ -313,9 +312,6 @@ fr: {
       "<b>Double-clic</b> sur un graphique pour le recentrer sur le prix."]},
     {t:"p", x:"Les graphiques se recadrent automatiquement au changement de marché et rechargent les bougies manquées quand tu reviens sur l'onglet."}]},
 
-  {id:"heat", t:"La heatmap", b:[
-    {t:"p", x:"Le gamma présenté en échelle : les <b>strikes en lignes</b>, les <b>échéances en colonnes</b> (0DTE, 1DTE… puis le cumul)."},
-    {t:"p", x:"L'intensité donne la magnitude — bleu pour le gamma négatif, orange pour le positif, jaune pour les extrêmes. C'est la vue à privilégier pour voir <b>où la masse se concentre</b>, et si un mur tient à une seule échéance ou à toutes."}]},
 
   {id:"rythme", t:"Le calendrier des mises à jour", b:[
     {t:"p", x:"Chaque famille est recalculée <b>au moment où son information existe</b>, et jamais entre-temps. Un niveau qui bouge sous tes pieds n'est pas un niveau."},
@@ -346,7 +342,7 @@ fr: {
 ]},
 
 en: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  title:"Documentation", term:"Terminal", dash:"Dashboard",
   heroT:"How to read and use the terminal",
   heroP:"The levels, what they mean, exporting to TradingView, and the exact update schedule.",
   cd1k:"Next daily recompute · Open + EM", cd1s:"00:11 Paris · Monday → Friday",
@@ -402,9 +398,6 @@ en: {
       "<b>Double-click</b> a chart to recentre it on price."]},
     {t:"p", x:"Charts reframe automatically when you switch market and reload missed candles when you return to the tab."}]},
 
-  {id:"heat", t:"The heatmap", b:[
-    {t:"p", x:"Gamma laid out as a ladder: <b>strikes as rows</b>, <b>expiries as columns</b> (0DTE, 1DTE… then the aggregate)."},
-    {t:"p", x:"Intensity carries magnitude — blue for negative gamma, orange for positive, yellow for extremes. It is the view of choice to see <b>where mass concentrates</b>, and whether a wall rests on a single expiry or on all of them."}]},
 
   {id:"rythme", t:"Update schedule", b:[
     {t:"p", x:"Each family is recomputed <b>when its information exists</b>, and never in between. A level that moves under your feet is not a level."},
@@ -524,7 +517,6 @@ function render(){
   $("hTitle").textContent = L.title;
   $("nTerm").textContent = L.term;
   $("nDash").textContent = L.dash;
-  $("nHeat").textContent = L.heat;
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
   $("cd1k").textContent = L.cd1k; $("cd1s").textContent = L.cd1s;
@@ -541,18 +533,29 @@ function render(){
 
   document.querySelectorAll("[data-fam]").forEach(wireFam);
 
-  /* surlignage de la section courante dans le sommaire */
-  if (window._io) window._io.disconnect();
-  window._io = new IntersectionObserver(es => {
-    for (const e of es){
-      if (!e.isIntersecting) continue;
-      document.querySelectorAll("#toc a").forEach(a =>
-        a.classList.toggle("on", a.dataset.s === e.target.id));
-    }
-  }, {rootMargin:"-74px 0px -70% 0px"});
-  document.querySelectorAll("main section").forEach(s => window._io.observe(s));
+  syncToc();
   tickCd();
 }
+/* Surlignage du sommaire : calculé au scroll plutôt que par IntersectionObserver.
+   L'observer ne déclenchait jamais pour les dernières sections — arrivé en bas
+   de page, elles n'atteignent plus la bande de détection en haut de l'écran. */
+function syncToc(){
+  const secs = [...document.querySelectorAll("main section")];
+  if (!secs.length) return;
+  const bottom = window.innerHeight + window.scrollY >=
+                 document.documentElement.scrollHeight - 4;
+  let active = secs[0].id;
+  if (bottom){
+    active = secs[secs.length - 1].id;      // bas de page = dernière section
+  } else {
+    for (const s of secs) if (s.getBoundingClientRect().top <= 110) active = s.id;
+  }
+  document.querySelectorAll("#toc a").forEach(a =>
+    a.classList.toggle("on", a.dataset.s === active));
+}
+window.addEventListener("scroll", syncToc, {passive:true});
+window.addEventListener("resize", syncToc);
+
 function setLang(l){
   LANG = l;
   try{ localStorage.setItem("gexLang", l); }catch(_){}
