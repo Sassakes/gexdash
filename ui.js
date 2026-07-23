@@ -153,7 +153,7 @@ function marketPollMs(){
   const et = P("America/New_York");
   const em = (+et.hour % 24) * 60 + (+et.minute);
   if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 3000;
-  return 60000;
+  return 30000;
 }
 
 function tzShift(tSec){ return tzShiftAs(PREFS.tz, tSec); }
