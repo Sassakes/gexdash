@@ -6,7 +6,7 @@
 <title>TheHub - GexDashboard</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
-<meta name="description" content="Niveaux gamma quotidiens (walls, flip, expected move) pour NQ, ES et SPX.">
+<meta name="description" content="Gamma Levels et GEX Levels quotidiens pour NQ, ES et SPX : call wall, put wall, gamma flip, expected move et grille sigma, en temps réel pendant la session US.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -723,7 +723,8 @@ const T = {
     tv:"TradingView", dash:"Mon dashboard", doc:"Doc",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
-    genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
+    genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
+      +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — outil éducatif, pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
     dpNote:"FINRA off-exchange · publié J-1",
     dpBuild:"historique en construction — première donnée au prochain jour ouvré",
@@ -745,7 +746,8 @@ const T = {
     tv:"TradingView", dash:"My dashboard", doc:"Docs",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
-    genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
+    genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
+      +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — educational tool, not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
     dpNote:"FINRA off-exchange · published T-1",
     dpBuild:"history building — first data next trading day",
@@ -1414,8 +1416,7 @@ function show(d){
   renderLevels(d);
   renderEM(d);
   renderPine(d);
-  const srcs = (d.sources||[]).filter(s=>!s.error).map(s=>s.chain.replace("_","")).join(" + ");
-  $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T"," ").slice(0,16), d.mode, srcs, d.expiries.length);
+  $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T", " ").slice(0, 16));
 }
 
 function renderLevels(d){
