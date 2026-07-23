@@ -32,6 +32,17 @@
     flex:1 1 460px; min-width:420px; background:var(--surface);
     border:1px solid var(--line);
   }
+  .tblwrap{overflow-x:auto; -webkit-overflow-scrolling:touch}
+  @media (max-width:900px){
+    .wrap{padding:10px 12px; gap:10px}
+    .panel{flex:1 1 100%; min-width:0}          /* plus de débordement */
+    header{padding:12px 14px}
+    thead th{top:45px; font-size:8.5px; padding:6px 3px}
+    tbody td{font-size:9.5px; height:19px; padding:0 3px}
+    tbody td.px{font-size:10px; padding-right:6px}
+    .phead{padding:9px 12px}
+    .phead .src{display:none}                   /* libellé long inutile ici */
+  }
   .phead{
     display:flex; align-items:baseline; gap:12px; padding:10px 14px;
     border-bottom:1px solid var(--line);
@@ -131,7 +142,7 @@ async function loadPanel(tgt){
       p95.push(pct(mags, 0.95));
       p99.push(pct(mags, 0.99));
     }
-    let html = "<table><thead><tr><th>PX</th>"
+    let html = "<div class='tblwrap'><table><thead><tr><th>PX</th>"
       + d.cols.map(c => `<th>${c.label}</th>`).join("") + "</tr></thead><tbody>";
     /* ligne du spot : insérée entre les deux strikes qui l'encadrent */
     let spotDone = false;
@@ -145,13 +156,13 @@ async function loadPanel(tgt){
       }
       html += "</tr>";
     }
-    html += "</tbody></table>";
-    panel.querySelector(".loading, .err, table")?.remove();
+    html += "</tbody></table></div>";
+    panel.querySelector(".loading, .err, .tblwrap")?.remove();
     panel.insertAdjacentHTML("beforeend", html);
     $("upd").textContent = "maj " + new Date().toLocaleTimeString("fr-FR",
       {hour: "2-digit", minute: "2-digit"}) + " · refresh 5 min";
   }catch(e){
-    const box = panel.querySelector(".loading, .err, table");
+    const box = panel.querySelector(".loading, .err, .tblwrap");
     if (box) box.outerHTML = `<div class="err">Indisponible — ${e.message}</div>`;
   }
 }
