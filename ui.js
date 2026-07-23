@@ -132,6 +132,30 @@ function enhanceAllSelects(root){
   (root || document).querySelectorAll("select:not(.enh)").forEach(enhanceSelect);
 }
 
+
+/* ══════════ RYTHME DU FLUX SELON LA SESSION ══════════
+   Chaque requête compte comme une Edge Request chez Vercel, même servie
+   depuis le cache. On calibre donc le rafraîchissement sur l'utilité réelle :
+     • séance US (9h30-16h ET)  -> 3 s, le flux doit être beau
+     • Asie / London / overnight -> 60 s, le future différé bouge peu et
+       les niveaux du jour sont figés depuis 00h11 : rien à surveiller
+     • week-end (ven 22h -> dim 23h50 Paris) -> 0 = flux totalement coupé
+   Renvoie l'intervalle en ms, ou 0 si le marché est fermé. */
+function marketPollMs(){
+  const P = (tz) => new Intl.DateTimeFormat("en-US", {timeZone: tz, hour12: false,
+      weekday: "short", hour: "2-digit", minute: "2-digit"})
+    .formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const pa = P("Europe/Paris");
+  const pm = (+pa.hour % 24) * 60 + (+pa.minute);
+  if (pa.weekday === "Sat") return 0;
+  if (pa.weekday === "Fri" && pm >= 22 * 60) return 0;
+  if (pa.weekday === "Sun" && pm < 23 * 60 + 50) return 0;
+  const et = P("America/New_York");
+  const em = (+et.hour % 24) * 60 + (+et.minute);
+  if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 3000;
+  return 60000;
+}
+
 function tzShift(tSec){ return tzShiftAs(PREFS.tz, tSec); }
 
 const CANDLE_PAIRS = [

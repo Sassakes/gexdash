@@ -775,7 +775,17 @@ async function mountCard(cfg, host){
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
   const offset = (Array.prototype.indexOf.call(board.children, host) % 8) * 250;
   host._timer = null;
-  setTimeout(() => { if (host.isConnected){ tick(); host._timer = setInterval(tick, 2000); } }, offset);
+  const armCard = () => {
+    clearInterval(host._timer);
+    host._pollMs = marketPollMs();
+    if (host._pollMs){ tick(); host._timer = setInterval(tick, host._pollMs); }
+  };
+  setTimeout(() => { if (host.isConnected) armCard(); }, offset);
+  clearInterval(host._pollWatch);
+  host._pollWatch = setInterval(() => {
+    if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
+    if (marketPollMs() !== host._pollMs) armCard();
+  }, 60000);
 }
 
 function wireEdit(card, cfg){
@@ -970,7 +980,7 @@ if (!window._visWired){
       if (document.hidden){ hiddenAt = Date.now(); return; }
       const away = hiddenAt ? Date.now() - hiddenAt : 0;
       hiddenAt = null;
-      if (away > 60000) render();   // recharge toutes les cartes au retour
+      if (away > 60000 && marketPollMs()) render();   // rien à recharger le week-end
     });
   }
     render();

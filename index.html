@@ -721,6 +721,7 @@ const T = {
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
     tv:"TradingView", dash:"Mon dashboard", doc:"Doc",
+    mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
@@ -742,6 +743,7 @@ const T = {
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
     tv:"TradingView", dash:"My dashboard", doc:"Docs",
+    mktClosed:"market closed · feed paused until Sunday 23:50 CET",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
@@ -1089,15 +1091,29 @@ async function loadBars(){
         if (document.hidden){ hiddenAt = Date.now(); return; }
         const away = hiddenAt ? Date.now() - hiddenAt : 0;
         hiddenAt = null;
+        if (!marketPollMs()) return;       // week-end : on ne réveille rien
         if (away > 60000) loadBars();      // recharge les bougies manquées
         else pollQuote();                  // reprise immédiate du live
       });
     }
-    // Fréquence du flux live (ms). 2000 = équilibre fluidité/quotas.
-    // Monte à 5000 pour l'économie maximale, descends à 1200 pour le max
-    // de fluidité (charge Yahoo/Redis un peu plus élevée).
-    const POLL_MS = 2000;
-    CHART.poll = setInterval(pollQuote, POLL_MS);
+    /* Rythme du flux : rapide en séance US, lent hors séance, coupé le
+       week-end (voir marketPollMs dans ui.js). Le régime est réévalué chaque
+       minute, donc la bascule à l'ouverture et à la clôture est automatique. */
+    function armPoll(){
+      clearInterval(CHART.poll);
+      CHART._pollMs = marketPollMs();
+      if (CHART._pollMs){
+        CHART.poll = setInterval(pollQuote, CHART._pollMs);
+        pollQuote();
+      } else {
+        liveBadge(t("mktClosed"), null);
+      }
+    }
+    armPoll();
+    clearInterval(CHART._pollWatch);
+    CHART._pollWatch = setInterval(() => {
+      if (marketPollMs() !== CHART._pollMs) armPoll();
+    }, 60000);
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
   }
@@ -1253,7 +1269,7 @@ function liveBadge(msg, ok){
     if (box && box.parentNode) box.parentNode.insertBefore(el, box.nextSibling);
   }
   el.textContent = msg;
-  el.style.color = ok ? "#26A69A" : "#EF5350";
+  el.style.color = ok === null ? "#5C5C66" : (ok ? "#26A69A" : "#EF5350");
 }
 
 async function pollQuote(){
