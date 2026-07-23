@@ -36,6 +36,28 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
 _BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
+_MEM_FH = {}             # cache mémoire des cotes Finnhub : sym -> (prix, ts, at)
+_MEM_FH_ERR = {}         # dernier échec par symbole (anti-martèlement)
+_MEM_CTX = {}            # cache mémoire du contexte quote : target -> (ctx, at)
+
+
+def _quote_ctx(target):
+    """basis + scale du marché pour la conversion ETF -> future.
+    Ces valeurs ne changent qu'aux recalculs (00h11 / 15h25) : les relire dans
+    Redis à chaque poll était le principal poste de consommation. Mémorisées
+    60 s en mémoire du process."""
+    import time as _t
+    now = _t.time()
+    c = _MEM_CTX.get(target)
+    if c and now - c[1] < 60:
+        return c[0]
+    pay = _latest_payload(target) or {}
+    ctx = {"basis": pay.get("basis") or 0.0,
+           "scale": next((s.get("scale") for s in pay.get("sources", [])
+                          if s.get("chain") == YETF.get(target) and s.get("scale")),
+                         None)}
+    _MEM_CTX[target] = (ctx, now)
+    return ctx
 DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 
 
@@ -68,23 +90,32 @@ def _finra_dp_day(ymd):
 
 def _finnhub_quote(sym):
     """Cote actions US quasi temps réel via Finnhub (env FINNHUB_API_KEY).
-    Micro-cache Redis de quelques secondes : quel que soit le trafic du site,
-    l'API tierce reste loin sous la limite du palier gratuit (60 req/min).
+    Micro-cache EN MÉMOIRE du process (et non dans Redis) : les instances
+    restent chaudes, donc le cache est efficace sans coûter deux opérations
+    Redis à chaque poll. L'API tierce reste loin sous la limite du palier
+    gratuit (60 req/min).
     Retourne (prix, ts_dernier_trade) ou None — jamais d'exception."""
     key = os.environ.get("FINNHUB_API_KEY")
     if not key:
         return None
     import time as _t
     now = _t.time()
-    ck = f"gex:fh:{sym}"
+    c = _MEM_FH.get(sym)
+    if c and now - c[2] < FINNHUB_CACHE_S and c[0]:
+        return c[0], c[1]
+    # L'ETF ne cote pas la nuit : inutile d'appeler l'API (et de payer la
+    # latence) hors de la fenêtre 4h-20h ET, où le repli future est de toute
+    # façon la bonne source.
     try:
-        cached = kv_get(ck)
-        if cached:
-            d = json.loads(cached)
-            if now - d.get("at", 0) < FINNHUB_CACHE_S and d.get("p"):
-                return d["p"], d.get("t") or int(now)
+        _et = dt.datetime.now(ZoneInfo("America/New_York"))
+        if _et.weekday() > 4 or not (4 <= _et.hour < 20):
+            return None
     except Exception:
         pass
+    # Anti-martèlement : après un échec (timeout, quota), on ne réessaie pas
+    # avant quelques secondes — sinon chaque poll relance un appel qui échoue.
+    if now - _MEM_FH_ERR.get(sym, 0) < 5:
+        return (c[0], c[1]) if c and c[0] and now - c[2] < 60 else None
     try:
         import requests
         r = requests.get("https://finnhub.io/api/v1/quote",
@@ -92,10 +123,17 @@ def _finnhub_quote(sym):
         j = r.json()
         p, t = j.get("c"), j.get("t")
         if not p:
-            return None
-        kv_set(ck, json.dumps({"p": p, "t": t, "at": now}), ex=30)
+            raise ValueError("réponse vide")
+        _MEM_FH[sym] = (p, t or int(now), now)
+        _MEM_FH_ERR.pop(sym, None)
         return p, t or int(now)
     except Exception:
+        # SERVIR LE PÉRIMÉ PLUTÔT QUE DE DÉCROCHER : sur un échec ponctuel, on
+        # renvoie la dernière cote connue (jusqu'à 60 s) au lieu de retomber
+        # sur le future différé — ça évite le saut de prix visible à l'écran.
+        _MEM_FH_ERR[sym] = now
+        if c and c[0] and now - c[2] < 60:
+            return c[0], c[1]
         return None
 
 
@@ -891,9 +929,8 @@ class handler(BaseHTTPRequestHandler):
                     # l'ETF US cote en quasi temps réel là où le future est différé :
                     # converti à l'échelle target via le scale et la basis du snapshot
                     try:
-                        pay = _latest_payload(target) or {}
-                        scale = next((s.get("scale") for s in pay.get("sources", [])
-                                      if s.get("chain") == YETF[target] and s.get("scale")), None)
+                        _ctx = _quote_ctx(target)
+                        scale = _ctx["scale"]
                         if scale:
                             # 1) Finnhub (temps réel actions US), 2) ETF Yahoo en repli
                             ep = et = None
@@ -915,7 +952,7 @@ class handler(BaseHTTPRequestHandler):
                             import time as _tt
                             fresh = ep and et and (_tt.time() - et) < 90
                             if ep and (fresh or et > ptime):
-                                derived = round(ep / scale + (pay.get("basis") or 0), 2)
+                                derived = round(ep / scale + _ctx["basis"], 2)
                                 # garde-fou anti-aberration : rejette un dérivé
                                 # très loin du future SEULEMENT si le future est
                                 # lui-même frais (< 60 s). Sur un future périmé
