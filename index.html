@@ -986,6 +986,8 @@ async function loadBars(){
         }
       }
     }catch(_){}
+    const _b = $("chartBox");
+    if (_b.clientWidth) { CHART._boxW = _b.clientWidth; CHART._boxH = _b.clientHeight; }
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
     // outils de dessin : dessins propres à CE marché (persistés par navigateur)
@@ -1006,6 +1008,12 @@ async function loadBars(){
       CHART.lblCv.style.cssText =
         "position:absolute;inset:0;pointer-events:none;z-index:3";
       $("chartBox").appendChild(CHART.lblCv);
+      new ResizeObserver(es => {
+        const r = es[0].contentRect;
+        if (!r.width || !r.height) return;
+        CHART._boxW = r.width; CHART._boxH = r.height;
+        if (CHART._paint) CHART._paint();
+      }).observe(CHART.lblCv);
       /* Redessins COALESCÉS : la souris peut émettre des dizaines
          d'événements par seconde ; on n'exécute au plus qu'un rendu par
          frame d'affichage, ce qui suffit à l'œil et divise le travail. */
@@ -1171,11 +1179,17 @@ function drawLevelLabels(){
   // la mise en page (reflow). C'était fait à chaque frame et à chaque mouvement
   // de souris — le poste le plus coûteux du rendu. Le ResizeObserver les met
   // à jour, elles ne peuvent pas être périmées.
+  /* Taille du canevas : on ne fixe PLUS style.width/height (le CSS inset:0
+     s'en charge) et on prend la taille réellement rendue, tenue à jour par
+     un ResizeObserver posé sur le canevas lui-même. Poser une taille en
+     cache pouvait la laisser périmée au changement de marché : le bitmap
+     ne correspondait plus à sa taille d'affichage et le navigateur l'étirait
+     — d'où les étiquettes floues, visibles surtout sur mobile où le rapport
+     de pixels est élevé. */
   const w = CHART._boxW || box.clientWidth, h = CHART._boxH || box.clientHeight;
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-    cv.style.width = w + "px"; cv.style.height = h + "px";
   }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

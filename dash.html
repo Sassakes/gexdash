@@ -464,10 +464,10 @@ function drawGroup(series, pay, grp, meta){
 function drawCardLabels(host){
   const cv = host._lblCv, box = host.querySelector(".box");
   if (!cv || !host._chart || !host._series || !box) return;
-  const w = box.clientWidth, h = box.clientHeight, dpr = window.devicePixelRatio || 1;
+  const w = host._cvW || box.clientWidth, h = host._cvH || box.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-    cv.style.width = w + "px"; cv.style.height = h + "px";
   }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -677,6 +677,12 @@ async function mountCard(cfg, host){
   lbl.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:3";
   box.appendChild(lbl);
   host._lblCv = lbl;
+  new ResizeObserver(es => {
+    const r = es[0].contentRect;
+    if (!r.width || !r.height) return;
+    host._cvW = r.width; host._cvH = r.height;
+    drawCardLabels(host);
+  }).observe(lbl);
   chart.timeScale().subscribeVisibleLogicalRangeChange(
     () => { drawSess(host); drawCardLabels(host); });
   chart.subscribeCrosshairMove(p => {
