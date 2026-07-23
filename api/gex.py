@@ -951,7 +951,7 @@ class handler(BaseHTTPRequestHandler):
                         "target": target, "price": price,
                         "time": ptime, "source": source,
                     }).encode()
-                    max_age = 3
+                    max_age = 2
                 else:
                     def _pb(rs):
                         tts = rs.get("timestamp") or []
@@ -1037,13 +1037,17 @@ class handler(BaseHTTPRequestHandler):
                     body = json.dumps({"target": target, "interval": interval,
                                        "bars": bars, "src": src_flag,
                                        "price": meta.get("regularMarketPrice")}).encode()
-                    max_age = 32
+                    max_age = 12
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
+                # stale-while-revalidate volontairement COURT : sur un prix
+                # live, autoriser une réponse périmée trop longtemps fige le
+                # ticker à l'écran. Le gain CPU vient du payload allégé, pas
+                # d'un cache long.
                 self.send_header(
                     "Cache-Control",
                     f"public, s-maxage={max_age}, max-age=0, "
-                    f"stale-while-revalidate={max_age * 10}")
+                    f"stale-while-revalidate={max_age}")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
