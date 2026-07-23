@@ -558,6 +558,8 @@
     <!-- 1. espace applicatif : le dashboard est une section du produit -->
     <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
 
+    <a href="/doc" class="nav-app"><span class="ic" aria-hidden="true">?</span><span id="docLbl">Doc</span></a>
+
     <span class="nav-sep" aria-hidden="true"></span>
 
     <!-- 2. communauté & outils : pastilles colorées pour accrocher l'œil -->
@@ -687,7 +689,7 @@ const T = {
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
-    tv:"TradingView", dash:"Mon dashboard",
+    tv:"TradingView", dash:"Mon dashboard", doc:"Doc",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC ("+m+")"+(s?" · chaînes "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Outil éducatif — pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
@@ -708,7 +710,7 @@ const T = {
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
-    tv:"TradingView", dash:"My dashboard",
+    tv:"TradingView", dash:"My dashboard", doc:"Docs",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC ("+m+")"+(s?" · chains "+s:"")+" · expiries "+e+" · CBOE delayed ~15 min<br>Educational tool — not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
@@ -820,6 +822,7 @@ function applyLang(){
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
   $("dashLbl").textContent = t("dash");
+  $("docLbl").textContent = t("doc");
   $("donLbl").textContent = t("don");
   $("donateLink").title = t("donTip");
   const th = t("th");

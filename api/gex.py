@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -110,6 +110,8 @@ STATIC = {
     "/admin": ("admin.html", "text/html; charset=utf-8"),
     "/dash": ("dash.html", "text/html; charset=utf-8"),
     "/heatmap": ("heatmap.html", "text/html; charset=utf-8"),
+    "/doc": ("doc.html", "text/html; charset=utf-8"),
+    "/wiki": ("doc.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
@@ -304,6 +306,33 @@ class handler(BaseHTTPRequestHandler):
             return kv_get("gex:lock") == "1"
         except Exception:
             return False
+
+    @staticmethod
+    def _preserve_daily(new_p, old_p):
+        """Le bloc DAILY (grille Open + EM) est calculé UNE SEULE FOIS, au
+        recalcul nocturne. Tout refresh ultérieur portant sur le même open le
+        reprend tel quel : les bandes ne bougent pas en cours de séance.
+        Si l'ancre a changé (nocturne raté), on laisse passer les valeurs
+        fraîches — auto-réparation."""
+        a_new = (new_p.get("open_grid") or {}).get("anchor")
+        a_old = (old_p.get("open_grid") or {}).get("anchor")
+        if a_new is None or a_old is None or abs(a_new - a_old) > 0.6:
+            return False
+        new_p["open_grid"] = old_p["open_grid"]
+        if old_p.get("expected_move") is not None:
+            new_p["expected_move"] = old_p["expected_move"]
+        old_map = {(L.get("kind"), L.get("label")): L.get("price_nq")
+                   for L in old_p.get("levels", [])
+                   if L.get("kind") in ("emh", "eml", "emb")}
+        for L in new_p.get("levels", []):
+            key = (L.get("kind"), L.get("label"))
+            if key in old_map:
+                L["price_nq"] = old_map[key]
+        rows = [(L["price_nq"], L["label"], L["kind"])
+                for L in new_p.get("levels", [])]
+        new_p["pine"] = build_pine(rows, new_p["open_grid"])
+        new_p["daily_from"] = old_p.get("daily_refresh_utc")
+        return True
 
     @staticmethod
     def _freeze_levels(new_p, old_p):
@@ -602,6 +631,9 @@ class handler(BaseHTTPRequestHandler):
                 # figerait les niveaux de la veille.
                 canonical = ("notify" in qs) or (ok_vercel
                                                  and "1520" <= now_p <= "1800")
+                # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
+                if latest:
+                    self._preserve_daily(payload, latest)
                 if (not canonical) and self._gex_locked() and latest:
                     self._freeze_levels(payload, latest)
                 ok, why = _upstash_set(payload)
@@ -1083,9 +1115,10 @@ class handler(BaseHTTPRequestHandler):
                     target=target, n_expiries=n, basis_override=basis, mode="live",
                     em_bands=bands, iv_override=iv_ov
                 )
-                if q("notify") != "1" and self._gex_locked():
-                    prev = _latest_payload(target)
-                    if prev:
+                prev = _latest_payload(target)
+                if prev:
+                    self._preserve_daily(payload, prev)
+                    if q("notify") != "1" and self._gex_locked():
                         self._freeze_levels(payload, prev)
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok

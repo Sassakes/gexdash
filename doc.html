@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHub - Documentation</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
+    --line:#212127; --line-strong:#2E2E36;
+    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
+    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
+    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans);
+       min-height:100vh; line-height:1.65}
+  a{color:var(--gold)}
+  header{
+    display:flex; align-items:center; gap:14px; padding:14px 22px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); position:sticky; top:0;
+    background:rgba(10,10,12,.94); backdrop-filter:blur(8px); z-index:20;
+  }
+  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase; font-weight:600}
+  header h1 b{color:var(--gold)}
+  .nav{display:flex; gap:4px; margin-left:auto; align-items:center; flex-wrap:wrap}
+  .nav a{color:var(--muted); font-size:12px; text-decoration:none; padding:6px 10px;
+         border:1px solid transparent}
+  .nav a:hover{color:var(--text); border-color:var(--line-strong); background:var(--surface2)}
+  .lang{display:flex; border:1px solid var(--line-strong)}
+  .lang button{background:none; border:none; color:var(--muted); font:inherit;
+               font-size:11px; padding:5px 10px; cursor:pointer}
+  .lang button.on{background:var(--gold); color:#0A0A0C; font-weight:600}
+  main{max-width:940px; margin:0 auto; padding:26px 22px 80px}
+  .lead{color:var(--muted); font-size:14px; margin-bottom:26px}
+  /* comptes à rebours */
+  .cds{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+       gap:12px; margin-bottom:34px}
+  .cd{background:var(--surface); border:1px solid var(--line); padding:16px 18px;
+      position:relative; overflow:hidden}
+  .cd::after{content:""; position:absolute; left:0; top:0; bottom:0; width:2px;
+             background:var(--gold)}
+  .cd.b::after{background:var(--teal)}
+  .cd .k{font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
+         color:var(--faint)}
+  .cd .n{font-family:var(--mono); font-size:26px; color:var(--gold); margin:6px 0 2px;
+         font-variant-numeric:tabular-nums}
+  .cd.b .n{color:var(--teal)}
+  .cd .s{font-size:11.5px; color:var(--muted)}
+  .cd .h{font-family:var(--mono); font-size:11px; color:var(--text)}
+  /* sommaire */
+  .toc{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:34px}
+  .toc a{font-size:11.5px; color:var(--muted); text-decoration:none;
+         border:1px solid var(--line-strong); padding:5px 11px}
+  .toc a:hover{color:var(--gold); border-color:var(--gold)}
+  section{margin-bottom:38px; scroll-margin-top:74px}
+  section h2{font-size:15px; letter-spacing:.04em; margin-bottom:6px}
+  section h2 span{color:var(--gold); font-family:var(--mono); font-size:12px;
+                  margin-right:8px}
+  section p{font-size:13.5px; color:var(--muted); margin:10px 0}
+  section p b, li b{color:var(--text); font-weight:600}
+  section ol, section ul{margin:10px 0 10px 20px; font-size:13.5px; color:var(--muted)}
+  section li{margin:5px 0}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface2);
+       border:1px solid var(--line); padding:1px 6px; color:var(--text)}
+  table{width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px}
+  th{text-align:left; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+     color:var(--muted); font-weight:600; padding:6px 9px;
+     border-bottom:1px solid var(--line-strong)}
+  td{padding:6px 9px; border-bottom:1px solid rgba(255,255,255,.045);
+     color:var(--muted); vertical-align:top}
+  td:first-child{font-family:var(--mono); color:var(--text); white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .tag{font-family:var(--mono); font-size:11px; padding:1px 7px; border:1px solid}
+  .tag.g{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .tag.t{color:var(--teal); border-color:rgba(38,166,154,.5)}
+  .tag.r{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .note{background:var(--surface); border:1px solid var(--line);
+        border-left:2px solid var(--gold); padding:12px 15px; margin:14px 0;
+        font-size:12.5px; color:var(--muted)}
+  footer{border-top:1px solid var(--line); padding:18px 22px; text-align:center;
+         color:var(--faint); font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>THE</b>HUB · <span id="hTitle">Documentation</span></h1>
+  <nav class="nav">
+    <a href="/" id="nTerm">Terminal</a>
+    <a href="/dash" id="nDash">Dashboard</a>
+    <a href="/heatmap" id="nHeat">Heatmap</a>
+    <span class="lang">
+      <button id="bFr" class="on">FR</button><button id="bEn">EN</button>
+    </span>
+  </nav>
+</header>
+<main>
+  <p class="lead" id="lead"></p>
+
+  <div class="cds">
+    <div class="cd">
+      <div class="k" id="cd1k"></div>
+      <div class="n" id="cd1"></div>
+      <div class="s" id="cd1s"></div>
+      <div class="h" id="cd1h"></div>
+    </div>
+    <div class="cd b">
+      <div class="k" id="cd2k"></div>
+      <div class="n" id="cd2"></div>
+      <div class="s" id="cd2s"></div>
+      <div class="h" id="cd2h"></div>
+    </div>
+  </div>
+
+  <div class="toc" id="toc"></div>
+  <div id="body"></div>
+</main>
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+
+/* ───────── comptes à rebours (heure de Paris, du lundi au vendredi) ───────── */
+const WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function parisParts(){
+  const f = new Intl.DateTimeFormat("en-US", {timeZone:"Europe/Paris", hour12:false,
+    weekday:"short", hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  const p = {};
+  for (const x of f.formatToParts(new Date())) p[x.type] = x.value;
+  return p;
+}
+function secsUntil(hh, mm){
+  const p = parisParts();
+  const now = (+p.hour % 24) * 3600 + (+p.minute) * 60 + (+p.second);
+  let delta = hh * 3600 + mm * 60 - now;
+  let d = WD.indexOf(p.weekday);
+  if (delta <= 0){ delta += 86400; d = (d + 1) % 7; }
+  while (d === 0 || d === 6){ delta += 86400; d = (d + 1) % 7; }   // week-end
+  return delta;
+}
+function fmtDur(s){
+  const j = Math.floor(s / 86400); s %= 86400;
+  const h = String(Math.floor(s / 3600)).padStart(2, "0"); s %= 3600;
+  const m = String(Math.floor(s / 60)).padStart(2, "0");
+  const x = String(s % 60).padStart(2, "0");
+  return (j ? j + (LANG === "fr" ? " j " : "d ") : "") + h + ":" + m + ":" + x;
+}
+/* équivalent dans le fuseau du visiteur */
+function localOf(hh, mm){
+  const t = new Date(Date.now() + secsUntil(hh, mm) * 1000);
+  return t.toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-GB",
+                              {hour:"2-digit", minute:"2-digit"});
+}
+function tickCd(){
+  const L = T[LANG];
+  $("cd1").textContent = fmtDur(secsUntil(0, 11));
+  $("cd2").textContent = fmtDur(secsUntil(15, 25));
+  $("cd1h").textContent = L.cdLocal + " " + localOf(0, 11);
+  $("cd2h").textContent = L.cdLocal + " " + localOf(15, 25);
+}
+
+/* ───────── contenu ───────── */
+const T = {
+fr: {
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  lead:"Comment lire les niveaux, les exporter vers TradingView, et à quel rythme tout se met à jour.",
+  cd1k:"Prochain recalcul daily · Open + EM", cd1s:"00h11 Paris · du lundi au vendredi",
+  cd2k:"Prochaine publication gamma", cd2s:"15h25 Paris · du lundi au vendredi",
+  cdLocal:"chez toi :",
+  foot:"gexdash · TheHub — les niveaux sont fournis à titre informatif, ils ne constituent pas un conseil en investissement.",
+  secs:[
+  ["quoi","À quoi sert le terminal", `
+    <p>gexdash calcule chaque jour les <b>niveaux d'exposition gamma des dealers</b> pour le NQ, l'ES et le SPX, à partir des chaînes d'options du NDX et du SPX. Ces niveaux sont les prix où les market makers doivent couvrir leurs positions : c'est ce qui explique qu'ils agissent si souvent comme des aimants ou des murs.</p>
+    <p>Trois familles de niveaux sont produites, affichables séparément sur la chart, et exportables en une ligne vers TradingView.</p>
+    <p>Les prix sont convertis à l'échelle du future via la <b>basis</b> (l'écart indice ↔ future), recalibrée automatiquement en continu, pour que les niveaux tombent directement aux bons prix sur ton graphique NQ ou ES.</p>`],
+  ["boutons","Les trois boutons de la chart", `
+    <p>Au-dessus du graphique, trois chips activent chacun une famille de niveaux. Tu peux les combiner ou n'en garder qu'une.</p>
+    <p><span class="tag g">GEX</span> — la <b>structure gamma</b> du moment, recalculée une fois par jour à l'ouverture US.</p>
+    <table><tr><th>Code</th><th>Niveau</th><th>Lecture</th></tr>
+      <tr><td>CW</td><td>Call Wall</td><td>Plus grosse concentration de gamma call : plafond, résistance de référence.</td></tr>
+      <tr><td>PW</td><td>Put Wall</td><td>Plus grosse concentration de gamma put : plancher, support de référence.</td></tr>
+      <tr><td>CW0 / PW0</td><td>Walls 0DTE</td><td>Mêmes murs, mais sur les options du jour uniquement : très réactifs, décisifs en intraday.</td></tr>
+      <tr><td>Flip</td><td>Gamma Flip</td><td>Bascule gamma positif ↔ négatif. Au-dessus : volatilité amortie, mean reversion. En dessous : mouvements amplifiés, tendance.</td></tr>
+      <tr><td>HGEX</td><td>High GEX</td><td>Strike au gamma absolu maximal : zone de forte friction.</td></tr>
+      <tr><td>MP</td><td>Max Pain</td><td>Prix où le plus d'options expirent sans valeur.</td></tr>
+    </table>
+    <p><span class="tag t">EM · 1D</span> — l'<b>Expected Move</b> de la journée : l'amplitude que le marché price, dérivée de l'IV ATM (0,8σ), centrée sur le Daily Open. <code>EM+</code> et <code>EM−</code> bornent la journée « normale » ; des bandes intermédiaires (±50 %, ±150 %) affinent la lecture.</p>
+    <p><span class="tag r">Open</span> — la <b>grille σ ancrée sur l'ouverture Globex</b> : <code>σ±0.5</code> à <code>σ±3</code>, où σ est l'écart-type implicite du jour. Repères statistiques de distance parcourue depuis l'open.</p>
+    <div class="note">Sur la chart, chaque ligne porte son prix. Quand plusieurs niveaux se croisent, les plus importants restent affichés et les autres deviennent un point coloré — <b>approche la souris</b> (ou <b>touche l'écran</b> sur mobile) pour révéler celui que tu vises. Le tiroir ⚙ permet de choisir « Auto / Toujours / Au survol » et la taille du texte.</div>`],
+  ["tv","Exporter les niveaux vers TradingView", `
+    <p>Le terminal génère une <b>string Pine</b> qui contient tous les niveaux du jour. Elle s'injecte dans l'indicateur <b>GEX Daily Levels</b> :</p>
+    <ol>
+      <li>Ajoute l'indicateur à ton graphique (lien <b>TradingView</b> dans la barre du haut).</li>
+      <li>Sur le terminal, clique <b>⧉ Pine string</b> en haut à droite : la string est copiée dans le presse-papier.</li>
+      <li>Dans TradingView, ouvre les réglages de l'indicateur et colle la string dans le champ prévu.</li>
+      <li>Valide : tous les niveaux s'affichent, aux bons prix, sur ton graphique.</li>
+    </ol>
+    <p>À refaire une fois par jour, idéalement après la publication de 15h25. Choisis bien le marché (NQ / ES / SPX) avant de copier : la string est spécifique à l'instrument.</p>`],
+  ["dash","Le dashboard", `
+    <p>Le dashboard affiche <b>plusieurs graphiques côte à côte</b> — marchés et unités de temps différents, chacun avec ses propres niveaux.</p>
+    <ul>
+      <li>Ajoute une carte en choisissant le marché et l'unité de temps, puis réorganise-les à ta guise.</li>
+      <li>Chaque carte a ses propres chips GEX / EM / Open, indépendants.</li>
+      <li><b>Outils de dessin</b> intégrés : tes tracés sont conservés d'une session à l'autre.</li>
+      <li><b>Double-clic</b> sur un graphique pour le recentrer sur le prix.</li>
+    </ul>
+    <p>Les graphiques se recadrent automatiquement au changement de marché, et rechargent les bougies manquées quand tu reviens sur l'onglet après une absence.</p>`],
+  ["heat","La heatmap", `
+    <p>La page <b>Heatmap</b> présente le gamma sous forme d'échelle : les <b>strikes en lignes</b>, les <b>échéances en colonnes</b> (0DTE, 1DTE… puis le cumul). L'intensité de la couleur donne la magnitude, bleu pour le gamma négatif, orange pour le positif, et les extrêmes ressortent en jaune.</p>
+    <p>C'est la vue à privilégier pour repérer où la masse se concentre, et si un mur tient à une seule échéance ou à toutes.</p>`],
+  ["rythme","Le rythme des mises à jour", `
+    <p>Le principe est simple : <b>chaque famille de niveaux est recalculée au moment où son information existe, et jamais entre-temps</b>. Un niveau qui bouge sous tes pieds n'est pas un niveau.</p>
+    <table><tr><th>Heure (Paris)</th><th>Ce qui est recalculé</th><th>Ce qui ne bouge pas</th></tr>
+      <tr><td>00h11</td><td>Daily Open, grille σ et Expected Move, sur l'ouverture Globex de la nouvelle séance</td><td>Les niveaux gamma de la veille sont conservés — ce sont eux qui servent la session de Londres.</td></tr>
+      <tr><td>15h25</td><td>Toute la structure gamma, sur la chaîne d'options fraîche, juste avant l'ouverture US. Publication sur Discord.</td><td>Le bloc daily calculé la nuit est repris tel quel : l'Open et l'EM ne sautent pas à l'ouverture de New York.</td></tr>
+    </table>
+    <p>Après la publication de 15h25, les niveaux gamma sont <b>verrouillés automatiquement</b> jusqu'au lendemain. Un rafraîchissement en cours de journée met à jour le prix, la basis et l'IV, mais ne déplace aucun niveau.</p>
+    <p>Des exécutions de secours sont prévues si une tâche échoue : le système rattrape tout seul, sans jamais publier de niveaux périmés.</p>`],
+  ["prix","Le prix affiché", `
+    <p>Le graphique du terminal ne se contente pas du future retransmis avec délai : pendant la <b>séance américaine</b>, les bougies sont reconstruites à partir de l'ETF correspondant (QQQ pour le NQ, SPY pour l'ES et le SPX), converti à l'échelle du future. Le prix est alors <b>quasi temps réel</b>.</p>
+    <p>En dehors de la séance US — la nuit Globex, tôt le matin — l'ETF ne cote pas : on retombe sur le future, propre mais retardé de quelques minutes. C'est une limite des sources de données gratuites, pas un défaut de réglage.</p>
+    <p>L'écart indice ↔ future (la basis) est mesuré en continu et corrigé automatiquement, pour que le prix affiché colle au vrai NQ à quelques points près.</p>`],
+  ["faq","Questions fréquentes", `
+    <p><b>Je rafraîchis, les niveaux ne changent pas. Normal ?</b> Oui : après 15h25 ils sont volontairement verrouillés pour la journée. Seuls le prix, la basis et l'IV se mettent à jour.</p>
+    <p><b>Mon prix diffère légèrement de TradingView.</b> Normal en dehors de la séance US, où l'on affiche le future retardé. Pendant la séance, l'écart doit rester de l'ordre de un à deux points.</p>
+    <p><b>Les niveaux valent-ils pour tenir une position sur plusieurs jours ?</b> Non. Ce sont des repères intrajournaliers : la structure gamma est recalculée chaque jour et peut changer fortement d'une séance à l'autre.</p>
+    <p><b>Pourquoi l'Expected Move est-il centré sur l'ouverture et pas sur le prix actuel ?</b> Parce qu'il mesure l'amplitude attendue <b>de la séance</b>. Le centrer sur le prix courant le ferait glisser toute la journée et lui ferait perdre tout sens.</p>`]]
+},
+en: {
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  lead:"How to read the levels, export them to TradingView, and when everything updates.",
+  cd1k:"Next daily recompute · Open + EM", cd1s:"00:11 Paris · Monday to Friday",
+  cd2k:"Next gamma publication", cd2s:"15:25 Paris · Monday to Friday",
+  cdLocal:"your time:",
+  foot:"gexdash · TheHub — levels are provided for information only and are not investment advice.",
+  secs:[
+  ["quoi","What the terminal does", `
+    <p>gexdash computes the <b>dealer gamma exposure levels</b> for NQ, ES and SPX every day, from the NDX and SPX option chains. These are the prices where market makers must hedge — which is why they so often act as magnets or walls.</p>
+    <p>Three families of levels are produced, each toggled separately on the chart and exportable to TradingView in one line.</p>
+    <p>Prices are converted to futures scale through the <b>basis</b> (index ↔ futures spread), continuously auto-calibrated, so levels land at the right prices on your NQ or ES chart.</p>`],
+  ["boutons","The three chart buttons", `
+    <p>Above the chart, three chips each toggle a family of levels. Combine them or keep just one.</p>
+    <p><span class="tag g">GEX</span> — the current <b>gamma structure</b>, recomputed once a day before the US open.</p>
+    <table><tr><th>Code</th><th>Level</th><th>How to read it</th></tr>
+      <tr><td>CW</td><td>Call Wall</td><td>Largest call gamma concentration: ceiling, reference resistance.</td></tr>
+      <tr><td>PW</td><td>Put Wall</td><td>Largest put gamma concentration: floor, reference support.</td></tr>
+      <tr><td>CW0 / PW0</td><td>0DTE walls</td><td>Same walls on today's options only: highly reactive, decisive intraday.</td></tr>
+      <tr><td>Flip</td><td>Gamma Flip</td><td>Positive ↔ negative gamma switch. Above: dampened volatility, mean reversion. Below: amplified moves, trend.</td></tr>
+      <tr><td>HGEX</td><td>High GEX</td><td>Strike with peak absolute gamma: heavy friction zone.</td></tr>
+      <tr><td>MP</td><td>Max Pain</td><td>Price where the most options expire worthless.</td></tr>
+    </table>
+    <p><span class="tag t">EM · 1D</span> — the day's <b>Expected Move</b>: the range priced by the market, derived from ATM IV (0.8σ), centred on the Daily Open. <code>EM+</code> and <code>EM−</code> bound a "normal" day; intermediate bands (±50%, ±150%) refine the read.</p>
+    <p><span class="tag r">Open</span> — the <b>σ grid anchored on the Globex open</b>: <code>σ±0.5</code> through <code>σ±3</code>, σ being the day's implied standard deviation. Statistical markers of distance travelled from the open.</p>
+    <div class="note">Every line carries its price. When levels cluster, the most important stay labelled and the others become a coloured dot — <b>hover</b> (or <b>tap</b> on mobile) to reveal the one you're aiming at. The ⚙ drawer offers "Auto / Always / On hover" and text size.</div>`],
+  ["tv","Exporting levels to TradingView", `
+    <p>The terminal generates a <b>Pine string</b> holding every level of the day. It feeds the <b>GEX Daily Levels</b> indicator:</p>
+    <ol>
+      <li>Add the indicator to your chart (<b>TradingView</b> link in the top bar).</li>
+      <li>On the terminal, click <b>⧉ Pine string</b> at the top right — it is copied to your clipboard.</li>
+      <li>In TradingView, open the indicator settings and paste the string into the dedicated field.</li>
+      <li>Confirm: every level appears at the right price on your chart.</li>
+    </ol>
+    <p>Do it once a day, ideally after the 15:25 publication. Pick the right market (NQ / ES / SPX) before copying — the string is instrument-specific.</p>`],
+  ["dash","The dashboard", `
+    <p>The dashboard shows <b>several charts side by side</b> — different markets and timeframes, each with its own levels.</p>
+    <ul>
+      <li>Add a card by picking a market and a timeframe, then rearrange them freely.</li>
+      <li>Each card has its own independent GEX / EM / Open chips.</li>
+      <li>Built-in <b>drawing tools</b>: your drawings persist across sessions.</li>
+      <li><b>Double-click</b> a chart to recentre it on price.</li>
+    </ul>
+    <p>Charts reframe automatically when you switch market, and reload missed candles when you return to the tab after being away.</p>`],
+  ["heat","The heatmap", `
+    <p>The <b>Heatmap</b> page lays gamma out as a ladder: <b>strikes as rows</b>, <b>expiries as columns</b> (0DTE, 1DTE… then the aggregate). Colour intensity carries magnitude — blue for negative gamma, orange for positive, extremes in yellow.</p>
+    <p>It is the view of choice to spot where mass concentrates, and whether a wall rests on a single expiry or on all of them.</p>`],
+  ["rythme","Update schedule", `
+    <p>The principle is simple: <b>each family is recomputed when its information exists, and never in between</b>. A level that moves under your feet is not a level.</p>
+    <table><tr><th>Time (Paris)</th><th>Recomputed</th><th>Left untouched</th></tr>
+      <tr><td>00:11</td><td>Daily Open, σ grid and Expected Move, on the new session's Globex open</td><td>The previous day's gamma levels are kept — they are what serves the London session.</td></tr>
+      <tr><td>15:25</td><td>The whole gamma structure, on the fresh option chain, just before the US open. Published to Discord.</td><td>The daily block computed overnight is carried over: Open and EM do not jump at the New York open.</td></tr>
+    </table>
+    <p>After the 15:25 publication, gamma levels are <b>locked automatically</b> until the next day. An intraday refresh updates price, basis and IV, but moves no level.</p>
+    <p>Backup runs cover failures: the system self-heals and never publishes stale levels.</p>`],
+  ["prix","The displayed price", `
+    <p>The terminal chart does not settle for the delayed futures feed: during the <b>US session</b>, candles are rebuilt from the matching ETF (QQQ for NQ, SPY for ES and SPX) converted to futures scale. Price is then <b>near real time</b>.</p>
+    <p>Outside the US session — overnight Globex, early morning — the ETF does not trade, so we fall back to the futures feed: clean, but a few minutes delayed. That is a free-data limitation, not a misconfiguration.</p>
+    <p>The index ↔ futures spread (basis) is measured continuously and auto-corrected, keeping the displayed price within a couple of points of the real NQ.</p>`],
+  ["faq","FAQ", `
+    <p><b>I refresh and the levels don't change. Is that normal?</b> Yes — after 15:25 they are deliberately locked for the day. Only price, basis and IV update.</p>
+    <p><b>My price differs slightly from TradingView.</b> Expected outside the US session, where the delayed futures feed is shown. During the session the gap should stay within a point or two.</p>
+    <p><b>Can I hold a multi-day position on these levels?</b> No. They are intraday markers: the gamma structure is recomputed daily and can change sharply from one session to the next.</p>
+    <p><b>Why is the Expected Move centred on the open rather than the current price?</b> Because it measures the range expected <b>for the session</b>. Centring it on live price would make it drift all day and lose all meaning.</p>`]]
+}};
+
+function render(){
+  const L = T[LANG];
+  document.documentElement.lang = LANG;
+  $("hTitle").textContent = L.title;
+  $("nTerm").textContent = L.term;
+  $("nDash").textContent = L.dash;
+  $("nHeat").textContent = L.heat;
+  $("lead").textContent = L.lead;
+  $("cd1k").textContent = L.cd1k; $("cd1s").textContent = L.cd1s;
+  $("cd2k").textContent = L.cd2k; $("cd2s").textContent = L.cd2s;
+  $("foot").textContent = L.foot;
+  $("bFr").className = LANG === "fr" ? "on" : "";
+  $("bEn").className = LANG === "en" ? "on" : "";
+  $("toc").innerHTML = L.secs.map(s => `<a href="#${s[0]}">${s[1]}</a>`).join("");
+  $("body").innerHTML = L.secs.map((s, i) =>
+    `<section id="${s[0]}"><h2><span>${String(i + 1).padStart(2, "0")}</span>${s[1]}</h2>${s[2]}</section>`
+  ).join("");
+  tickCd();
+}
+function setLang(l){
+  LANG = l;
+  try{ localStorage.setItem("gexLang", l); }catch(_){}
+  render();
+}
+$("bFr").onclick = () => setLang("fr");
+$("bEn").onclick = () => setLang("en");
+render();
+setInterval(tickCd, 1000);
+</script>
+</body>
+</html>

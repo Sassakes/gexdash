@@ -187,6 +187,7 @@ def atm_straddle(data, spot, today=None):
 
 
 STRADDLE_SIGMA = 0.7979  # ATM straddle ~= 0.8 * sigma_daily * spot (BS)
+STRADDLE_EM = 0.8        # facteur EM affiché (validé contre référence externe)
 
 
 def _phi(x):
@@ -728,6 +729,49 @@ def refresh_daily_anchor(payload):
         return False
     payload["open_grid"] = grid
     payload["daily_refresh_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
+
+    # EM DAILY recalé sur le MÊME open que la grille. Il ne dépend que de
+    # (ancre, IV) — deux valeurs déjà rafraîchies ici — donc aucune donnée
+    # options nouvelle n'est requise. Sans ça, les bandes EM resteraient
+    # centrées sur l'open de la VEILLE pendant toute la session suivante.
+    iv = payload.get("iv_atm")
+    basis = payload.get("basis") or 0.0
+    if iv and float(iv) > 0:
+        anchor = grid["anchor"]
+        anchor_idx = anchor - basis
+        size = STRADDLE_EM * anchor_idx * float(iv) / math.sqrt(252)
+        em = dict(payload.get("expected_move") or {})
+        em.update({
+            "straddle": round(size, 2),
+            "em_pct": round(100.0 * size / anchor_idx, 3),
+            "anchor_idx": round(anchor_idx, 2),
+            "anchor": round(anchor, 1),
+            "sigma1d": round(anchor_idx * float(iv) / math.sqrt(252), 2),
+            "source": "0.8σ daily", "quality": "model",
+            "daily_refresh": True,
+        })
+        # le straddle de marché date de la clôture précédente : il ne décrit
+        # plus la séance qui commence, on ne le propage pas
+        em.pop("market_straddle", None)
+        em.pop("market_quality", None)
+        for b in (em.get("bands") or []):
+            b["high"] = round(anchor + size * b["pct"] / 100, 1)
+            b["low"] = round(anchor - size * b["pct"] / 100, 1)
+        payload["expected_move"] = em
+
+        # niveaux tracés : EM High/Low + bandes fractionnaires
+        for L in payload.get("levels", []):
+            k = L.get("kind")
+            if k == "emh":
+                L["price_nq"] = round(anchor + size, 1)
+            elif k == "eml":
+                L["price_nq"] = round(anchor - size, 1)
+            elif k == "emb":
+                m = re.match(r"EM ([+-])(\d+)%", L.get("label", ""))
+                if m:
+                    d = size * int(m.group(2)) / 100.0
+                    L["price_nq"] = round(anchor + (d if m.group(1) == "+" else -d), 1)
+
     rows = [(L["price_nq"], L["label"], L["kind"]) for L in payload.get("levels", [])]
     payload["pine"] = build_pine(rows, grid)
     return True
@@ -810,13 +854,16 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     market = atm_straddle(data, spot, today=today)
     em = None
     if iv is not None:
-        size = 0.8 * spot * iv / math.sqrt(252)
+        # Ancré ET dimensionné sur le Daily Open (et non sur le spot courant) :
+        # l'EM vaut alors exactement 0.8 x l'unité sigma de la grille Open, et
+        # il ne dépend plus de l'INSTANT du refresh — seule l'IV le fait varier.
         anchor_idx = (d_open - basis) if d_open is not None else spot
+        size = STRADDLE_EM * anchor_idx * iv / math.sqrt(252)
         em = {"straddle": round(size, 2),
-              "em_pct": round(100.0 * size / spot, 3),
+              "em_pct": round(100.0 * size / anchor_idx, 3),
               "anchor_idx": round(anchor_idx, 2),
               "anchor": round(anchor_idx + basis, 1),
-              "sigma1d": round(spot * iv / math.sqrt(252), 2),
+              "sigma1d": round(anchor_idx * iv / math.sqrt(252), 2),
               "iv_source": "override" if iv_override else
                             (iv_detail["mode"] if iv_detail else "none"),
               "source": "0.8σ daily", "quality": "model",
@@ -862,9 +909,10 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         inside100, touch100 = em_band_stats(1.0)
         em["prob_inside"] = inside100
         em["prob_touch_side"] = touch100
+        _a = em.get("anchor_idx", spot)
         for b in bands_meta:
-            b["high"] = round(spot + em["straddle"] * b["pct"] / 100 + basis, 1)
-            b["low"] = round(spot - em["straddle"] * b["pct"] / 100 + basis, 1)
+            b["high"] = round(_a + em["straddle"] * b["pct"] / 100 + basis, 1)
+            b["low"] = round(_a - em["straddle"] * b["pct"] / 100 + basis, 1)
         em["bands"] = bands_meta
     grid = open_grid(d_open, iv=iv, atr=atr14)
 
