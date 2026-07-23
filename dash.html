@@ -160,6 +160,16 @@
   }
   .cchips .led{width:5px; height:5px; border-radius:50%; background:#33333B; flex:none}
   .cchips button.on .led{background:var(--gold); box-shadow:0 0 5px var(--gold-glow)}
+  /* même code couleur que le terminal : or = GEX, teal = EM, violet = Open */
+  .cchips button[data-g="gex"] .led{background:rgba(240,185,11,.28)}
+  .cchips button[data-g="gex"].on{color:#F0B90B; border-color:rgba(240,185,11,.5)}
+  .cchips button[data-g="gex"].on .led{background:#F0B90B; box-shadow:0 0 6px rgba(240,185,11,.6)}
+  .cchips button[data-g="em"] .led{background:rgba(38,166,154,.28)}
+  .cchips button[data-g="em"].on{color:#26A69A; border-color:rgba(38,166,154,.5)}
+  .cchips button[data-g="em"].on .led{background:#26A69A; box-shadow:0 0 6px rgba(38,166,154,.6)}
+  .cchips button[data-g="open"] .led{background:rgba(139,92,246,.28)}
+  .cchips button[data-g="open"].on{color:#8B5CF6; border-color:rgba(139,92,246,.5)}
+  .cchips button[data-g="open"].on .led{background:#8B5CF6; box-shadow:0 0 6px rgba(139,92,246,.6)}
   .card .head .gh{display:flex}
   .card .head .gh .cgear{width:26px; height:26px; font-size:12px}
   .card .head .rm{

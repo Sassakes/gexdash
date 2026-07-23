@@ -93,6 +93,27 @@
   .chip.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
   .chip p{font-size:12.5px; color:var(--muted)}
 
+  /* blocs : sélecteur de familles interactif */
+  .fam{border:1px solid var(--line); background:var(--surface2)}
+  .famtabs{display:flex; flex-wrap:wrap; gap:0; border-bottom:1px solid var(--line)}
+  .famtabs button{
+    flex:1 1 150px; background:none; border:none; border-bottom:2px solid transparent;
+    color:var(--faint); font:inherit; font-size:12px; letter-spacing:.05em;
+    padding:13px 14px; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; gap:9px; transition:all .14s ease;
+  }
+  .famtabs button i{width:8px; height:8px; border-radius:50%; background:currentColor;
+                    opacity:.35; transition:opacity .14s ease}
+  .famtabs button:hover{color:var(--text); background:rgba(255,255,255,.02)}
+  .famtabs button.on{background:rgba(255,255,255,.03)}
+  .famtabs button.on i{opacity:1; box-shadow:0 0 8px currentColor}
+  .fampane{padding:16px 18px}
+  .fampane .fx{font-size:13px; color:var(--muted); margin-bottom:14px; max-width:70ch}
+  .fampane svg{width:100%; height:auto; display:block; background:#0C0C0F;
+               border:1px solid var(--line)}
+  .famcodes{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+            gap:8px; margin-top:14px}
+
   /* blocs : grille de codes */
   .codes{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:9px}
   .cx{display:flex; gap:12px; background:var(--surface2); border:1px solid var(--line);
@@ -250,21 +271,27 @@ fr: {
     {t:"note", x:"Les prix sont convertis à l'échelle du future via la <b>basis</b> (écart indice ↔ future), recalibrée automatiquement en continu : les niveaux tombent directement aux bons prix sur ton graphique NQ ou ES."}]},
 
   {id:"boutons", t:"Les trois familles de niveaux", b:[
-    {t:"p", x:"Au-dessus du graphique, trois boutons activent chacun une famille. Tu peux les combiner ou n'en garder qu'une."},
-    {t:"chips", items:[
-      {c:"g", tag:"GEX", x:"La structure gamma du moment. Recalculée <b>une fois par jour</b>, juste avant l'ouverture US."},
-      {c:"t", tag:"EM · 1D", x:"L'amplitude que le marché price pour la journée, dérivée de l'IV ATM (0,8σ), centrée sur le Daily Open."},
-      {c:"r", tag:"Open", x:"La grille σ ancrée sur l'ouverture Globex : repères statistiques de distance parcourue depuis l'open."}]},
-    {t:"h", x:"Les codes affichés sur la chart"},
-    {t:"codes", items:[
-      {k:"CW", n:"Call Wall", d:"Plus grosse concentration de gamma call : plafond, résistance de référence."},
-      {k:"PW", n:"Put Wall", d:"Plus grosse concentration de gamma put : plancher, support de référence."},
-      {k:"CW0 / PW0", n:"Walls 0DTE", d:"Mêmes murs, sur les options du jour uniquement. Très réactifs, décisifs en intraday."},
-      {k:"Flip", n:"Gamma Flip", d:"Bascule gamma positif ↔ négatif. Au-dessus : volatilité amortie. En dessous : mouvements amplifiés."},
-      {k:"HGEX", n:"High GEX", d:"Strike au gamma absolu maximal : zone de forte friction."},
-      {k:"MP", n:"Max Pain", d:"Prix où le plus grand nombre d'options expirent sans valeur."},
-      {k:"EM+ / EM−", n:"Expected Move", d:"Bornes de la journée « normale ». Bandes intermédiaires à ±50 % et ±150 %."},
-      {k:"σ±0.5 → 3", n:"Grille Open", d:"Multiples de l'écart-type implicite du jour, ancrés sur l'ouverture Globex."}]},
+    {t:"p", x:"Au-dessus du graphique, trois boutons activent chacun une famille. Chacune a sa <b>couleur</b>, reprise à l'identique sur le terminal et sur les cartes du dashboard. Clique une famille ci-dessous pour voir ce qu'elle trace."},
+    {t:"families", items:[
+      {k:"gex", tag:"GEX", x:"La structure gamma du moment, recalculée <b>une fois par jour</b> juste avant l'ouverture US. C'est la carte du terrain : où les market makers doivent couvrir, donc où le prix ralentit, rebondit ou accélère.",
+       codes:[
+        {k:"CW", n:"Call Wall", d:"Plus grosse concentration de gamma call : plafond, résistance de référence."},
+        {k:"PW", n:"Put Wall", d:"Plus grosse concentration de gamma put : plancher, support de référence."},
+        {k:"CW0 / PW0", n:"Walls 0DTE", d:"Mêmes murs, sur les options du jour uniquement. Très réactifs, décisifs en intraday."},
+        {k:"Flip", n:"Gamma Flip", d:"Bascule gamma positif ↔ négatif. Au-dessus : volatilité amortie. En dessous : mouvements amplifiés."},
+        {k:"HGEX", n:"High GEX", d:"Strike au gamma absolu maximal : zone de forte friction."},
+        {k:"MP", n:"Max Pain", d:"Prix où le plus grand nombre d'options expirent sans valeur."}]},
+      {k:"em", tag:"EM · 1D", x:"L'amplitude que le marché price pour la journée, dérivée de l'IV ATM (0,8σ) et centrée sur le Daily Open. Sortir de la bande signale une séance hors norme ; y revenir est le comportement le plus fréquent.",
+       codes:[
+        {k:"EM+ / EM−", n:"Expected Move", d:"Bornes de la journée « normale », calculées à l'ouverture et figées ensuite."},
+        {k:"EM ±50%", n:"Demi-bande", d:"Repère intermédiaire : souvent atteint en séance calme."},
+        {k:"EM ±150%", n:"Extension", d:"Au-delà : journée de forte expansion, régime différent."}]},
+      {k:"open", tag:"Open", x:"La grille des multiples de σ ancrée sur l'<b>ouverture Globex</b>, où σ est l'écart-type implicite du jour. Elle mesure la distance parcourue depuis l'open — un repère purement statistique, indépendant du positionnement des dealers.",
+       codes:[
+        {k:"Open", n:"Daily Open", d:"Ouverture de la séance Globex : l'ancre de toute la grille."},
+        {k:"σ±0.5", n:"Demi-écart-type", d:"Premier palier, franchi la plupart des séances."},
+        {k:"σ±1", n:"Un écart-type", d:"Séance déjà large : environ deux tiers des jours restent dedans."},
+        {k:"σ±2 → ±3", n:"Extrêmes", d:"Rarement atteints : journées de tendance ou d'événement."}]}]},
     {t:"note", x:"Chaque ligne porte son prix. Quand des niveaux se croisent, les plus importants restent affichés et les autres deviennent un point coloré : <b>approche la souris</b> (ou <b>touche l'écran</b> sur mobile) pour révéler celui que tu vises. Le tiroir ⚙ propose « Auto / Toujours / Au survol » et la taille du texte."}]},
 
   {id:"tv", t:"Exporter vers TradingView", b:[
@@ -333,21 +360,27 @@ en: {
     {t:"note", x:"Prices are converted to futures scale through the <b>basis</b> (index ↔ futures spread), continuously auto-calibrated, so levels land at the right prices on your NQ or ES chart."}]},
 
   {id:"boutons", t:"The three level families", b:[
-    {t:"p", x:"Above the chart, three buttons each toggle one family. Combine them or keep just one."},
-    {t:"chips", items:[
-      {c:"g", tag:"GEX", x:"The current gamma structure. Recomputed <b>once a day</b>, just before the US open."},
-      {c:"t", tag:"EM · 1D", x:"The range priced by the market for the day, derived from ATM IV (0.8σ), centred on the Daily Open."},
-      {c:"r", tag:"Open", x:"The σ grid anchored on the Globex open: statistical markers of distance travelled since the open."}]},
-    {t:"h", x:"Codes shown on the chart"},
-    {t:"codes", items:[
-      {k:"CW", n:"Call Wall", d:"Largest call gamma concentration: ceiling, reference resistance."},
-      {k:"PW", n:"Put Wall", d:"Largest put gamma concentration: floor, reference support."},
-      {k:"CW0 / PW0", n:"0DTE walls", d:"Same walls, today's options only. Highly reactive, decisive intraday."},
-      {k:"Flip", n:"Gamma Flip", d:"Positive ↔ negative gamma switch. Above: dampened volatility. Below: amplified moves."},
-      {k:"HGEX", n:"High GEX", d:"Strike with peak absolute gamma: heavy friction zone."},
-      {k:"MP", n:"Max Pain", d:"Price where the most options expire worthless."},
-      {k:"EM+ / EM−", n:"Expected Move", d:"Bounds of a normal day. Intermediate bands at ±50% and ±150%."},
-      {k:"σ±0.5 → 3", n:"Open grid", d:"Multiples of the day's implied standard deviation, anchored on the Globex open."}]},
+    {t:"p", x:"Above the chart, three buttons each toggle one family. Each has its own <b>colour</b>, used identically on the terminal and on the dashboard cards. Click a family below to see what it draws."},
+    {t:"families", items:[
+      {k:"gex", tag:"GEX", x:"The current gamma structure, recomputed <b>once a day</b> just before the US open. This is the map of the terrain: where market makers must hedge, hence where price stalls, bounces or accelerates.",
+       codes:[
+        {k:"CW", n:"Call Wall", d:"Largest call gamma concentration: ceiling, reference resistance."},
+        {k:"PW", n:"Put Wall", d:"Largest put gamma concentration: floor, reference support."},
+        {k:"CW0 / PW0", n:"0DTE walls", d:"Same walls, today's options only. Highly reactive, decisive intraday."},
+        {k:"Flip", n:"Gamma Flip", d:"Positive ↔ negative gamma switch. Above: dampened volatility. Below: amplified moves."},
+        {k:"HGEX", n:"High GEX", d:"Strike with peak absolute gamma: heavy friction zone."},
+        {k:"MP", n:"Max Pain", d:"Price where the most options expire worthless."}]},
+      {k:"em", tag:"EM · 1D", x:"The range priced by the market for the day, derived from ATM IV (0.8σ) and centred on the Daily Open. Leaving the band flags an unusual session; returning inside it is the most common behaviour.",
+       codes:[
+        {k:"EM+ / EM−", n:"Expected Move", d:"Bounds of a normal day, computed at the open then frozen."},
+        {k:"EM ±50%", n:"Half band", d:"Intermediate marker: often reached on quiet sessions."},
+        {k:"EM ±150%", n:"Extension", d:"Beyond it: strong expansion day, different regime."}]},
+      {k:"open", tag:"Open", x:"The σ multiples grid anchored on the <b>Globex open</b>, σ being the day's implied standard deviation. It measures distance travelled since the open — a purely statistical marker, independent of dealer positioning.",
+       codes:[
+        {k:"Open", n:"Daily Open", d:"Globex session open: the anchor of the whole grid."},
+        {k:"σ±0.5", n:"Half standard deviation", d:"First step, cleared on most sessions."},
+        {k:"σ±1", n:"One standard deviation", d:"Already a wide session: about two thirds of days stay inside."},
+        {k:"σ±2 → ±3", n:"Extremes", d:"Rarely reached: trend or event days."}]}]},
     {t:"note", x:"Every line carries its price. When levels cluster, the most important stay labelled and the others become a coloured dot: <b>hover</b> (or <b>tap</b> on mobile) to reveal the one you are aiming at. The ⚙ drawer offers \"Auto / Always / On hover\" and text size."}]},
 
   {id:"tv", t:"Exporting to TradingView", b:[
@@ -401,6 +434,58 @@ en: {
        a:"Backup runs take over shortly after. The system prefers keeping valid levels over publishing stale ones."}]}]}
 ]}};
 
+/* ───── aperçu interactif des familles de niveaux ───── */
+const FAM_COLOR = {gex:"#F0B90B", em:"#26A69A", open:"#8B5CF6"};
+const FAM_LINES = {
+  gex: [{p:29500, l:"CW", c:"#EF5350"}, {p:29350, l:"HGEX", c:"#8A8A94"},
+        {p:29180, l:"Flip", c:"#F0B90B"}, {p:28800, l:"PW", c:"#26A69A"}],
+  em:  [{p:29420, l:"EM+", c:"#26A69A"}, {p:29215, l:"EM +50%", c:"#1E6F68", d:1},
+        {p:29005, l:"EM −50%", c:"#1E6F68", d:1}, {p:28800, l:"EM−", c:"#26A69A"}],
+  open:[{p:29530, l:"σ+2", c:"#EF5350", d:1}, {p:29320, l:"σ+1", c:"#EF5350", d:1},
+        {p:29110, l:"Open", c:"#F0B90B", s:1}, {p:28900, l:"σ−1", c:"#26A69A", d:1},
+        {p:28690, l:"σ−2", c:"#26A69A", d:1}]
+};
+const FAM_PATH = [29105,29088,29120,29142,29118,29095,29070,29085,29130,29168,
+                  29195,29172,29140,29155,29188,29225,29260,29238,29205,29180,
+                  29160,29195,29230,29268,29245,29212,29190,29215,29250,29285,
+                  29262,29230,29205,29228,29255,29240,29218,29245,29270,29255];
+function famSvg(key){
+  const W = 620, H = 210, PAD = 92, LO = 28620, HI = 29600;
+  const Y = p => 14 + (HI - p) / (HI - LO) * (H - 30);
+  const pts = FAM_PATH.map((v, i) =>
+    `${16 + i * (W - PAD - 22) / (FAM_PATH.length - 1)},${Y(v).toFixed(1)}`).join(" ");
+  const lines = FAM_LINES[key].map(l => {
+    const y = Y(l.p).toFixed(1);
+    return `<line x1="10" y1="${y}" x2="${W - PAD}" y2="${y}" stroke="${l.c}"
+              stroke-width="${l.s ? 1.6 : 1}" ${l.d ? 'stroke-dasharray="4 4"' : ""}
+              opacity="${l.s ? .95 : .8}"/>
+            <text x="${W - PAD + 8}" y="${+y + 3.5}" fill="${l.c}"
+              font-family="IBM Plex Mono, monospace" font-size="10.5">${l.l}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">
+    ${lines}
+    <polyline points="${pts}" fill="none" stroke="#ECEAE4" stroke-width="1.4"
+      stroke-linejoin="round" opacity=".92"/>
+    <circle cx="${16 + (FAM_PATH.length - 1) * (W - PAD - 22) / (FAM_PATH.length - 1)}"
+      cy="${Y(FAM_PATH[FAM_PATH.length - 1]).toFixed(1)}" r="3" fill="#F0B90B"/>
+  </svg>`;
+}
+function famPane(fam){
+  return `<div class="fx">${fam.x}</div>${famSvg(fam.k)}
+    <div class="famcodes">${fam.codes.map(c =>
+      `<div class="cx"><div class="kk" style="color:${FAM_COLOR[fam.k]}">${c.k}</div>
+        <div><div class="nn">${c.n}</div><div class="dd">${c.d}</div></div></div>`).join("")}</div>`;
+}
+function wireFam(root){
+  const btns = root.querySelectorAll(".famtabs button");
+  btns.forEach(b => b.onclick = () => {
+    btns.forEach(x => x.classList.toggle("on", x === b));
+    const fam = FAM_DATA[b.dataset.k];
+    root.querySelector(".fampane").innerHTML = famPane(fam);
+  });
+}
+let FAM_DATA = {};
+
 /* ───── rendu des blocs ───── */
 function blockHtml(b){
   switch (b.t){
@@ -410,6 +495,14 @@ function blockHtml(b){
     case "note": return `<div class="note">${b.x}</div>`;
     case "chips": return `<div class="chips">${b.items.map(i =>
       `<div class="chip ${i.c}"><span class="tg">${i.tag}</span><p>${i.x}</p></div>`).join("")}</div>`;
+    case "families": {
+      b.items.forEach(f => { FAM_DATA[f.k] = f; });
+      return `<div class="fam" data-fam="1">
+        <div class="famtabs">${b.items.map((f, i) =>
+          `<button data-k="${f.k}" class="${i === 0 ? "on" : ""}"
+             style="color:${FAM_COLOR[f.k]}"><i></i>${f.tag}</button>`).join("")}</div>
+        <div class="fampane">${famPane(b.items[0])}</div></div>`;
+    }
     case "codes": return `<div class="codes">${b.items.map(i =>
       `<div class="cx"><div class="kk">${i.k}</div><div><div class="nn">${i.n}</div>
        <div class="dd">${i.d}</div></div></div>`).join("")}</div>`;
@@ -445,6 +538,8 @@ function render(){
   $("body").innerHTML = L.secs.map((s, i) =>
     `<section id="${s.id}"><div class="shead"><i>${String(i + 1).padStart(2, "0")}</i>
        <h3>${s.t}</h3></div><div class="sbody">${s.b.map(blockHtml).join("")}</div></section>`).join("");
+
+  document.querySelectorAll("[data-fam]").forEach(wireFam);
 
   /* surlignage de la section courante dans le sommaire */
   if (window._io) window._io.disconnect();

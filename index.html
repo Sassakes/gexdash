@@ -251,6 +251,30 @@
   }
   .chips button.on .led{background:var(--gold); box-shadow:0 0 7px var(--gold-glow)}
   .chips button:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  /* CODE COULEUR PAR FAMILLE : or = GEX, teal = EM, violet = Open.
+     La pastille garde une teinte même éteinte, pour identifier la famille
+     d'un coup d'œil sans avoir à l'activer. */
+  .chips button[data-g="gex"] .led{background:rgba(240,185,11,.28)}
+  .chips button[data-g="gex"]:hover{border-color:rgba(240,185,11,.45)}
+  .chips button[data-g="gex"].on{
+    color:#F0B90B; border-color:rgba(240,185,11,.5);
+    background:linear-gradient(180deg, rgba(240,185,11,.15), rgba(240,185,11,.05));
+  }
+  .chips button[data-g="gex"].on .led{background:#F0B90B; box-shadow:0 0 8px rgba(240,185,11,.6)}
+  .chips button[data-g="em"] .led{background:rgba(38,166,154,.28)}
+  .chips button[data-g="em"]:hover{border-color:rgba(38,166,154,.45)}
+  .chips button[data-g="em"].on{
+    color:#26A69A; border-color:rgba(38,166,154,.5);
+    background:linear-gradient(180deg, rgba(38,166,154,.15), rgba(38,166,154,.05));
+  }
+  .chips button[data-g="em"].on .led{background:#26A69A; box-shadow:0 0 8px rgba(38,166,154,.6)}
+  .chips button[data-g="open"] .led{background:rgba(139,92,246,.28)}
+  .chips button[data-g="open"]:hover{border-color:rgba(139,92,246,.45)}
+  .chips button[data-g="open"].on{
+    color:#8B5CF6; border-color:rgba(139,92,246,.5);
+    background:linear-gradient(180deg, rgba(139,92,246,.15), rgba(139,92,246,.05));
+  }
+  .chips button[data-g="open"].on .led{background:#8B5CF6; box-shadow:0 0 8px rgba(139,92,246,.6)}
 
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
