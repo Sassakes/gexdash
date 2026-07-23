@@ -946,6 +946,7 @@ function ensureChart(){
   const tzTop = $("tzTop");
   tzTop.value = PREFS.tz;
   tzTop.onchange = () => { PREFS.tz = tzTop.value; savePrefs(); loadBars(); };
+  enhanceAllSelects();          // liste déroulante thémée (le natif est rendu par l'OS)
   buildGearMenu($("gearHolder"), {
     applyColors: () => CHART.series.applyOptions({
       upColor:PREFS.up, downColor:PREFS.dn,

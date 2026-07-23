@@ -881,6 +881,7 @@ function firstFreeSpot(w, h){
 
 $("hTitle").textContent = tx("title");
 $("backLbl").textContent = tx("back");
+enhanceAllSelects();
 (async () => {
   try{
     const d = await (await fetch("/api/links")).json();

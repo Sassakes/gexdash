@@ -21,6 +21,117 @@ function tzShiftAs(tz, tSec){
   const utc = new Date(d.toLocaleString("en-US", {timeZone: "UTC"}));
   return tSec + Math.round((loc - utc) / 1000);
 }
+
+/* ══════════ SELECTS STYLÉS ══════════
+   Le <select> natif fait rendre sa liste par l'OS (fond blanc, surlignage
+   bleu système) : impossible à thémer. On garde donc le select d'origine
+   dans le DOM — masqué — et on pilote une liste maison par-dessus. Tout le
+   code existant qui lit .value ou écoute "change" continue de fonctionner
+   sans modification. */
+function injectSelectCss(){
+  if (document.getElementById("selCss")) return;
+  const s = document.createElement("style");
+  s.id = "selCss";
+  s.textContent = `
+  select.enh{position:absolute!important; opacity:0!important; pointer-events:none!important;
+             width:0!important; height:0!important; margin:0!important; padding:0!important}
+  .selw{position:relative; display:inline-flex}
+  .selb{display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+    background:var(--surface2,#16161A); border:1px solid var(--line,#212127);
+    color:var(--text,#ECEAE4); font:inherit; font-size:11.5px; padding:6px 10px;
+    min-height:30px; cursor:pointer; transition:border-color .12s ease, color .12s ease}
+  .selb:hover{border-color:var(--line-strong,#2E2E36); color:var(--gold,#F0B90B)}
+  .selw.open .selb{border-color:var(--gold,#F0B90B); color:var(--gold,#F0B90B)}
+  .selb .cv{font-size:8px; opacity:.65; transition:transform .14s ease}
+  .selw.open .selb .cv{transform:rotate(180deg)}
+  .sell{position:absolute; z-index:90; top:calc(100% + 4px); left:0; min-width:100%;
+    background:#0E0E12; border:1px solid var(--line-strong,#2E2E36);
+    box-shadow:0 14px 34px -12px rgba(0,0,0,.85); padding:3px; display:none;
+    max-height:min(60vh,320px); overflow-y:auto}
+  .sell.up{top:auto; bottom:calc(100% + 4px)}
+  .selw.open .sell{display:block}
+  .sell button{display:block; width:100%; text-align:left; background:none; border:none;
+    color:var(--muted,#8A8A94); font:inherit; font-size:11.5px; padding:8px 12px;
+    cursor:pointer; white-space:nowrap; border-left:2px solid transparent}
+  .sell button:hover{background:rgba(255,255,255,.05); color:var(--text,#ECEAE4)}
+  .sell button.on{color:var(--gold,#F0B90B); border-left-color:var(--gold,#F0B90B);
+    background:rgba(240,185,11,.08)}
+  @media (max-width:640px){
+    .selb{min-height:40px; font-size:13px; padding:8px 12px}
+    .sell button{padding:11px 14px; font-size:13px}
+  }`;
+  document.head.appendChild(s);
+}
+
+function enhanceSelect(sel){
+  if (!sel || sel.classList.contains("enh")) return;
+  injectSelectCss();
+  sel.classList.add("enh");
+  const w = document.createElement("span");
+  w.className = "selw";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "selb";
+  btn.setAttribute("aria-haspopup", "listbox");
+  const lab = document.createElement("span");
+  const cv = document.createElement("span");
+  cv.className = "cv"; cv.textContent = "▼";
+  btn.append(lab, cv);
+  const list = document.createElement("div");
+  list.className = "sell";
+  list.setAttribute("role", "listbox");
+  sel.parentNode.insertBefore(w, sel);
+  w.append(sel, btn, list);
+  if (sel.title) btn.title = sel.title;
+
+  const sync = () => {
+    const o = sel.options[sel.selectedIndex];
+    lab.textContent = o ? o.textContent : "";
+    list.querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.v === sel.value));
+  };
+  const build = () => {
+    list.innerHTML = "";
+    for (const o of sel.options){
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.v = o.value;
+      b.textContent = o.textContent;
+      b.onclick = e => {
+        e.stopPropagation();
+        sel.value = o.value;
+        sel.dispatchEvent(new Event("change", {bubbles: true}));
+        close(); sync();
+      };
+      list.appendChild(b);
+    }
+    sync();
+  };
+  const close = () => { w.classList.remove("open"); list.classList.remove("up"); };
+  btn.onclick = e => {
+    e.stopPropagation();
+    document.querySelectorAll(".selw.open").forEach(x => {
+      if (x !== w) x.classList.remove("open");
+    });
+    const opening = !w.classList.contains("open");
+    w.classList.toggle("open", opening);
+    if (opening){
+      // s'ouvre vers le haut s'il n'y a pas la place en dessous
+      const r = btn.getBoundingClientRect();
+      list.classList.toggle("up", window.innerHeight - r.bottom < 190 && r.top > 190);
+    }
+  };
+  document.addEventListener("click", close);
+  sel.addEventListener("change", sync);
+  sel._sync = sync;
+  build();
+  sel._rebuild = build;
+}
+
+function enhanceAllSelects(root){
+  (root || document).querySelectorAll("select:not(.enh)").forEach(enhanceSelect);
+}
+
 function tzShift(tSec){ return tzShiftAs(PREFS.tz, tSec); }
 
 const CANDLE_PAIRS = [
@@ -227,6 +338,7 @@ function renderDrawer(){
     LVSHOW[b.dataset.lv] = !LVSHOW[b.dataset.lv];
     saveLvShow(); callHooks("onLevelsChanged"); renderDrawer();
   });
+  enhanceAllSelects(dr);
   dr.querySelectorAll("[data-lmd]").forEach(b => b.onclick = () => {
     PREFS.lblMode = b.dataset.lmd; savePrefs();
     callHooks("applyLabelSize"); renderDrawer();
