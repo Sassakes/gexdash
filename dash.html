@@ -468,6 +468,7 @@ function drawCardLabels(host){
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
   }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -679,10 +680,9 @@ async function mountCard(cfg, host){
   host._lblCv = lbl;
   new ResizeObserver(es => {
     const r = es[0].contentRect;
-    if (!r.width || !r.height) return;
-    host._cvW = r.width; host._cvH = r.height;
+    if (r.width && r.height){ host._cvW = r.width; host._cvH = r.height; }
     drawCardLabels(host);
-  }).observe(lbl);
+  }).observe(box);
   chart.timeScale().subscribeVisibleLogicalRangeChange(
     () => { drawSess(host); drawCardLabels(host); });
   chart.subscribeCrosshairMove(p => {

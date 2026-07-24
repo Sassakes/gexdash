@@ -1008,12 +1008,7 @@ async function loadBars(){
       CHART.lblCv.style.cssText =
         "position:absolute;inset:0;pointer-events:none;z-index:3";
       $("chartBox").appendChild(CHART.lblCv);
-      new ResizeObserver(es => {
-        const r = es[0].contentRect;
-        if (!r.width || !r.height) return;
-        CHART._boxW = r.width; CHART._boxH = r.height;
-        if (CHART._paint) CHART._paint();
-      }).observe(CHART.lblCv);
+
       /* Redessins COALESCÉS : la souris peut émettre des dizaines
          d'événements par seconde ; on n'exécute au plus qu'un rendu par
          frame d'affichage, ce qui suffit à l'œil et divise le travail. */
@@ -1025,9 +1020,12 @@ async function loadBars(){
       };
       const redraw = CHART._paint;
       CHART.chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
-      new ResizeObserver(() => {
-        const b = $("chartBox");
-        CHART._boxW = b.clientWidth; CHART._boxH = b.clientHeight;
+      // Le conteneur est la source de vérité : contentRect donne sa taille
+      // sans forcer de recalcul de mise en page, et le canevas étant en
+      // position absolue il n'influe pas dessus — aucune rétroaction possible.
+      new ResizeObserver(es => {
+        const r = es[0].contentRect;
+        if (r.width && r.height){ CHART._boxW = r.width; CHART._boxH = r.height; }
         redraw();
       }).observe($("chartBox"));
 
@@ -1189,7 +1187,12 @@ function drawLevelLabels(){
   const w = CHART._boxW || box.clientWidth, h = CHART._boxH || box.clientHeight;
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    // bitmap à la résolution de l'écran, ET taille CSS à la taille réelle :
+    // il faut les DEUX. Sans la taille CSS le canevas prend la dimension de
+    // son bitmap (3x trop large sur mobile) et le dessin part hors écran ;
+    // sans le facteur dpr, le rendu est flou.
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + "px"; cv.style.height = h + "px";
   }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
