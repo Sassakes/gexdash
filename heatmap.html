@@ -10,166 +10,499 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
-    --line:#212127; --line-strong:#2E2E36;
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
+    --line:#212127; --line-strong:#2B2B33;
     --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
-    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
+    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12); --gold-glow:rgba(240,185,11,.30);
+    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350;
+    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
   }
   *{box-sizing:border-box; margin:0}
-  body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
-  header{
-    display:flex; align-items:center; gap:18px; padding:14px 22px;
-    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5;
-  }
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden}
+
+  header{display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
   header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
   header h1 b{color:var(--gold)}
   header a{color:var(--muted); font-size:12px; text-decoration:none}
   header a:hover{color:var(--gold)}
-  #upd{margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--faint)}
-  .wrap{display:flex; gap:14px; padding:14px 22px; align-items:flex-start; flex-wrap:wrap}
-  .panel{
-    flex:1 1 460px; min-width:420px; background:var(--surface);
-    border:1px solid var(--line);
-  }
-  .tblwrap{overflow-x:auto; -webkit-overflow-scrolling:touch}
-  @media (max-width:900px){
-    .wrap{padding:10px 12px; gap:10px}
-    .panel{flex:1 1 100%; min-width:0}          /* plus de débordement */
-    header{padding:12px 14px}
-    thead th{top:45px; font-size:8.5px; padding:6px 3px}
-    tbody td{font-size:9.5px; height:19px; padding:0 3px}
-    tbody td.px{font-size:10px; padding-right:6px}
-    .phead{padding:9px 12px}
-    .phead .src{display:none}                   /* libellé long inutile ici */
-  }
-  .phead{
-    display:flex; align-items:baseline; gap:12px; padding:10px 14px;
-    border-bottom:1px solid var(--line);
-  }
-  .phead .sym{font-size:14px; font-weight:600; letter-spacing:.08em}
-  .phead .px{font-family:var(--mono); font-size:14px; color:var(--gold)}
-  .phead .src{margin-left:auto; font-size:9.5px; letter-spacing:.14em;
-              text-transform:uppercase; color:var(--faint)}
+  .langsel{margin-left:auto; display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
+  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em}
+  .langsel button+button{border-left:1px solid var(--line-strong)}
+  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
+
+  .toolbar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:9px 20px;
+    border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
+  .tgroup{display:flex; align-items:center; gap:8px}
+  .tdiv{width:1px; height:20px; background:var(--line-strong)}
+  .tlabel{font-size:9px; letter-spacing:.16em; color:var(--faint); text-transform:uppercase}
+  .seg{display:flex; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; background:var(--surface2)}
+  .seg button{font-family:var(--mono); font-size:11px; color:var(--muted); background:transparent; border:0; padding:5px 11px; cursor:pointer; letter-spacing:.03em; transition:background .12s,color .12s}
+  .seg button+button{border-left:1px solid var(--line-strong)}
+  .seg button:hover{color:var(--text); background:rgba(255,255,255,.03)}
+  .seg.assets button{font-size:11.5px; font-weight:600; padding:5px 14px; letter-spacing:.06em}
+  .seg.assets button.on{background:var(--teal-soft); color:var(--teal)}
+  .seg.chips{flex-wrap:wrap; border:0; background:transparent; gap:5px}
+  .seg.chips button{border:1px solid var(--line-strong); border-radius:5px; padding:4px 8px; font-size:10px; background:var(--surface2)}
+  .seg.chips button.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .toggle{font-family:var(--mono); font-size:11px; color:var(--muted); background:var(--surface2); border:1px solid var(--line-strong); border-radius:6px; padding:5px 11px; cursor:pointer; display:inline-flex; align-items:center; gap:5px}
+  .toggle.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .toggle.lockon{background:var(--teal-soft); color:var(--teal); border-color:rgba(38,166,154,.45)}
+  .iconbtn{width:26px; height:26px; border-radius:50%; border:1px solid var(--line-strong); background:var(--surface2); color:var(--muted); font-family:var(--sans); font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center}
+  .iconbtn:hover, .iconbtn.on{color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .tspacer{flex:1}
+  .sess{display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted); letter-spacing:.08em}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--faint); display:inline-block}
+  .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
+  .dot.pre,.dot.post{background:var(--gold)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .dd{position:relative; display:inline-flex}
+  .dd-trig{font-family:var(--mono); font-size:11.5px; color:var(--gold); background:var(--surface2);
+    border:1px solid var(--line-strong); border-radius:6px; padding:4px 9px; cursor:pointer; display:flex; align-items:center; gap:6px; min-width:44px; justify-content:center; white-space:nowrap}
+  .dd-trig .car{color:var(--muted); font-size:8px}
+  .dd.open .dd-trig{border-color:rgba(240,185,11,.5)}
+  .dd-menu{position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:60; min-width:100%;
+    background:var(--surface3); border:1px solid var(--line-strong); border-radius:9px; box-shadow:0 12px 30px rgba(0,0,0,.6);
+    padding:5px; max-height:230px; overflow-y:auto; display:none; flex-direction:column; gap:2px; scrollbar-width:thin}
+  .dd.open .dd-menu{display:flex}
+  .dd-menu::-webkit-scrollbar{width:6px} .dd-menu::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:3px}
+  .dd-opt{font-family:var(--mono); font-size:12px; color:var(--muted); background:none; border:0; border-radius:6px;
+    padding:7px 15px; cursor:pointer; text-align:center; white-space:nowrap; transition:background .1s,color .1s}
+  .dd-opt:hover{background:rgba(255,255,255,.06); color:var(--text)}
+  .dd-opt.on{background:var(--gold-soft); color:var(--gold); font-weight:600}
+
+  /* help bubble — anchored to the ? button via JS */
+  .help{position:fixed; z-index:40; width:300px; max-width:calc(100vw - 24px);
+    background:var(--surface3); border:1px solid var(--line-strong); border-radius:10px; box-shadow:0 14px 36px rgba(0,0,0,.6); padding:14px 15px}
+  .help[hidden]{display:none}
+  .help::after{content:""; position:absolute; top:-6px; right:var(--caret,18px); width:11px; height:11px;
+    background:var(--surface3); border-left:1px solid var(--line-strong); border-top:1px solid var(--line-strong); transform:rotate(45deg)}
+  .help h3{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin-bottom:8px}
+  .help p{font-size:11.5px; line-height:1.5; color:var(--text); margin-bottom:8px}
+  .help .row{display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:10.5px; color:var(--muted); margin:3px 0}
+  .help .sw{width:13px; height:13px; border-radius:3px; flex:none}
+  .help .cx{font-size:8px; font-weight:600; padding:1px 4px; border:1px solid; border-radius:3px}
+
+  .wrap{display:flex; gap:14px; padding:14px 20px; align-items:stretch; flex-wrap:nowrap; height:calc(100vh - 116px)}
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:7px; overflow:hidden; display:flex; flex-direction:column; flex:1 1 0; min-width:0}
+  .panel.off{display:none}
+  .wrap.n1 tbody td{height:24px; font-size:11.5px} .wrap.n1 thead th{font-size:10.5px; padding:8px 6px}
+  .wrap.n1 .cell{padding:3px 9px} .wrap.n1 .phead .px{font-size:18px}
+  .wrap.n2 tbody td{height:22px; font-size:11px} .wrap.n2 .phead .px{font-size:16px}
+
+  .phead{display:flex; align-items:center; gap:9px; padding:9px 13px; border-bottom:1px solid var(--line); flex-wrap:wrap; flex:none}
+  .phead .sym{font-size:14px; font-weight:600; letter-spacing:.10em}
+  .phead .px{font-family:var(--mono); font-size:15px; color:var(--gold); font-weight:500}
+  .pxstate{font-family:var(--mono); font-size:8.5px; letter-spacing:.10em; padding:2px 6px; border-radius:4px; text-transform:uppercase}
+  .pxstate.live{color:var(--teal); background:var(--teal-soft)}
+  .pxstate.live::before{content:"●"; margin-right:4px; animation:pulse 1.8s infinite; display:inline-block}
+  .pxstate.delay{color:var(--faint); background:rgba(255,255,255,.03)}
+  .pas{display:flex; align-items:center; gap:6px}
+  .phead .meta{margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--muted); text-align:right}
+  .phead .meta b{font-weight:600}
+  .reg{padding:1px 6px; border-radius:3px; font-size:9px; letter-spacing:.06em; text-transform:uppercase}
+  .reg.negative{color:var(--red); background:rgba(239,83,80,.12)}
+  .reg.positive{color:var(--teal); background:rgba(38,166,154,.12)}
+
+  .tblwrap{flex:1; overflow-y:auto; overflow-x:auto; -webkit-overflow-scrolling:touch}
+  .tblwrap::-webkit-scrollbar{width:8px; height:8px} .tblwrap::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:4px}
   table{width:100%; border-collapse:collapse; font-family:var(--mono)}
-  thead th{
-    position:sticky; top:49px; background:var(--surface2); z-index:2;
-    font-size:9px; letter-spacing:.14em; color:var(--muted); font-weight:500;
-    padding:7px 4px; border-bottom:1px solid var(--line-strong); text-align:center;
+  thead th{position:sticky; top:0; background:var(--surface2); z-index:2; font-size:9px; letter-spacing:.12em; color:var(--muted); font-weight:500; padding:6px 4px; border-bottom:1px solid var(--line-strong); text-align:center}
+  thead th:first-child, tbody td.px{width:1px; white-space:nowrap; text-align:right; padding-right:10px; border-right:1px solid var(--line)}
+  tbody td{font-size:10px; padding:0 4px; height:20px; text-align:center; white-space:nowrap}
+  tbody td.px{color:var(--muted); font-size:10.5px}
+  tr.live td.px{color:var(--gold); font-weight:600}
+  tr.live{outline:1px solid var(--gold-glow); outline-offset:-1px; background:rgba(240,185,11,.04)}
+  .cell{display:block; padding:2px 5px; border-radius:2px}
+  .cell.dim{opacity:.14}
+  .chip{font-size:7.5px; font-weight:600; padding:1px 3px; margin-right:5px; border:1px solid; border-radius:3px; letter-spacing:.02em; vertical-align:middle}
+  .loading{padding:50px; text-align:center; color:var(--faint); font-size:12px}
+  .err{padding:34px; text-align:center; color:var(--red); font-size:12px}
+
+  @media (max-width:560px){
+    header{padding:11px 14px; gap:9px}
+    .toolbar{gap:7px; padding-top:9px; padding-bottom:9px}
+    .toolbar .grp{flex:1 1 100%}
+    .dd button, .toolbar button{min-height:40px; font-size:12.5px}
+    .panel .phead{padding:9px 12px}
+    thead th{font-size:8.5px; padding:6px 3px}
+    tbody td{font-size:9.5px; padding:0 3px}
+    .tblwrap{max-height:60vh}
   }
-  thead th:first-child{text-align:right; padding-right:10px}
-  tbody td{
-    font-size:10px; padding:0 4px; height:21px; text-align:center;
-    color:var(--text); white-space:nowrap;
+  @media (max-width:900px){
+    body{overflow:auto; height:auto}
+    header,.toolbar{padding-left:14px; padding-right:14px}
+    .wrap{flex-wrap:wrap; height:auto; padding:10px 12px; gap:10px}
+    .panel{flex:1 1 100%}
+    .tblwrap{max-height:70vh}
   }
-  tbody td.px{
-    text-align:right; padding-right:10px; color:var(--muted); font-size:10.5px;
-    border-right:1px solid var(--line);
-  }
-  tr.spot td.px{color:var(--gold); font-weight:600}
-  tr.spot{outline:1px solid rgba(240,185,11,.55); outline-offset:-1px}
-  .cell{display:block; padding:3px 6px; border-radius:1px}
-  .loading{padding:60px; text-align:center; color:var(--faint); font-size:12px}
-  .err{padding:40px; text-align:center; color:var(--red); font-size:12px}
 </style>
 </head>
 <body>
 <header>
   <h1><b>GEX</b>DASH · HEATMAP</h1>
-  <a href="/">Terminal</a>
-  <a href="/dash">Dashboard</a>
-  <span id="upd"></span>
+  <a href="/" id="navTerm">Terminal</a>
+  <a href="/dash" id="navDash">Dashboard</a>
+  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
-<div class="wrap">
-  <section class="panel" id="pNQ">
-    <div class="phead"><span class="sym">NQ</span><span class="px" id="pxNQ">—</span>
-      <span class="src">chaîne NDX · net GEX $/strike/échéance</span></div>
-    <div class="loading">Chargement…</div>
-  </section>
-  <section class="panel" id="pES">
-    <div class="phead"><span class="sym">ES</span><span class="px" id="pxES">—</span>
-      <span class="src">chaîne SPX · net GEX $/strike/échéance</span></div>
-    <div class="loading">Chargement…</div>
-  </section>
+
+<div class="toolbar">
+  <div class="seg assets" id="segAssets">
+    <button data-a="NQ" class="on">NQ</button>
+    <button data-a="ES" class="on">ES</button>
+    <button data-a="SPX" class="on">SPX</button>
+  </div>
+  <span class="tdiv"></span>
+  <div class="tgroup"><span class="tlabel" id="lblScale">Échelle</span><span id="ddRange"></span></div>
+  <div class="tgroup"><span class="tlabel" id="lblFilter">Filtre</span><span id="ddFilter"></span></div>
+  <div class="tgroup"><span class="tlabel" id="lblExp">Échéances</span><div class="seg chips" id="expiries"></div></div>
+  <button class="toggle on" id="btnOverlay">◈ <span id="lblOverlay">Niveaux</span></button>
+  <button class="toggle" id="btnLock"><span class="lk">🔓</span> <span id="lblLock">Sync</span></button>
+  <button class="iconbtn" id="btnHelp" aria-label="help">?</button>
+  <span class="tspacer"></span>
+  <span class="sess"><i class="dot" id="sessDot"></i><span id="sessTxt">—</span></span>
+  <span id="upd" style="font-family:var(--mono);font-size:10px;color:var(--faint)"></span>
 </div>
+
+<div class="help" id="help" hidden></div>
+
+<div class="wrap" id="wrap">
+  <section class="panel" id="pNQ"><div class="phead"><span class="sym">NQ</span><span class="px" id="pxNQ">—</span><span class="pxstate" id="stNQ"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddNQ"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
+  <section class="panel" id="pES"><div class="phead"><span class="sym">ES</span><span class="px" id="pxES">—</span><span class="pxstate" id="stES"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddES"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
+  <section class="panel" id="pSPX"><div class="phead"><span class="sym">SPX</span><span class="px" id="pxSPX">—</span><span class="pxstate" id="stSPX"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddSPX"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
+</div>
+
 <script>
 "use strict";
-const $ = id => document.getElementById(id);
+const $  = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const TARGETS = ["NQ", "ES", "SPX"];
+const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
 
-/* format $ compact façon terminal */
-function fmt$(v){
-  const a = Math.abs(v), s = v < 0 ? "-" : "";
+const GRAN_STEPS  = [20, 10, 5];                 // Easy / Medium / Expert (points)
+const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
+const FILTER_OPTS = [0, 1e6, 5e6, 1e7, 2.5e7, 5e7];
+
+const T = {
+  fr: { term:"Terminal", dash:"Dashboard", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
+    filter:"Filtre", filterOff:"Off", lock:"Sync", gEasy:"Facile", gMed:"Moyen", gExpert:"Expert",
+    live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
+    pxLive:"live", pxDelay:"différé", dUnit:"j", hUnit:"h", snap:"snap", upd:"maj", unavail:"Indisponible",
+    helpTitle:"Lire la heatmap",
+    helpIntro:"Chaque cellule = gamma net des dealers à ce strike × échéance. La couleur donne le signe et l'intensité ; les puces marquent les niveaux GEX clés. Scrolle dans la grille pour voir les strikes au-dessus / en dessous.",
+    helpLive:"Le prix est différé en dehors de la séance US et ne passe LIVE que pendant la séance (RTH, 9h30–16h ET). Le compte à rebours indique le temps restant avant la prochaine ouverture.",
+    helpFilter:"Le filtre masque les cellules dont le gamma est inférieur au seuil : seules les grosses zones (au-dessus de +X ou sous −X) restent visibles. « Sync » lie le défilement des trois actifs.",
+    cPos:"gamma positif — marché amorti, effet aimant", cNeg:"gamma négatif — mouvements amplifiés", cExt:"magnitude extrême (≥ p99 de la colonne)",
+    lCW:"Call Wall — résistance", lPW:"Put Wall — support", lFlip:"Gamma Flip — bascule +/−γ", lMP:"Max Pain", lEM:"Expected Move ▲/▼",
+    tip:"Sélectionne 1, 2 ou 3 actifs — la page s'ajuste toute seule." },
+  en: { term:"Terminal", dash:"Dashboard", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
+    filter:"Filter", filterOff:"Off", lock:"Sync", gEasy:"Easy", gMed:"Medium", gExpert:"Expert",
+    live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
+    pxLive:"live", pxDelay:"delayed", dUnit:"d", hUnit:"h", snap:"snap", upd:"upd", unavail:"Unavailable",
+    helpTitle:"Reading the heatmap",
+    helpIntro:"Each cell = dealer net gamma at that strike × expiry. Colour shows sign and intensity; chips mark the key GEX levels. Scroll inside the grid to see strikes above / below.",
+    helpLive:"The price is delayed outside the US session and only flips LIVE during the session (RTH, 9:30–16:00 ET). The countdown shows the time left until the next open.",
+    helpFilter:"The filter hides cells whose gamma is below the threshold: only the big zones (above +X or below −X) stay visible. “Sync” locks the scroll of all three assets together.",
+    cPos:"positive gamma — dampened, magnet effect", cNeg:"negative gamma — moves amplified", cExt:"extreme magnitude (≥ column p99)",
+    lCW:"Call Wall — resistance", lPW:"Put Wall — support", lFlip:"Gamma Flip — +/−γ switch", lMP:"Max Pain", lEM:"Expected Move ▲/▼",
+    tip:"Pick 1, 2 or 3 assets — the page auto-fits." },
+};
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+if (!T[LANG]) LANG = "fr";
+const t = k => T[LANG][k];
+
+const PREFS = { range:25, cols:null, overlay:true, filter:0, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
+try{ const a = (localStorage.getItem("hmAssets")||"").split(",").filter(Boolean);
+     if (a.length) PREFS.assets = new Set(a.filter(x => TARGETS.includes(x))); }catch(_){}
+try{ const g = JSON.parse(localStorage.getItem("hmGran")||"null"); if (g) Object.assign(PREFS.gran, g); }catch(_){}
+try{ PREFS.lock = localStorage.getItem("hmLock") === "1"; }catch(_){}
+const CACHE = {}, centered = new Set(), DDS = [];
+
+const num = v => Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
+function fmt$(v){ const a = Math.abs(v), s = v < 0 ? "-" : "";
   if (a >= 1e9) return `$${s}${(a/1e9).toFixed(1)}B`;
   if (a >= 1e6) return `$${s}${(a/1e6).toFixed(1)}M`;
   if (a >= 1e3) return `$${s}${(a/1e3).toFixed(0)}k`;
-  if (a > 0)    return `$${s}${a.toFixed(0)}`;
-  return "";
-}
+  return a > 0 ? `$${s}${a.toFixed(0)}` : ""; }
 
-/* couleur de cellule : bleus = négatif, orange/rouge = positif,
-   jaune incandescent = extrêmes (>= p99 de la colonne) */
 function cellStyle(v, p95, p99){
   if (!v || !p95) return "";
-  const r = Math.min(1, Math.abs(v) / p95);
-  const t = Math.pow(r, 0.7);
-  if (Math.abs(v) >= p99)
-    return "background:#F5CE42;color:#0A0A0C;font-weight:600;" +
-           "box-shadow:0 0 10px rgba(245,206,66,.5)";
-  if (v > 0){
-    const R = Math.round(48 + 200 * t), G = Math.round(22 + 90 * t), B = 12;
-    return `background:rgb(${R},${G},${B});color:${t > .55 ? "#0A0A0C" : "#E8C9A0"}`;
+  const x = Math.pow(Math.min(1, Math.abs(v) / p95), 0.7);
+  if (Math.abs(v) >= p99) return "background:#F0B90B;color:#0A0A0C;font-weight:600;box-shadow:0 0 9px rgba(240,185,11,.45)";
+  if (v > 0){ const R=Math.round(15+23*x), G=Math.round(26+140*x), B=Math.round(24+130*x);
+    return `background:rgb(${R},${G},${B});color:${x>.5?"#05140F":"#7FCDBF"}`; }
+  const R=Math.round(28+211*x), G=Math.round(18+65*x), B=Math.round(18+62*x);
+  return `background:rgb(${R},${G},${B});color:${x>.5?"#1C0707":"#E6A6A4"}`;
+}
+function pct(a, q){ return a.length ? a[Math.min(a.length-1, Math.floor(a.length*q))] : 0; }
+
+const KEEP = {res:1, sup:1, res0:1, sup0:1, flip:1, mpain:1, emh:1, eml:1};
+const KCOL = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, mpain:"#B9903A", emh:C.muted, eml:C.muted};
+const KLAB = {res:"CW", sup:"PW", res0:"CW·0", sup0:"PW·0", flip:"FLIP", mpain:"MAXPAIN", emh:"EM▲", eml:"EM▼"};
+function parseLevels(pine){ if (!pine) return [];
+  return pine.split(";").map(s => { const [p,,k] = s.split(","); return {price:+p, kind:k}; })
+             .filter(x => KEEP[x.kind] && isFinite(x.price)); }
+
+function windowRows(rows, price, range){
+  if (!range) return rows;
+  let idx = 0, best = Infinity;
+  rows.forEach((r, i) => { const d = Math.abs(r.p - price); if (d < best){ best = d; idx = i; } });
+  return rows.slice(Math.max(0, idx - range), idx + range + 1);
+}
+function nativeStep(rows){
+  const diffs = [];
+  for (let i = 1; i < rows.length; i++){ const dd = Math.abs(rows[i].p - rows[i-1].p); if (dd > 1e-6) diffs.push(dd); }
+  if (!diffs.length) return 1;
+  diffs.sort((a, b) => a - b);
+  return diffs[Math.floor(diffs.length / 2)];
+}
+function bucketByStep(rows, step){
+  const intRows = () => rows.map(r => ({ p:Math.round(r.p), v:r.v }));
+  if (!step || step <= 0 || step <= nativeStep(rows)) return intRows();
+  const map = new Map();
+  rows.forEach(r => {
+    const key = Math.round(r.p / step) * step;
+    let o = map.get(key);
+    if (!o){ o = { p:key, v:new Array(r.v.length).fill(0) }; map.set(key, o); }
+    r.v.forEach((val, c) => { o.v[c] += (val || 0); });
+  });
+  return [...map.values()].sort((a, b) => b.p - a.p);
+}
+
+function sessionState(){
+  const et = new Date(new Date().toLocaleString("en-US", {timeZone:"America/New_York"}));
+  if (et.getDay() === 0 || et.getDay() === 6) return "closed";
+  const m = et.getHours()*60 + et.getMinutes();
+  if (m >= 570 && m < 960)  return "live";
+  if (m >= 240 && m < 570)  return "pre";
+  if (m >= 960 && m < 1200) return "post";
+  return "closed";
+}
+function updateSession(){ const s = sessionState(); $("#sessDot").className = "dot " + s; $("#sessTxt").textContent = t(s); }
+
+function msToNextOpen(){
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", {timeZone:"America/New_York"}));
+  const offset = now.getTime() - et.getTime();
+  const day = et.getDay(), mins = et.getHours()*60 + et.getMinutes();
+  if (day >= 1 && day <= 5 && mins >= 570 && mins < 960) return { live:true, ms:0 };
+  const open = new Date(et); open.setHours(9, 30, 0, 0);
+  if (!(day >= 1 && day <= 5 && mins < 570)){
+    do { open.setDate(open.getDate() + 1); } while (open.getDay() === 0 || open.getDay() === 6);
+    open.setHours(9, 30, 0, 0);
   }
-  const R = Math.round(8 + 20 * t), G = Math.round(30 + 110 * t), B = Math.round(46 + 165 * t);
-  return `background:rgb(${R},${G},${B});color:${t > .55 ? "#04121A" : "#9CC8DE"}`;
+  return { live:false, ms:(open.getTime() + offset) - now.getTime() };
+}
+function fmtCountdown(ms){
+  if (ms < 0) ms = 0;
+  let s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400); s -= d*86400;
+  const h = Math.floor(s / 3600);  s -= h*3600;
+  const m = Math.floor(s / 60), ss = s % 60, p = n => String(n).padStart(2, "0");
+  return d >= 1 ? `${d}${t("dUnit")} ${h}${t("hUnit")}` : `${p(h)}:${p(m)}:${p(ss)}`;
+}
+function paintState(tgt){
+  const st = $("#st" + tgt); if (!st) return;
+  const s = msToNextOpen();
+  if (s.live){ st.className = "pxstate live"; st.textContent = t("pxLive"); }
+  else { st.className = "pxstate delay"; st.textContent = `${t("pxDelay")} · ${fmtCountdown(s.ms)}`; }
+}
+function tickStates(){ TARGETS.forEach(tg => { if (PREFS.assets.has(tg)) paintState(tg); }); }
+
+function render(tgt, center){
+  if (!PREFS.assets.has(tgt)) return;
+  const c = CACHE[tgt], panel = $("#p" + tgt), host = panel.querySelector(".tblwrap");
+  if (!c || !c.matrix || c.matrix.error){ if (host) host.innerHTML = `<div class="err">${t("unavail")}</div>`; return; }
+  const d = c.matrix, price = (c.quote && c.quote.price) || d.spot;
+
+  $("#px" + tgt).textContent = num(price);
+  paintState(tgt);
+  const snap = c.levels && c.levels.generated_utc ? c.levels.generated_utc.slice(11,16) + " UTC" : "";
+  const net = c.levels && c.levels.net_gex_bn != null ? c.levels.net_gex_bn : null;
+  const reg = c.levels && c.levels.regime ? c.levels.regime : "";
+  panel.querySelector(".meta").innerHTML =
+    (net != null ? `Σγ <b style="color:${net < 0 ? C.red : C.teal}">${net > 0 ? "+" : ""}${net.toFixed(1)}B</b> · ` : "")
+    + `basis ${d.basis >= 0 ? "+" : ""}${Math.round(d.basis)}`
+    + (reg ? ` · <span class="reg ${reg}">${reg === "negative" ? "γ−" : "γ+"}</span>` : "")
+    + (snap ? ` · ${t("snap")} ${snap}` : "");
+
+  const cols = d.cols.filter(col => !PREFS.cols || PREFS.cols.has(col.label));
+  const colIdx = cols.map(col => d.cols.indexOf(col));
+  const rows = bucketByStep(windowRows(d.rows, price, PREFS.range), PREFS.gran[tgt]);
+  const flt = PREFS.filter;
+
+  const p95 = {}, p99 = {};
+  colIdx.forEach(ci => { const mags = rows.map(r => Math.abs(r.v[ci] || 0)).filter(x => x > 0).sort((a, b) => a - b);
+    p95[ci] = pct(mags, 0.95); p99[ci] = pct(mags, 0.99); });
+
+  let liveIdx = 0, best = Infinity;
+  rows.forEach((r, i) => { const dd = Math.abs(r.p - price); if (dd < best){ best = dd; liveIdx = i; } });
+  const chipByRow = {};
+  if (PREFS.overlay && c.levels) parseLevels(c.levels.pine).forEach(lv => {
+    let bi = 0, bd = Infinity;
+    rows.forEach((r, i) => { const dd = Math.abs(r.p - lv.price); if (dd < bd){ bd = dd; bi = i; } });
+    (chipByRow[bi] = chipByRow[bi] || []).push(lv); });
+
+  let html = "<table><thead><tr><th>PX</th>" + cols.map(col => `<th>${col.label}</th>`).join("") + "</tr></thead><tbody>";
+  rows.forEach((r, i) => {
+    const chips = (chipByRow[i] || []).map(lv => `<span class="chip" style="color:${KCOL[lv.kind]};border-color:${KCOL[lv.kind]}55">${KLAB[lv.kind]}</span>`).join("");
+    html += `<tr${i === liveIdx ? ' class="live"' : ""}><td class="px">${chips}${num(r.p)}</td>`;
+    colIdx.forEach(ci => {
+      const v = r.v[ci];
+      const pass = !flt || Math.abs(v) >= flt;
+      html += pass
+        ? `<td><span class="cell" style="${cellStyle(v, p95[ci], p99[ci])}">${fmt$(v)}</span></td>`
+        : `<td><span class="cell dim">${fmt$(v)}</span></td>`;
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+
+  const prev = host.scrollTop;
+  host.innerHTML = html;
+  if (center){ const lr = host.querySelector("tr.live"); if (lr) host.scrollTop = lr.offsetTop - host.clientHeight/2 + lr.offsetHeight/2; }
+  else host.scrollTop = prev;
+}
+function renderAll(center){ TARGETS.forEach(tg => render(tg, center)); }
+
+function applyLayout(){
+  $("#wrap").className = "wrap n" + (PREFS.assets.size || 1);
+  TARGETS.forEach(tg => $("#p" + tg).classList.toggle("off", !PREFS.assets.has(tg)));
+  $$("#segAssets button").forEach(b => b.classList.toggle("on", PREFS.assets.has(b.dataset.a)));
+  try{ localStorage.setItem("hmAssets", [...PREFS.assets].join(",")); }catch(_){}
 }
 
-function pct(sorted, q){
-  return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))] : 0;
+function buildHelp(){
+  const row = (sw, txt) => `<div class="row"><span class="sw" style="background:${sw}"></span>${txt}</div>`;
+  const lv  = (col, lab, txt) => `<div class="row"><span class="cx" style="color:${col};border-color:${col}66">${lab}</span>${txt}</div>`;
+  $("#help").innerHTML = `<h3>${t("helpTitle")}</h3><p>${t("helpIntro")}</p>`
+    + `<p style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px">${t("helpLive")}</p>`
+    + row("var(--teal)", t("cPos")) + row("var(--red)", t("cNeg")) + row("var(--gold)", t("cExt"))
+    + `<p style="margin:8px 0 4px;color:var(--faint);font-size:10px">— ${t("overlay")} —</p>`
+    + lv(C.teal,"CW",t("lCW")) + lv(C.red,"PW",t("lPW")) + lv(C.gold,"FLIP",t("lFlip"))
+    + lv("#B9903A","MAXPAIN",t("lMP")) + lv(C.muted,"EM▲",t("lEM"))
+    + `<p style="margin-top:9px;color:var(--muted);font-size:10.5px;line-height:1.5">${t("helpFilter")}</p>`
+    + `<p style="margin-top:7px;color:var(--faint);font-size:10.5px">${t("tip")}</p>`;
+}
+function applyLang(){
+  $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
+  $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
+  $("#lblScale").textContent = t("scale"); $("#lblFilter").textContent = t("filter");
+  $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
+  $$(".lblStep").forEach(e => e.textContent = t("step"));
+  $$("#expiries button").forEach(b => b.textContent = b.dataset.lab === "ALL" ? t("all") : b.dataset.lab);
+  DDS.forEach(dd => dd._refresh());
+  buildHelp(); updateSession(); renderAll(false);
 }
 
-async function loadPanel(tgt){
-  const panel = $("p" + tgt);
-  try{
-    const r = await fetch(`/api/matrix?target=${tgt}`);
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || r.status);
-    $("px" + tgt).textContent = d.spot.toLocaleString("fr-FR");
-    /* percentiles PAR COLONNE : chaque échéance a sa propre échelle */
-    const nc = d.cols.length;
-    const p95 = [], p99 = [];
-    for (let c = 0; c < nc; c++){
-      const mags = d.rows.map(rw => Math.abs(rw.v[c])).filter(x => x > 0).sort((a, b) => a - b);
-      p95.push(pct(mags, 0.95));
-      p99.push(pct(mags, 0.99));
-    }
-    let html = "<div class='tblwrap'><table><thead><tr><th>PX</th>"
-      + d.cols.map(c => `<th>${c.label}</th>`).join("") + "</tr></thead><tbody>";
-    /* ligne du spot : insérée entre les deux strikes qui l'encadrent */
-    let spotDone = false;
-    for (const rw of d.rows){
-      const isSpotRow = !spotDone && rw.p <= d.spot;
-      if (isSpotRow) spotDone = true;
-      html += `<tr${isSpotRow ? ' class="spot"' : ""}><td class="px">${rw.p.toLocaleString("fr-FR")}</td>`;
-      for (let c = 0; c < nc; c++){
-        const v = rw.v[c];
-        html += `<td><span class="cell" style="${cellStyle(v, p95[c], p99[c])}">${fmt$(v)}</span></td>`;
-      }
-      html += "</tr>";
-    }
-    html += "</tbody></table></div>";
-    panel.querySelector(".loading, .err, .tblwrap")?.remove();
-    panel.insertAdjacentHTML("beforeend", html);
-    $("upd").textContent = "maj " + new Date().toLocaleTimeString("fr-FR",
-      {hour: "2-digit", minute: "2-digit"}) + " · refresh 5 min";
-  }catch(e){
-    const box = panel.querySelector(".loading, .err, .tblwrap");
-    if (box) box.outerHTML = `<div class="err">Indisponible — ${e.message}</div>`;
-  }
+async function loadStatic(tgt){
+  const [m, l] = await Promise.all([
+    fetch(`/api/matrix?target=${tgt}`).then(r => r.json()).catch(() => null),
+    fetch(`levels.json?target=${tgt}&t=${Date.now()}`).then(r => r.json()).catch(() => null),
+  ]);
+  CACHE[tgt] = Object.assign(CACHE[tgt] || {}, { matrix:m, levels:l });
+  if (!PREFS.cols && m && m.cols) buildExpiries(m.cols);
+  const first = !centered.has(tgt); render(tgt, first); if (m && !m.error) centered.add(tgt);
+  $("#upd").textContent = t("upd") + " " + new Date().toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US", {hour:"2-digit", minute:"2-digit"});
+}
+async function pollQuote(tgt){
+  const q = await fetch(`/api/quote?target=${tgt}`).then(r => r.json()).catch(() => null);
+  if (q && q.price){ (CACHE[tgt] = CACHE[tgt] || {}).quote = q; render(tgt, false); }
 }
 
-function loadAll(){ loadPanel("NQ"); loadPanel("ES"); }
-loadAll();
-setInterval(loadAll, 300000);
+function buildExpiries(cols){
+  PREFS.cols = new Set(cols.map(c => c.label));
+  const box = $("#expiries"); box.innerHTML = "";
+  cols.forEach(col => { const b = document.createElement("button");
+    b.dataset.lab = col.label; b.textContent = col.label === "ALL" ? t("all") : col.label; b.className = "on";
+    b.onclick = () => { b.classList.toggle("on");
+      b.classList.contains("on") ? PREFS.cols.add(col.label) : PREFS.cols.delete(col.label); renderAll(true); };
+    box.appendChild(b); });
+}
+
+function closeAllDD(){ $$(".dd.open").forEach(d => d.classList.remove("open")); }
+function mkDD(mountId, opts, label, get, set){
+  const mount = $(mountId);
+  const dd = document.createElement("div"); dd.className = "dd";
+  const trig = document.createElement("button"); trig.className = "dd-trig";
+  const menu = document.createElement("div"); menu.className = "dd-menu";
+  const paintTrig = () => { trig.innerHTML = `${label(get())} <span class="car">▾</span>`; };
+  const paintOpts = () => [...menu.children].forEach(o => o.classList.toggle("on", String(get()) === o.dataset.v));
+  opts.forEach(v => { const o = document.createElement("button"); o.className = "dd-opt";
+    o.textContent = label(v); o.dataset.v = v;
+    o.onclick = e => { e.stopPropagation(); set(v); paintTrig(); paintOpts(); dd.classList.remove("open"); };
+    menu.appendChild(o); });
+  trig.onclick = e => { e.stopPropagation();
+    const isOpen = dd.classList.contains("open"); closeAllDD();
+    if (!isOpen){ dd.classList.add("open"); paintOpts(); const on = menu.querySelector(".on"); if (on) on.scrollIntoView({block:"center"}); } };
+  dd.append(trig, menu); mount.appendChild(dd);
+  paintTrig();
+  dd._refresh = () => { [...menu.children].forEach((o,i) => o.textContent = label(opts[i])); paintTrig(); paintOpts(); };
+  DDS.push(dd); return dd;
+}
+
+$("#segAssets").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const a = b.dataset.a;
+  if (PREFS.assets.has(a)){ if (PREFS.assets.size === 1) return; PREFS.assets.delete(a); }
+  else { PREFS.assets.add(a); centered.delete(a); }
+  applyLayout(); renderAll(true);
+});
+$("#btnOverlay").addEventListener("click", e => { PREFS.overlay = !PREFS.overlay; e.currentTarget.classList.toggle("on", PREFS.overlay); renderAll(false); });
+$("#btnLock").addEventListener("click", e => {
+  PREFS.lock = !PREFS.lock;
+  e.currentTarget.classList.toggle("lockon", PREFS.lock);
+  e.currentTarget.querySelector(".lk").textContent = PREFS.lock ? "🔒" : "🔓";
+  try{ localStorage.setItem("hmLock", PREFS.lock ? "1" : ""); }catch(_){}
+});
+$("#btnHelp").addEventListener("click", e => {
+  e.stopPropagation(); closeAllDD();
+  const help = $("#help"), btn = e.currentTarget;
+  if (help.hidden){
+    const r = btn.getBoundingClientRect();
+    help.style.top = (r.bottom + 9) + "px";
+    help.style.right = Math.max(12, window.innerWidth - r.right - 4) + "px";
+    help.style.setProperty("--caret", "16px");
+    help.hidden = false;
+    btn.classList.add("on");
+  } else { help.hidden = true; btn.classList.remove("on"); }
+});
+document.addEventListener("click", e => {
+  $$(".dd.open").forEach(d => { if (!d.contains(e.target)) d.classList.remove("open"); });
+  if (!$("#help").hidden && !$("#help").contains(e.target) && e.target !== $("#btnHelp")){ $("#help").hidden = true; $("#btnHelp").classList.remove("on"); }
+});
+$$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
+
+/* locked = synchronized scroll across visible panels */
+let syncing = false;
+TARGETS.forEach(tg => {
+  const w = $("#p" + tg).querySelector(".tblwrap");
+  w.addEventListener("scroll", () => {
+    if (!PREFS.lock || syncing) return;
+    syncing = true;
+    TARGETS.forEach(o => { if (o !== tg && PREFS.assets.has(o)){ const ow = $("#p" + o).querySelector(".tblwrap"); if (ow) ow.scrollTop = w.scrollTop; } });
+    requestAnimationFrame(() => { syncing = false; });
+  });
+});
+
+const saveGran = () => { try{ localStorage.setItem("hmGran", JSON.stringify(PREFS.gran)); }catch(_){} };
+const granLabel = v => Number(v) === 20 ? t("gEasy") : Number(v) === 10 ? t("gMed") : t("gExpert");
+const filterLabel = v => Number(v) === 0 ? t("filterOff") : "±" + fmt$(v);
+
+/* boot */
+applyLayout();
+if (PREFS.lock){ $("#btnLock").classList.add("lockon"); $("#btnLock .lk").textContent = "🔒"; }
+mkDD("#ddRange", [5, 10, 25, 50, 100], v => "±" + v, () => PREFS.range, v => { PREFS.range = v; renderAll(true); });
+mkDD("#ddFilter", FILTER_OPTS, filterLabel, () => PREFS.filter, v => { PREFS.filter = v; renderAll(false); });
+TARGETS.forEach(tg => mkDD("#dd" + tg, GRAN_STEPS, granLabel, () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }));
+applyLang();
+TARGETS.forEach(loadStatic);
+TARGETS.forEach(pollQuote);
+setInterval(() => TARGETS.forEach(pollQuote), 20000);
+setInterval(() => TARGETS.forEach(loadStatic), 300000);
+setInterval(updateSession, 30000);
+setInterval(tickStates, 1000);
 </script>
 </body>
 </html>

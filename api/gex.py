@@ -61,11 +61,21 @@ def _quote_ctx(target):
 DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 
 
+_FINRA_MEM = {}          # ymd -> {"QQQ": (short, total), ...} ; fichiers immuables
+
+
 def _finra_dp_day(ymd):
     """Volume off-exchange FINRA (fichier CNMS quotidien) pour QQQ et SPY.
     C'est le volume exécuté hors bourses (dark pools + internalisation),
     avec sa part shortée — la matière première du ratio type DIX.
-    Retourne {"QQQ": (short, total), "SPY": (...)} ou None. Jamais d'exception."""
+    Retourne {"QQQ": (short, total), "SPY": (...)} ou None. Jamais d'exception.
+
+    NB parsing : FINRA publie désormais les volumes en DÉCIMAL
+    ("9478967.850783"). int() lève alors ValueError et faisait tomber
+    silencieusement toutes les lignes — d'où un panneau Dark Pool vide.
+    On passe donc par int(float(...))."""
+    if ymd in _FINRA_MEM:
+        return _FINRA_MEM[ymd]
     try:
         import requests
         r = requests.get(
@@ -78,11 +88,13 @@ def _finra_dp_day(ymd):
             p = line.split("|")
             if len(p) >= 5 and p[1] in ("QQQ", "SPY"):
                 try:
-                    out[p[1]] = (int(p[2]), int(p[4]))
+                    out[p[1]] = (int(float(p[2])), int(float(p[4])))
                 except ValueError:
                     pass
                 if len(out) == 2:
                     break
+        if out:
+            _FINRA_MEM[ymd] = out      # publié = définitif, on garde en mémoire
         return out or None
     except Exception:
         return None
@@ -847,16 +859,28 @@ class handler(BaseHTTPRequestHandler):
                 hist.setdefault(s, [])
             have = {x["d"] for x in hist["QQQ"]}
             days, cur = [], et_today()
-            while len(days) < 14:                 # 14 derniers jours ouvrés
-                if cur.weekday() < 5:
+            while len(days) < 30:                 # 30 jours ouvrés : de quoi
+                if cur.weekday() < 5:             # tenir une moyenne 20 jours
                     days.append(cur.strftime("%Y%m%d"))
                 cur -= dt.timedelta(days=1)
-            fetched = 0
-            for ymd in days:                      # récent -> ancien, max 4 fetchs
-                if ymd in have or fetched >= 4:
-                    continue
-                data = _finra_dp_day(ymd)
-                fetched += 1
+            missing = [d for d in days if d not in have]
+            # Historique pauvre (première fois, ou purge du cache) : on le
+            # reconstruit d'un coup en PARALLÈLE plutôt qu'en 4 jours par
+            # appel — sinon il faut des dizaines de requêtes pour redevenir
+            # exploitable. En régime établi, il ne manque qu'un jour ou deux
+            # et on reste sur le mode incrémental.
+            bootstrap = len([x for x in hist["QQQ"] if x.get("r") is not None]) < 20
+            todo = missing if bootstrap else missing[:4]
+            fetched = len(todo)
+            results = {}
+            if todo:
+                try:
+                    from concurrent.futures import ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=8) as ex:
+                        results = dict(zip(todo, ex.map(_finra_dp_day, todo)))
+                except Exception:
+                    results = {d: _finra_dp_day(d) for d in todo}
+            for ymd, data in results.items():
                 if not data:
                     continue                      # férié / fichier pas encore publié
                 for s, (sv, tv) in data.items():
