@@ -210,6 +210,7 @@
   <nav class="nav">
     <a href="/" id="nTerm">Terminal</a>
     <a href="/dash" id="nDash">Dashboard</a>
+    <a href="/heatmap" id="nHeat">Heatmap</a>
     <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
   </nav>
 </header>
@@ -277,7 +278,7 @@ function tickCd(){
 /* ───── contenu structuré en blocs ───── */
 const T = {
 fr: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard",
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
   heroT:"Comment lire et utiliser le terminal",
   heroP:"Les niveaux, leur signification, l'export vers TradingView et le calendrier exact des mises à jour.",
   cd1k:"Prochain recalcul daily · Open + EM", cd1s:"00h11 Paris · lundi → vendredi",
@@ -334,6 +335,19 @@ fr: {
     {t:"p", x:"Les graphiques se recadrent automatiquement au changement de marché et rechargent les bougies manquées quand tu reviens sur l'onglet."}]},
 
 
+  {id:"heat", t:"La heatmap", b:[
+    {t:"p", x:"Une vue d'ensemble du gamma sur les <b>trois marchés en parallèle</b> (NQ, ES, SPX) : les <b>strikes en lignes</b>, les <b>échéances en colonnes</b> (0DTE, 1DTE… puis le cumul). L'intensité donne la magnitude — teal pour le gamma positif, rouge pour le négatif, or pour les extrêmes."},
+    {t:"h", x:"Les contrôles"},
+    {t:"codes", items:[
+      {k:"Échelle", n:"Easy / Medium / Expert", d:"Regroupement des strikes : 20, 10 ou 5 points. Plus fin = plus de détail, plus large = les grandes masses ressortent."},
+      {k:"Range", n:"±5 à ±100", d:"Amplitude affichée autour du prix. Resserre pour l'intraday, élargis pour voir les murs lointains."},
+      {k:"Filtre", n:"Seuil de bruit", d:"Estompe les cellules sous le seuil choisi (±1M à ±50M) : seules les vraies zones restent lisibles."},
+      {k:"Échéances", n:"Filtre de colonnes", d:"Isole une échéance — le 0DTE seul est souvent le plus parlant en séance."},
+      {k:"Sync", n:"Verrou de défilement", d:"Fait défiler les trois marchés ensemble pour comparer les structures."},
+      {k:"Overlay", n:"Niveaux GEX", d:"Superpose Call Wall, Put Wall, Flip, Max Pain et Expected Move sur l'échelle."}]},
+    {t:"note", x:"Chaque grille défile <b>à l'intérieur</b> de son panneau et se recentre automatiquement sur le prix courant. Un compte à rebours indique le temps restant avant la prochaine ouverture US. Le bouton <b>?</b> rappelle la signification des couleurs à tout moment."},
+    {t:"p", x:"C'est la vue à privilégier pour repérer <b>où la masse se concentre</b>, et surtout si un mur repose sur une seule échéance — donc fragile après son expiration — ou sur toutes à la fois."}]},
+
   {id:"rythme", t:"Le calendrier des mises à jour", b:[
     {t:"p", x:"Chaque famille est recalculée <b>au moment où son information existe</b>, et jamais entre-temps. Un niveau qui bouge sous tes pieds n'est pas un niveau."},
     {t:"clocks", items:[
@@ -363,7 +377,7 @@ fr: {
 ]},
 
 en: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard",
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
   heroT:"How to read and use the terminal",
   heroP:"The levels, what they mean, exporting to TradingView, and the exact update schedule.",
   cd1k:"Next daily recompute · Open + EM", cd1s:"00:11 Paris · Monday → Friday",
@@ -419,6 +433,19 @@ en: {
       "<b>Double-click</b> a chart to recentre it on price."]},
     {t:"p", x:"Charts reframe automatically when you switch market and reload missed candles when you return to the tab."}]},
 
+
+  {id:"heat", t:"The heatmap", b:[
+    {t:"p", x:"A bird's-eye view of gamma across <b>all three markets at once</b> (NQ, ES, SPX): <b>strikes as rows</b>, <b>expiries as columns</b> (0DTE, 1DTE… then the aggregate). Intensity carries magnitude — teal for positive gamma, red for negative, gold for extremes."},
+    {t:"h", x:"Controls"},
+    {t:"codes", items:[
+      {k:"Scale", n:"Easy / Medium / Expert", d:"Strike bucketing: 20, 10 or 5 points. Finer shows more detail, wider makes the big masses stand out."},
+      {k:"Range", n:"±5 to ±100", d:"Span displayed around price. Tighten for intraday, widen to see distant walls."},
+      {k:"Filter", n:"Noise threshold", d:"Dims cells below the chosen level (±1M to ±50M) so only real zones remain legible."},
+      {k:"Expiries", n:"Column filter", d:"Isolate one expiry — 0DTE alone is often the most telling intraday."},
+      {k:"Sync", n:"Scroll lock", d:"Scrolls all three markets together to compare structures."},
+      {k:"Overlay", n:"GEX levels", d:"Overlays Call Wall, Put Wall, Flip, Max Pain and Expected Move on the ladder."}]},
+    {t:"note", x:"Each grid scrolls <b>inside</b> its panel and auto-centres on the live price. A countdown shows the time left before the next US open. The <b>?</b> button recalls what the colours mean at any time."},
+    {t:"p", x:"It is the view of choice to spot <b>where mass concentrates</b>, and above all whether a wall rests on a single expiry — hence fragile once it expires — or on all of them."}]},
 
   {id:"rythme", t:"Update schedule", b:[
     {t:"p", x:"Each family is recomputed <b>when its information exists</b>, and never in between. A level that moves under your feet is not a level."},
@@ -538,6 +565,7 @@ function render(){
   $("hTitle").textContent = L.title;
   $("nTerm").textContent = L.term;
   $("nDash").textContent = L.dash;
+  $("nHeat").textContent = L.heat;
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
   $("cd1k").textContent = L.cd1k; $("cd1s").textContent = L.cd1s;
