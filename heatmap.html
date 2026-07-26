@@ -147,7 +147,7 @@
   </div>
   <span class="tdiv"></span>
   <div class="tgroup"><span class="tlabel" id="lblScale">Échelle</span><span id="ddRange"></span></div>
-  <div class="tgroup"><span class="tlabel" id="lblFilter">Filtre</span><span id="ddFilter"></span></div>
+  <button class="toggle" id="btnNoise">⚡ <span id="lblNoise">Zones fortes</span></button>
   <div class="tgroup"><span class="tlabel" id="lblExp">Échéances</span><div class="seg chips" id="expiries"></div></div>
   <button class="toggle on" id="btnOverlay">◈ <span id="lblOverlay">Niveaux</span><span id="lvlDate" style="margin-left:6px;font-family:var(--mono);font-size:9px;opacity:.6"></span></button>
   <button class="toggle" id="btnLock"><span class="lk">🔓</span> <span id="lblLock">Sync</span></button>
@@ -176,13 +176,12 @@ const GRAN_STEPS  = [20, 10, 5];                 // Easy / Medium / Expert (poin
 const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
 /* Filtre de bruit : trois niveaux nommés plutôt que six seuils en dollars.
    « ±5M » ne dit rien à la lecture ; « Zones » et « Majeur » si. */
-const FILTER_OPTS = [0, 5e6, 2.5e7];
 
 const T = {
   fr: { term:"Terminal", dash:"Dashboard", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
     filter:"Filtre", filterOff:"Off", lock:"Sync", gEasy:"Facile", gMed:"Moyen", gExpert:"Expert",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
-    globex:"GLOBEX", fAll:"Tout", fZones:"Zones", fMajor:"Majeur", today:"Niveaux du jour",
+    globex:"GLOBEX", noise:"Zones fortes", today:"Niveaux du jour",
     pxLive:"live", pxDelay:"différé", dUnit:"j", hUnit:"h", snap:"snap", upd:"maj", unavail:"Indisponible",
     helpTitle:"Lire la heatmap",
     helpIntro:"Chaque cellule = gamma net des dealers à ce strike × échéance. La couleur donne le signe et l'intensité ; les puces marquent les niveaux GEX clés. Scrolle dans la grille pour voir les strikes au-dessus / en dessous.",
@@ -194,7 +193,7 @@ const T = {
   en: { term:"Terminal", dash:"Dashboard", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
     filter:"Filter", filterOff:"Off", lock:"Sync", gEasy:"Easy", gMed:"Medium", gExpert:"Expert",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
-    globex:"GLOBEX", fAll:"All", fZones:"Zones", fMajor:"Major", today:"Today's levels",
+    globex:"GLOBEX", noise:"Strong zones", today:"Today's levels",
     pxLive:"live", pxDelay:"delayed", dUnit:"d", hUnit:"h", snap:"snap", upd:"upd", unavail:"Unavailable",
     helpTitle:"Reading the heatmap",
     helpIntro:"Each cell = dealer net gamma at that strike × expiry. Colour shows sign and intensity; chips mark the key GEX levels. Scroll inside the grid to see strikes above / below.",
@@ -214,6 +213,7 @@ try{ const a = (localStorage.getItem("hmAssets")||"").split(",").filter(Boolean)
      if (a.length) PREFS.assets = new Set(a.filter(x => TARGETS.includes(x))); }catch(_){}
 try{ const g = JSON.parse(localStorage.getItem("hmGran")||"null"); if (g) Object.assign(PREFS.gran, g); }catch(_){}
 try{ PREFS.lock = localStorage.getItem("hmLock") === "1"; }catch(_){}
+try{ if (localStorage.getItem("hmNoise") === "1") PREFS.filter = 5e6; }catch(_){}
 const CACHE = {}, centered = new Set(), DDS = [];
 
 const num = v => Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
@@ -400,7 +400,7 @@ function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
   const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
-  setTxt("#lblScale", t("scale")); setTxt("#lblFilter", t("filter"));
+  setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
   paintLevelDate();
   $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
   $$(".lblStep").forEach(e => e.textContent = t("step"));
@@ -525,15 +525,32 @@ TARGETS.forEach(tg => {
 
 const saveGran = () => { try{ localStorage.setItem("hmGran", JSON.stringify(PREFS.gran)); }catch(_){} };
 const granLabel = v => Number(v) === 20 ? t("gEasy") : Number(v) === 10 ? t("gMed") : t("gExpert");
-const FILTER_KEY = {0: "fAll", 5000000: "fZones", 25000000: "fMajor"};
-const filterLabel = v => t(FILTER_KEY[Number(v)] || "fAll");
+/* Le pas découle de l'échelle : regarder ±50 avec des paliers de 5 points
+   n'a aucun sens, et regarder ±10 avec des paliers de 20 non plus. On les
+   accorde donc automatiquement — un réglage de moins à comprendre. */
+const STEP_FOR = {10: 5, 25: 10, 50: 20};
+const NOISE_ON = 5e6;          // seuil du mode « zones fortes »
 
 /* boot */
 applyLayout();
 if (PREFS.lock){ $("#btnLock").classList.add("lockon"); $("#btnLock .lk").textContent = "🔒"; }
-mkDD("#ddRange", [5, 10, 25, 50, 100], v => "±" + v, () => PREFS.range, v => { PREFS.range = v; renderAll(true); });
-mkDD("#ddFilter", FILTER_OPTS, filterLabel, () => PREFS.filter, v => { PREFS.filter = v; renderAll(false); });
-TARGETS.forEach(tg => mkDD("#dd" + tg, GRAN_STEPS, granLabel, () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }));
+const GRAN_DD = {};
+mkDD("#ddRange", [10, 25, 50], v => "±" + v, () => PREFS.range, v => {
+  PREFS.range = v;
+  const st = STEP_FOR[v];
+  if (st){ for (const tg of TARGETS) PREFS.gran[tg] = st; saveGran();
+           TARGETS.forEach(tg => GRAN_DD[tg] && GRAN_DD[tg]._refresh()); }
+  renderAll(true);
+});
+$("#btnNoise").classList.toggle("on", PREFS.filter > 0);
+$("#btnNoise").onclick = e => {
+  PREFS.filter = PREFS.filter > 0 ? 0 : NOISE_ON;
+  e.currentTarget.classList.toggle("on", PREFS.filter > 0);
+  try{ localStorage.setItem("hmNoise", PREFS.filter > 0 ? "1" : ""); }catch(_){}
+  renderAll(false);
+};
+TARGETS.forEach(tg => { GRAN_DD[tg] = mkDD("#dd" + tg, GRAN_STEPS, granLabel,
+  () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }); });
 applyLang();
 TARGETS.forEach(loadStatic);
 /* La heatmap interroge TROIS marchés à chaque tour : un intervalle fixe de
