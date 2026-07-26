@@ -869,7 +869,25 @@ class handler(BaseHTTPRequestHandler):
             # appel — sinon il faut des dizaines de requêtes pour redevenir
             # exploitable. En régime établi, il ne manque qu'un jour ou deux
             # et on reste sur le mode incrémental.
-            bootstrap = len([x for x in hist["QQQ"] if x.get("r") is not None]) < 20
+            # Un bootstrap télécharge ~30 fichiers FINRA de plusieurs Mo. Si la
+            # série ne peut pas atteindre 20 entrées (jours fériés, fichiers non
+            # publiés), la condition resterait vraie indéfiniment et chaque
+            # invocation relancerait le lot. On le limite donc à UNE fois par
+            # jour : au pire on reste en mode incrémental, jamais en boucle.
+            _bs_key = "gex:dp:bootstrap"
+            _bs_today = et_today().isoformat()
+            _bs_done = False
+            try:
+                _bs_done = (kv_get(_bs_key) or "") == _bs_today
+            except Exception:
+                pass
+            bootstrap = (not _bs_done) and \
+                len([x for x in hist["QQQ"] if x.get("r") is not None]) < 20
+            if bootstrap:
+                try:
+                    kv_set(_bs_key, _bs_today, ex=7 * 86400)
+                except Exception:
+                    pass
             todo = missing if bootstrap else missing[:4]
             fetched = len(todo)
             results = {}
