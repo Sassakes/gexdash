@@ -1252,18 +1252,24 @@ async function loadBars(){
         if (document.hidden){ hiddenAt = Date.now(); return; }
         const away = hiddenAt ? Date.now() - hiddenAt : 0;
         hiddenAt = null;
-        if (!marketPollMs()) return;       // week-end : on ne réveille rien
+        // Même marché fermé, une absence longue peut couvrir une réouverture :
+        // on recharge l'historique, seul le polling reste suspendu.
         if (away > 60000) loadBars();      // recharge les bougies manquées
-        else pollQuote();                  // reprise immédiate du live
+        else if (marketPollMs()) pollQuote();
       });
     }
     /* Rythme du flux : rapide en séance US, lent hors séance, coupé le
        week-end (voir marketPollMs dans ui.js). Le régime est réévalué chaque
        minute, donc la bascule à l'ouverture et à la clôture est automatique. */
-    function armPoll(){
+    function armPoll(reopen){
       clearInterval(CHART.poll);
+      const prev = CHART._pollMs;
       CHART._pollMs = marketPollMs();
       if (CHART._pollMs){
+        // Passage fermé -> ouvert : le prix seul ne suffit pas, il faut aussi
+        // RECHARGER LES BOUGIES. Sans ça, une page laissée ouverte pendant la
+        // fermeture garde l'historique d'avant et paraît figée à la reprise.
+        if (reopen && !prev) loadBars();
         CHART.poll = setInterval(pollQuote, CHART._pollMs);
         pollQuote();
       } else {
@@ -1273,7 +1279,7 @@ async function loadBars(){
     armPoll();
     clearInterval(CHART._pollWatch);
     CHART._pollWatch = setInterval(() => {
-      if (marketPollMs() !== CHART._pollMs) armPoll();
+      if (marketPollMs() !== CHART._pollMs) armPoll(true);
     }, 60000);
   }catch(e){
     $("chartNote").textContent = t("chartFail")(e.message);
