@@ -429,17 +429,23 @@ function buildHelp(){
     + `<p style="margin-top:7px;color:var(--faint);font-size:10.5px">${t("tip")}</p>`;
 }
 function applyLang(){
+  /* Écriture DÉFENSIVE : un sélecteur qui ne correspond à rien renvoie null,
+     et null.textContent interrompt tout le script — c'est ce qui laissait la
+     page entièrement vide après le remaniement de la barre d'outils. */
+  const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
-  $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
-  $("#lblScale").textContent = t("scale"); $("#lblFilter").textContent = t("filter");
-  $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
+  setTxt("#navTerm", t("term"));
+  setTxt("#navDash", t("dash"));
+  setTxt("#lblScale", t("vue"));
+  setTxt("#lblExp", t("exp"));
+  setTxt("#lblOverlay", t("overlay"));
+  setTxt("#lblLock", t("lock"));
+  setTxt("#pWide", t("pWide"));
+  setTxt("#pStd", t("pStd"));
+  setTxt("#pFine", t("pFine"));
   $$(".lblStep").forEach(e => e.textContent = t("step"));
   if (EXP_DD && EXP_DD._refresh) EXP_DD._refresh();
-  $("#lblScale").textContent = t("vue");
   paintLevelDate();
-  $("#pWide").textContent = t("pWide");
-  $("#pStd").textContent  = t("pStd");
-  $("#pFine").textContent = t("pFine");
   DDS.forEach(dd => dd._refresh());
   buildHelp(); updateSession(); renderAll(false);
 }
@@ -558,6 +564,7 @@ function applyPreset(p, save){
   renderAll(true);
 }
 $$("#segDensity button").forEach(b => b.onclick = () => applyPreset(b.dataset.p, true));
+$$("#segDensity button").forEach(b => b.classList.toggle("on", b.dataset.p === PREFS.preset));
 const GRAN_DD = {};
 TARGETS.forEach(tg => { GRAN_DD[tg] = mkDD("#dd" + tg, GRAN_STEPS, granLabel,
   () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }); });
