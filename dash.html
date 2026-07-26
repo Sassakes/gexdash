@@ -177,6 +177,20 @@
     font-size:13px; cursor:pointer; padding:4px 8px;
   }
   .card .head .rm:hover{color:var(--red)}
+  /* Carte heatmap : même palette et même lecture que la page /heatmap */
+  .hmbox{overflow:auto; -webkit-overflow-scrolling:touch}
+  .hmload{padding:22px; text-align:center; color:var(--faint); font-size:11px}
+  .hmt{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:9.5px}
+  .hmt th{position:sticky; top:0; z-index:2; background:var(--surface2); color:var(--muted);
+    font-size:8px; letter-spacing:.1em; font-weight:600; padding:4px 3px;
+    border-bottom:1px solid var(--line-strong); text-transform:uppercase}
+  .hmt th:first-child{text-align:right; padding-right:7px}
+  .hmt td{padding:0 3px; height:17px; text-align:center; white-space:nowrap}
+  .hmt td.k{text-align:right; padding-right:7px; color:var(--muted);
+    border-right:1px solid var(--line)}
+  .hmt tr.live td.k{color:var(--gold); font-weight:600}
+  .hmt tr.live{outline:1px solid rgba(240,185,11,.5); outline-offset:-1px}
+  .hmt .cell{display:block; padding:2px 4px; border-radius:1px}
   .card .box{height:calc(100% - 37px); position:relative}
   body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
   body.editing .card .head{cursor:grab}
@@ -314,7 +328,7 @@
 
 <div class="addbar">
   <select id="addT"><option>NQ</option><option>ES</option><option>SPX</option></select>
-  <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option></select>
+  <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option><option value="heat">▦ Heatmap</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
   <select id="tzDash" title="Fuseau horaire des charts">
@@ -364,11 +378,11 @@ const GROUP_KINDS = {
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
-  fr: {title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
+  fr: {hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
        feedKo:"flux indisponible", edit:"Éditer", done:"Terminé"},
-  en: {title:"My dashboard", back:"Terminal", add:"Add a chart",
+  en: {hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
        hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
        feedKo:"feed unavailable", edit:"Edit", done:"Done"},
@@ -797,6 +811,85 @@ async function mountCard(cfg, host){
   }, 60000);
 }
 
+/* ═══ CARTE HEATMAP ═══════════════════════════════════════════════════
+   Version compacte de la page /heatmap : même source (/api/matrix), même
+   palette (teal = gamma positif, rouge = négatif, or = extrême), centrée
+   sur le prix. Les contrôles fins restent sur la page dédiée — ici on veut
+   un coup d'œil, pas un poste de pilotage. */
+function hmCellStyle(v, p95, p99){
+  if (!v || !p95) return "";
+  const x = Math.pow(Math.min(1, Math.abs(v) / p95), 0.7);
+  if (Math.abs(v) >= p99)
+    return "background:#F0B90B;color:#0A0A0C;font-weight:600";
+  if (v > 0){
+    const R = Math.round(15 + 23*x), G = Math.round(26 + 140*x), B = Math.round(24 + 130*x);
+    return `background:rgb(${R},${G},${B});color:${x > .5 ? "#05140F" : "#7FCDBF"}`;
+  }
+  const R = Math.round(28 + 211*x), G = Math.round(18 + 65*x), B = Math.round(18 + 62*x);
+  return `background:rgb(${R},${G},${B});color:${x > .5 ? "#1C0707" : "#E6A6A4"}`;
+}
+function hmFmt(v){
+  const a = Math.abs(v), s = v < 0 ? "-" : "";
+  if (a >= 1e9) return `${s}${(a/1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${s}${(a/1e6).toFixed(0)}M`;
+  if (a >= 1e3) return `${s}${(a/1e3).toFixed(0)}k`;
+  return a > 0 ? `${s}${a.toFixed(0)}` : "";
+}
+async function mountHeatCard(cfg, host){
+  const box = host.querySelector(".hmbox");
+  const draw = async () => {
+    try{
+      const [m, q] = await Promise.all([
+        fetch(`/api/matrix?target=${cfg.t}`).then(r => r.json()).catch(() => null),
+        fetch(`/api/quote?target=${cfg.t}`).then(r => r.json()).catch(() => null),
+      ]);
+      if (!m || !m.rows || !m.rows.length){
+        box.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
+        return;
+      }
+      const price = (q && q.price) || m.spot;
+      const nc = m.cols.length;
+      const p95 = [], p99 = [];
+      for (let c = 0; c < nc; c++){
+        const mags = m.rows.map(r => Math.abs(r.v[c])).filter(x => x > 0).sort((a, b) => a - b);
+        const at = t => mags.length ? mags[Math.min(mags.length - 1, Math.floor(mags.length * t))] : 0;
+        p95.push(at(.95)); p99.push(at(.99));
+      }
+      let h = `<table class="hmt"><thead><tr><th>PX</th>`
+            + m.cols.map(c => `<th>${c.label}</th>`).join("") + `</tr></thead><tbody>`;
+      let done = false;
+      for (const r of m.rows){
+        const live = !done && r.p <= price;
+        if (live) done = true;
+        h += `<tr${live ? ' class="live"' : ""}><td class="k">${Math.round(r.p).toLocaleString("fr-FR")}</td>`;
+        for (let c = 0; c < nc; c++)
+          h += `<td><span class="cell" style="${hmCellStyle(r.v[c], p95[c], p99[c])}">${hmFmt(r.v[c])}</span></td>`;
+        h += `</tr>`;
+      }
+      box.innerHTML = h + `</tbody></table>`;
+      const lr = box.querySelector("tr.live");
+      if (lr) box.scrollTop = lr.offsetTop - box.clientHeight / 2 + lr.offsetHeight / 2;
+      const n = host.querySelector(".n");
+      if (n) n.textContent = price ? Math.round(price).toLocaleString("fr-FR") : "";
+    }catch(e){
+      box.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
+    }
+  };
+  await draw();
+  // même rythme que le reste : rien le week-end, lent hors séance
+  const arm = () => {
+    clearInterval(host._timer);
+    const ms = marketPollMs();
+    if (ms) host._timer = setInterval(draw, Math.max(ms, 60000));
+  };
+  arm();
+  clearInterval(host._pollWatch);
+  host._pollWatch = setInterval(() => {
+    if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
+    arm();
+  }, 120000);
+}
+
 function wireEdit(card, cfg){
   const handle = document.createElement("div");
   handle.className = "rsz";
@@ -862,6 +955,22 @@ function render(){
     clampCard(cfg);
     const card = document.createElement("div");
     card.className = "card";
+    if (cfg.iv === "heat"){
+      card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ▦ GEX</span>
+        <span class="n"></span><span class="gh"></span>
+        <button class="rm" title="Retirer">✕</button></div>
+        <div class="box hmbox"><div class="hmload">…</div></div>`;
+      card.querySelector(".rm").onclick = () => {
+        if (card._timer) clearInterval(card._timer);
+        if (card._pollWatch) clearInterval(card._pollWatch);
+        CARDS.splice(idx, 1); saveCards(); render();
+      };
+      board.appendChild(card);
+      layoutCard(card, cfg);
+      wireEdit(card, cfg);
+      mountHeatCard(cfg, card);
+      return;
+    }
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
       <span class="n"></span>
       <span class="cchips">

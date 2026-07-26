@@ -120,16 +120,6 @@
   .loading{padding:50px; text-align:center; color:var(--faint); font-size:12px}
   .err{padding:34px; text-align:center; color:var(--red); font-size:12px}
 
-  @media (max-width:560px){
-    header{padding:11px 14px; gap:9px}
-    .toolbar{gap:7px; padding-top:9px; padding-bottom:9px}
-    .toolbar .grp{flex:1 1 100%}
-    .dd button, .toolbar button{min-height:40px; font-size:12.5px}
-    .panel .phead{padding:9px 12px}
-    thead th{font-size:8.5px; padding:6px 3px}
-    tbody td{font-size:9.5px; padding:0 3px}
-    .tblwrap{max-height:60vh}
-  }
   @media (max-width:900px){
     body{overflow:auto; height:auto}
     header,.toolbar{padding-left:14px; padding-right:14px}
@@ -156,15 +146,10 @@
     <button data-a="SPX" class="on">SPX</button>
   </div>
   <span class="tdiv"></span>
-  <div class="tgroup"><span class="tlabel" id="lblScale">Vue</span>
-    <div class="seg" id="segDensity">
-      <button data-p="wide" id="pWide">Large</button>
-      <button data-p="std" class="on" id="pStd">Standard</button>
-      <button data-p="fine" id="pFine">Précis</button>
-    </div>
-  </div>
-  <div class="tgroup"><span class="tlabel" id="lblExp">Échéances</span><span id="ddExp"></span></div>
-  <button class="toggle on" id="btnOverlay" title="">◈ <span id="lblOverlay">Niveaux</span><span id="lvlDate" style="margin-left:6px;font-family:var(--mono);font-size:9px;opacity:.65"></span></button>
+  <div class="tgroup"><span class="tlabel" id="lblScale">Échelle</span><span id="ddRange"></span></div>
+  <div class="tgroup"><span class="tlabel" id="lblFilter">Filtre</span><span id="ddFilter"></span></div>
+  <div class="tgroup"><span class="tlabel" id="lblExp">Échéances</span><div class="seg chips" id="expiries"></div></div>
+  <button class="toggle on" id="btnOverlay">◈ <span id="lblOverlay">Niveaux</span><span id="lvlDate" style="margin-left:6px;font-family:var(--mono);font-size:9px;opacity:.6"></span></button>
   <button class="toggle" id="btnLock"><span class="lk">🔓</span> <span id="lblLock">Sync</span></button>
   <button class="iconbtn" id="btnHelp" aria-label="help">?</button>
   <span class="tspacer"></span>
@@ -187,25 +172,17 @@ const $$ = s => document.querySelectorAll(s);
 const TARGETS = ["NQ", "ES", "SPX"];
 const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
 
-/* TROIS NIVEAUX DE DENSITÉ — un seul réglage au lieu de trois.
-   Chacun accorde ensemble l'amplitude affichée, la taille des paliers et le
-   seuil de bruit, de façon cohérente : on voit large avec de gros paliers et
-   peu de bruit, ou serré avec des paliers fins et tout le détail. */
-const DENSITY = {
-  wide: {range: 50, gran: 20, filter: 1e7},
-  std:  {range: 25, gran: 10, filter: 1e6},
-  fine: {range: 10, gran: 5,  filter: 0},
-};
-const GRAN_STEPS  = [20, 10, 5];                 // molette par chart (affinage)
+const GRAN_STEPS  = [20, 10, 5];                 // Easy / Medium / Expert (points)
 const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
-const FILTER_OPTS = [0, 1e6, 5e6, 1e7, 2.5e7, 5e7];
+/* Filtre de bruit : trois niveaux nommés plutôt que six seuils en dollars.
+   « ±5M » ne dit rien à la lecture ; « Zones » et « Majeur » si. */
+const FILTER_OPTS = [0, 5e6, 2.5e7];
 
 const T = {
   fr: { term:"Terminal", dash:"Dashboard", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
     filter:"Filtre", filterOff:"Off", lock:"Sync", gEasy:"Facile", gMed:"Moyen", gExpert:"Expert",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
-    globex:"GLOBEX", vue:"Vue", pWide:"Large", pStd:"Standard", pFine:"Précis",
-    today:"Niveaux du jour",
+    globex:"GLOBEX", fAll:"Tout", fZones:"Zones", fMajor:"Majeur", today:"Niveaux du jour",
     pxLive:"live", pxDelay:"différé", dUnit:"j", hUnit:"h", snap:"snap", upd:"maj", unavail:"Indisponible",
     helpTitle:"Lire la heatmap",
     helpIntro:"Chaque cellule = gamma net des dealers à ce strike × échéance. La couleur donne le signe et l'intensité ; les puces marquent les niveaux GEX clés. Scrolle dans la grille pour voir les strikes au-dessus / en dessous.",
@@ -217,8 +194,7 @@ const T = {
   en: { term:"Terminal", dash:"Dashboard", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
     filter:"Filter", filterOff:"Off", lock:"Sync", gEasy:"Easy", gMed:"Medium", gExpert:"Expert",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
-    globex:"GLOBEX", vue:"View", pWide:"Wide", pStd:"Standard", pFine:"Precise",
-    today:"Today's levels",
+    globex:"GLOBEX", fAll:"All", fZones:"Zones", fMajor:"Major", today:"Today's levels",
     pxLive:"live", pxDelay:"delayed", dUnit:"d", hUnit:"h", snap:"snap", upd:"upd", unavail:"Unavailable",
     helpTitle:"Reading the heatmap",
     helpIntro:"Each cell = dealer net gamma at that strike × expiry. Colour shows sign and intensity; chips mark the key GEX levels. Scroll inside the grid to see strikes above / below.",
@@ -233,11 +209,7 @@ try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 
-const PREFS = { preset:"std", range:25, cols:null, overlay:true, filter:1e6,
-                lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
-try{ const p = localStorage.getItem("hmPreset"); if (DENSITY[p]) PREFS.preset = p; }catch(_){}
-Object.assign(PREFS, {range: DENSITY[PREFS.preset].range, filter: DENSITY[PREFS.preset].filter});
-for (const tg of TARGETS) PREFS.gran[tg] = DENSITY[PREFS.preset].gran;
+const PREFS = { range:25, cols:null, overlay:true, filter:0, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
 try{ const a = (localStorage.getItem("hmAssets")||"").split(",").filter(Boolean);
      if (a.length) PREFS.assets = new Set(a.filter(x => TARGETS.includes(x))); }catch(_){}
 try{ const g = JSON.parse(localStorage.getItem("hmGran")||"null"); if (g) Object.assign(PREFS.gran, g); }catch(_){}
@@ -296,34 +268,21 @@ function bucketByStep(rows, step){
 }
 
 function sessionState(){
-  /* « Fermé » était affiché dès la sortie du RTH — trompeur, puisque les
-     futures continuent de coter sur Globex quasiment 24h/24. On ne parle
-     donc de fermeture QUE pendant la vraie coupure hebdomadaire
-     (vendredi 17h ET -> dimanche 18h ET) ; le reste du temps, hors RTH,
-     c'est Globex. */
+  /* « Fermé » s'affichait dès la sortie du RTH, alors que les futures cotent
+     presque 24h/24 : trompeur. On ne parle de fermeture que pendant la vraie
+     coupure hebdomadaire ; hors RTH le reste du temps, c'est Globex. */
   const et = new Date(new Date().toLocaleString("en-US", {timeZone:"America/New_York"}));
   const day = et.getDay(), m = et.getHours()*60 + et.getMinutes();
-  if (day === 6) return "closed";                        // samedi
-  if (day === 5 && m >= 1020) return "closed";           // vendredi après 17h ET
-  if (day === 0 && m < 1080) return "closed";            // dimanche avant 18h ET
+  if (day === 6) return "closed";
+  if (day === 5 && m >= 1020) return "closed";
+  if (day === 0 && m < 1080) return "closed";
   if (day >= 1 && day <= 5){
-    if (m >= 570 && m < 960)  return "live";             // RTH
+    if (m >= 570 && m < 960)  return "live";
     if (m >= 240 && m < 570)  return "pre";
     if (m >= 960 && m < 1200) return "post";
   }
   return "globex";
 }
-/* Les niveaux superposés (CW, PW, Flip, MP, EM) sont TOUJOURS ceux de la
-   séance en cours — jamais une projection. On affiche donc la date sur le
-   bouton pour lever l'ambiguïté. */
-function paintLevelDate(){
-  const el = $("#lvlDate"); if (!el) return;
-  const d = new Date();
-  el.textContent = d.toLocaleDateString(LANG === "fr" ? "fr-FR" : "en-GB",
-                                        {day: "2-digit", month: "2-digit"});
-  const b = $("#btnOverlay"); if (b) b.title = t("today");
-}
-
 function updateSession(){ const s = sessionState(); $("#sessDot").className = "dot " + s; $("#sessTxt").textContent = t(s); }
 
 function msToNextOpen(){
@@ -348,8 +307,8 @@ function fmtCountdown(ms){
   return d >= 1 ? `${d}${t("dUnit")} ${h}${t("hUnit")}` : `${p(h)}:${p(m)}:${p(ss)}`;
 }
 function paintState(tgt){
-  const st = $("#st" + tgt);          // pastille live/différé par chart :
-  if (st) st.remove();                // retirée, l'info est déjà dans la barre
+  const st = $("#st" + tgt);      // l'état de séance est déjà dans la barre
+  if (st) st.remove();            // du haut : inutile de le répéter par chart
 }
 function tickStates(){ TARGETS.forEach(tg => { if (PREFS.assets.has(tg)) paintState(tg); }); }
 
@@ -428,24 +387,24 @@ function buildHelp(){
     + `<p style="margin-top:9px;color:var(--muted);font-size:10.5px;line-height:1.5">${t("helpFilter")}</p>`
     + `<p style="margin-top:7px;color:var(--faint);font-size:10.5px">${t("tip")}</p>`;
 }
+/* Les niveaux superposés sont TOUJOURS ceux de la séance en cours — la date
+   sur le bouton lève l'ambiguïté « aujourd'hui ou demain ? ». */
+function paintLevelDate(){
+  const el = $("#lvlDate"); if (!el) return;
+  el.textContent = new Date().toLocaleDateString(
+    LANG === "fr" ? "fr-FR" : "en-GB", {day: "2-digit", month: "2-digit"});
+  const b = $("#btnOverlay"); if (b) b.title = t("today");
+}
+
 function applyLang(){
-  /* Écriture DÉFENSIVE : un sélecteur qui ne correspond à rien renvoie null,
-     et null.textContent interrompt tout le script — c'est ce qui laissait la
-     page entièrement vide après le remaniement de la barre d'outils. */
-  const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
-  setTxt("#navTerm", t("term"));
-  setTxt("#navDash", t("dash"));
-  setTxt("#lblScale", t("vue"));
-  setTxt("#lblExp", t("exp"));
-  setTxt("#lblOverlay", t("overlay"));
-  setTxt("#lblLock", t("lock"));
-  setTxt("#pWide", t("pWide"));
-  setTxt("#pStd", t("pStd"));
-  setTxt("#pFine", t("pFine"));
-  $$(".lblStep").forEach(e => e.textContent = t("step"));
-  if (EXP_DD && EXP_DD._refresh) EXP_DD._refresh();
+  $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
+  const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
+  setTxt("#lblScale", t("scale")); setTxt("#lblFilter", t("filter"));
   paintLevelDate();
+  $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
+  $$(".lblStep").forEach(e => e.textContent = t("step"));
+  $$("#expiries button").forEach(b => b.textContent = b.dataset.lab === "ALL" ? t("all") : b.dataset.lab);
   DDS.forEach(dd => dd._refresh());
   buildHelp(); updateSession(); renderAll(false);
 }
@@ -465,21 +424,14 @@ async function pollQuote(tgt){
   if (q && q.price){ (CACHE[tgt] = CACHE[tgt] || {}).quote = q; render(tgt, false); }
 }
 
-/* Échéances : une liste déroulante compacte (Tout, ou une seule échéance)
-   à la place d'une rangée de puces. Le cas d'usage réel est binaire — tout
-   voir, ou isoler le 0DTE — et la barre y gagne énormément de place. */
-let EXP_DD = null, EXP_OPTS = ["ALL"];
 function buildExpiries(cols){
-  EXP_OPTS = ["ALL"].concat(cols.map(c => c.label).filter(l => l !== "ALL"));
-  PREFS.cols = null;                       // null = tout afficher
-  const lab = v => v === "ALL" ? t("all") : v;
-  const mount = $("#ddExp");
-  if (EXP_DD){ mount.innerHTML = ""; EXP_DD = null; }
-  EXP_DD = mkDD("#ddExp", EXP_OPTS, lab,
-    () => PREFS.expSel || "ALL",
-    v => { PREFS.expSel = v;
-           PREFS.cols = v === "ALL" ? null : new Set([v]);
-           renderAll(true); });
+  PREFS.cols = new Set(cols.map(c => c.label));
+  const box = $("#expiries"); box.innerHTML = "";
+  cols.forEach(col => { const b = document.createElement("button");
+    b.dataset.lab = col.label; b.textContent = col.label === "ALL" ? t("all") : col.label; b.className = "on";
+    b.onclick = () => { b.classList.toggle("on");
+      b.classList.contains("on") ? PREFS.cols.add(col.label) : PREFS.cols.delete(col.label); renderAll(true); };
+    box.appendChild(b); });
 }
 
 function closeAllDD(){ $$(".dd.open").forEach(d => d.classList.remove("open")); }
@@ -535,46 +487,58 @@ document.addEventListener("click", e => {
 });
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
-/* locked = synchronized scroll across visible panels */
+/* Défilement synchronisé — RELATIF AU PRIX, pas en pixels.
+   Copier scrollTop d'un panneau à l'autre ne marche pas : NQ cote ~29 000 et
+   ES ~6 800, avec des pas différents, donc une même position en pixels ne
+   montre pas des zones comparables. On aligne à la place l'écart par rapport
+   à la ligne du prix courant : décalé de 3 crans au-dessus du prix sur NQ =
+   3 crans au-dessus du prix sur ES et SPX. */
 let syncing = false;
+function liveOffset(w){
+  const lr = w.querySelector("tr.live");
+  if (!lr) return null;
+  const centre = lr.offsetTop - w.clientHeight / 2 + lr.offsetHeight / 2;
+  const rowH = lr.offsetHeight || 1;
+  return (w.scrollTop - centre) / rowH;        // en nombre de lignes
+}
+function applyOffset(w, rows){
+  const lr = w.querySelector("tr.live");
+  if (!lr) return;
+  const centre = lr.offsetTop - w.clientHeight / 2 + lr.offsetHeight / 2;
+  w.scrollTop = Math.max(0, centre + rows * (lr.offsetHeight || 1));
+}
 TARGETS.forEach(tg => {
   const w = $("#p" + tg).querySelector(".tblwrap");
   w.addEventListener("scroll", () => {
     if (!PREFS.lock || syncing) return;
+    const off = liveOffset(w);
+    if (off === null) return;
     syncing = true;
-    TARGETS.forEach(o => { if (o !== tg && PREFS.assets.has(o)){ const ow = $("#p" + o).querySelector(".tblwrap"); if (ow) ow.scrollTop = w.scrollTop; } });
+    TARGETS.forEach(o => {
+      if (o === tg || !PREFS.assets.has(o)) return;
+      const ow = $("#p" + o).querySelector(".tblwrap");
+      if (ow) applyOffset(ow, off);
+    });
     requestAnimationFrame(() => { syncing = false; });
   });
 });
 
 const saveGran = () => { try{ localStorage.setItem("hmGran", JSON.stringify(PREFS.gran)); }catch(_){} };
 const granLabel = v => Number(v) === 20 ? t("gEasy") : Number(v) === 10 ? t("gMed") : t("gExpert");
-const filterLabel = v => Number(v) === 0 ? t("filterOff") : "±" + fmt$(v);
+const FILTER_KEY = {0: "fAll", 5000000: "fZones", 25000000: "fMajor"};
+const filterLabel = v => t(FILTER_KEY[Number(v)] || "fAll");
 
 /* boot */
 applyLayout();
 if (PREFS.lock){ $("#btnLock").classList.add("lockon"); $("#btnLock .lk").textContent = "🔒"; }
-function applyPreset(p, save){
-  const d = DENSITY[p]; if (!d) return;
-  PREFS.preset = p; PREFS.range = d.range; PREFS.filter = d.filter;
-  for (const tg of TARGETS) PREFS.gran[tg] = d.gran;
-  $$("#segDensity button").forEach(b => b.classList.toggle("on", b.dataset.p === p));
-  if (save){ try{ localStorage.setItem("hmPreset", p); }catch(_){} saveGran(); }
-  TARGETS.forEach(tg => { const dd = GRAN_DD[tg]; if (dd && dd._refresh) dd._refresh(); });
-  renderAll(true);
-}
-$$("#segDensity button").forEach(b => b.onclick = () => applyPreset(b.dataset.p, true));
-$$("#segDensity button").forEach(b => b.classList.toggle("on", b.dataset.p === PREFS.preset));
-const GRAN_DD = {};
-TARGETS.forEach(tg => { GRAN_DD[tg] = mkDD("#dd" + tg, GRAN_STEPS, granLabel,
-  () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }); });
+mkDD("#ddRange", [5, 10, 25, 50, 100], v => "±" + v, () => PREFS.range, v => { PREFS.range = v; renderAll(true); });
+mkDD("#ddFilter", FILTER_OPTS, filterLabel, () => PREFS.filter, v => { PREFS.filter = v; renderAll(false); });
+TARGETS.forEach(tg => mkDD("#dd" + tg, GRAN_STEPS, granLabel, () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }));
 applyLang();
 TARGETS.forEach(loadStatic);
-/* Rythme calé sur la session, identique au terminal : la heatmap interroge
-   TROIS marchés à chaque tour, donc un intervalle fixe de 20 s coûtait ~540
-   requêtes/heure page ouverte, week-end compris. Ici : 20 s en séance US,
-   2 min hors séance, rien du tout le week-end (vendredi 22h -> dimanche
-   23h50 Paris). Le régime est réévalué chaque minute. */
+/* La heatmap interroge TROIS marchés à chaque tour : un intervalle fixe de
+   20 s coûtait ~540 requêtes/heure, week-end compris. On garde 20 s pendant
+   la séance US, on ralentit hors séance, et on coupe le week-end. */
 function hmPollMs(){
   const P = tz => new Intl.DateTimeFormat("en-US", {timeZone: tz, hour12: false,
       weekday: "short", hour: "2-digit", minute: "2-digit"})
@@ -592,8 +556,10 @@ function hmPollMs(){
 let HM_MS = 0, HM_TIMER = 0;
 function armHeatPoll(){
   clearInterval(HM_TIMER);
+  const prev = HM_MS;
   HM_MS = hmPollMs();
   if (HM_MS){
+    if (!prev) TARGETS.forEach(loadStatic);      // reprise après coupure
     TARGETS.forEach(pollQuote);
     HM_TIMER = setInterval(() => TARGETS.forEach(pollQuote), HM_MS);
   }
