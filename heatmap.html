@@ -55,20 +55,18 @@
   .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
   .dot.pre,.dot.post{background:var(--gold)}
   .dot.globex{background:#6E7681}
-  /* Le repère de prix est le MÊME rectangle qu'avant, mais détaché du flux
-     du tableau : posé en absolu, il peut glisser d'un palier à l'autre au
-     lieu de sauter. La ligne sous-jacente n'est plus surlignée. */
+  /* Repère de prix : le rectangle d'origine, détaché du flux du tableau pour
+     pouvoir GLISSER d'un palier à l'autre. Pas d'étiquette — il encadre déjà
+     la ligne dont le prix est écrit à gauche, la répéter n'apprend rien.
+     Placé sous le texte des cellules pour ne rien masquer. */
   .tblwrap{position:relative}
-  .pxbox{position:absolute; left:0; right:0; z-index:5; pointer-events:none;
+  .pxbox{position:absolute; left:0; right:0; z-index:0; pointer-events:none;
     border:1px solid var(--gold); border-radius:2px;
-    background:rgba(240,185,11,.07);
-    box-shadow:0 0 12px rgba(240,185,11,.18), inset 0 0 12px rgba(240,185,11,.05);
+    background:rgba(240,185,11,.06);
+    box-shadow:0 0 10px rgba(240,185,11,.16);
     transition:top .4s cubic-bezier(.22,.61,.36,1), height .2s ease;
     will-change:top}
   .pxbox.noanim{transition:none}
-  .pxbox .tag{position:absolute; right:3px; top:50%; transform:translateY(-50%);
-    font-family:var(--mono); font-size:9.5px; font-weight:600; color:#0A0A0C;
-    background:var(--gold); padding:1px 6px; border-radius:2px; white-space:nowrap}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   .dd{position:relative; display:inline-flex}
@@ -127,7 +125,7 @@
   tbody td{font-size:10px; padding:0 4px; height:20px; text-align:center; white-space:nowrap}
   tbody td.px{color:var(--muted); font-size:10.5px}
   tr.live td.px{color:var(--gold); font-weight:600}
-  tr.live{background:transparent}
+  tr.live{background:transparent; position:relative; z-index:1}
   .cell{display:block; padding:2px 5px; border-radius:2px}
   .cell.dim{opacity:.14}
   .chip{font-size:7.5px; font-weight:600; padding:1px 3px; margin-right:5px; border:1px solid; border-radius:3px; letter-spacing:.02em; vertical-align:middle}
@@ -336,7 +334,6 @@ function render(tgt, center){
   $("#px" + tgt).textContent = num(price);
   LAST_PX[tgt] = price;
   paintState(tgt);
-  requestAnimationFrame(() => movePxLine(tgt, price));
   const snap = c.levels && c.levels.generated_utc ? c.levels.generated_utc.slice(11,16) + " UTC" : "";
   const net = c.levels && c.levels.net_gex_bn != null ? c.levels.net_gex_bn : null;
   const reg = c.levels && c.levels.regime ? c.levels.regime : "";
@@ -397,6 +394,9 @@ function render(tgt, center){
   host.innerHTML = html;
   if (center){ const lr = host.querySelector("tr.live"); if (lr) host.scrollTop = lr.offsetTop - host.clientHeight/2 + lr.offsetHeight/2; }
   else host.scrollTop = prev;
+  // innerHTML détruit le rectangle : on le replace TOUT DE SUITE, avant que
+  // le navigateur ne peigne, pour qu'aucun clignotement ne soit visible.
+  movePxLine(tgt, price);
 }
 function renderAll(center){ TARGETS.forEach(tg => render(tg, center)); }
 
@@ -472,14 +472,14 @@ function movePxLine(tgt, price){
   if (!box){
     box = document.createElement("div");
     box.className = "pxbox noanim";
-    box.innerHTML = '<span class="tag"></span>';
     host.appendChild(box);
+    // la transition ne s'active qu'après le premier placement, sinon le
+    // rectangle « vole » depuis le haut de la grille à chaque reconstruction
     requestAnimationFrame(() => requestAnimationFrame(
       () => box.classList.remove("noanim")));
   }
   box.style.top = best.offsetTop + "px";
   box.style.height = best.offsetHeight + "px";
-  box.querySelector(".tag").textContent = num(price);
 }
 
 async function pollQuote(tgt){
