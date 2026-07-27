@@ -320,6 +320,7 @@ function render(tgt, center){
   const d = c.matrix, price = (c.quote && c.quote.price) || d.spot;
 
   $("#px" + tgt).textContent = num(price);
+  LAST_PX[tgt] = price;
   paintState(tgt);
   const snap = c.levels && c.levels.generated_utc ? c.levels.generated_utc.slice(11,16) + " UTC" : "";
   const net = c.levels && c.levels.net_gex_bn != null ? c.levels.net_gex_bn : null;
@@ -435,9 +436,24 @@ async function loadStatic(tgt){
   const first = !centered.has(tgt); render(tgt, first); if (m && !m.error) centered.add(tgt);
   $("#upd").textContent = t("upd") + " " + new Date().toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US", {hour:"2-digit", minute:"2-digit"});
 }
+const LAST_PX = {};
 async function pollQuote(tgt){
   const q = await fetch(`/api/quote?target=${tgt}`).then(r => r.json()).catch(() => null);
-  if (q && q.price){ (CACHE[tgt] = CACHE[tgt] || {}).quote = q; render(tgt, false); }
+  if (!q || !q.price) return;
+  const c = (CACHE[tgt] = CACHE[tgt] || {});
+  c.quote = q;
+  /* Le prix s'affiche à CHAQUE tour, mais la grille n'est redessinée que si
+     le prix a bougé d'au moins un demi-palier — sinon la ligne surlignée
+     resterait la même et on reconstruirait des centaines de cellules pour
+     rien. Résultat : un prix qui vit, sans le coût du rendu complet. */
+  const el = $("#px" + tgt);
+  if (el) el.textContent = num(q.price);
+  const step = PREFS.gran[tgt] || 10;
+  const prev = LAST_PX[tgt];
+  if (prev == null || Math.abs(q.price - prev) >= step / 2){
+    LAST_PX[tgt] = q.price;
+    render(tgt, false);
+  }
 }
 
 function buildExpiries(cols){
@@ -582,8 +598,8 @@ function hmPollMs(){
   if (pa.weekday === "Sun" && pm < 23 * 60 + 50) return 0;
   const et = P("America/New_York");
   const em = (+et.hour % 24) * 60 + (+et.minute);
-  if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 20000;
-  return 120000;
+  if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 6000;
+  return 60000;
 }
 let HM_MS = 0, HM_TIMER = 0;
 function armHeatPoll(){

@@ -898,7 +898,8 @@ async function mountHeatCard(cfg, host){
   const arm = () => {
     clearInterval(host._timer);
     const ms = marketPollMs();
-    if (ms) host._timer = setInterval(draw, Math.max(ms, 60000));
+    // aligné sur la page heatmap : 20 s en séance, sinon le rythme général
+    if (ms) host._timer = setInterval(draw, ms <= 3000 ? 20000 : Math.max(ms, 60000));
   };
   arm();
   clearInterval(host._pollWatch);
