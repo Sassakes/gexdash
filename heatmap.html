@@ -172,6 +172,7 @@ const $$ = s => document.querySelectorAll(s);
 const TARGETS = ["NQ", "ES", "SPX"];
 const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
 
+const NOISE_PCT = 0.70;   // « zones fortes » = les 30% de cellules les plus lourdes
 const GRAN_STEPS  = [20, 10, 5];                 // Easy / Medium / Expert (points)
 const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
 /* Filtre de bruit : trois niveaux nommés plutôt que six seuils en dollars.
@@ -208,12 +209,12 @@ try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 
-const PREFS = { range:25, cols:null, overlay:true, filter:0, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
+const PREFS = { range:25, cols:null, overlay:true, filter:false, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
 try{ const a = (localStorage.getItem("hmAssets")||"").split(",").filter(Boolean);
      if (a.length) PREFS.assets = new Set(a.filter(x => TARGETS.includes(x))); }catch(_){}
 try{ const g = JSON.parse(localStorage.getItem("hmGran")||"null"); if (g) Object.assign(PREFS.gran, g); }catch(_){}
 try{ PREFS.lock = localStorage.getItem("hmLock") === "1"; }catch(_){}
-try{ if (localStorage.getItem("hmNoise") === "1") PREFS.filter = 5e6; }catch(_){}
+try{ PREFS.filter = localStorage.getItem("hmNoise") === "1"; }catch(_){}
 const CACHE = {}, centered = new Set(), DDS = [];
 
 const num = v => Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
@@ -332,11 +333,26 @@ function render(tgt, center){
   const cols = d.cols.filter(col => !PREFS.cols || PREFS.cols.has(col.label));
   const colIdx = cols.map(col => d.cols.indexOf(col));
   const rows = bucketByStep(windowRows(d.rows, price, PREFS.range), PREFS.gran[tgt]);
-  const flt = PREFS.filter;
-
   const p95 = {}, p99 = {};
   colIdx.forEach(ci => { const mags = rows.map(r => Math.abs(r.v[ci] || 0)).filter(x => x > 0).sort((a, b) => a - b);
     p95[ci] = pct(mags, 0.95); p99[ci] = pct(mags, 0.99); });
+
+  /* Seuil « zones fortes » RELATIF AU MARCHÉ.
+     Un seuil en dollars ne peut pas convenir aux trois : le gamma d'ES et de
+     SPX se compte en dizaines de millions là où NQ reste bien plus bas, donc
+     5M laissait tout allumé sur ES/SPX et filtrait correctement NQ seulement.
+     On prend maintenant un percentile des magnitudes du marché affiché : la
+     proportion de cellules retenues est identique partout, quel que soit
+     l'ordre de grandeur. */
+  let flt = 0;
+  if (PREFS.filter){
+    const all = [];
+    colIdx.forEach(ci => rows.forEach(r => {
+      const v = Math.abs(r.v[ci] || 0); if (v > 0) all.push(v);
+    }));
+    all.sort((a, b) => a - b);
+    flt = pct(all, NOISE_PCT);
+  }
 
   let liveIdx = 0, best = Infinity;
   rows.forEach((r, i) => { const dd = Math.abs(r.p - price); if (dd < best){ best = dd; liveIdx = i; } });
@@ -529,7 +545,6 @@ const granLabel = v => Number(v) === 20 ? t("gEasy") : Number(v) === 10 ? t("gMe
    n'a aucun sens, et regarder ±10 avec des paliers de 20 non plus. On les
    accorde donc automatiquement — un réglage de moins à comprendre. */
 const STEP_FOR = {10: 5, 25: 10, 50: 20};
-const NOISE_ON = 5e6;          // seuil du mode « zones fortes »
 
 /* boot */
 applyLayout();
@@ -542,11 +557,11 @@ mkDD("#ddRange", [10, 25, 50], v => "±" + v, () => PREFS.range, v => {
            TARGETS.forEach(tg => GRAN_DD[tg] && GRAN_DD[tg]._refresh()); }
   renderAll(true);
 });
-$("#btnNoise").classList.toggle("on", PREFS.filter > 0);
+$("#btnNoise").classList.toggle("on", !!PREFS.filter);
 $("#btnNoise").onclick = e => {
-  PREFS.filter = PREFS.filter > 0 ? 0 : NOISE_ON;
-  e.currentTarget.classList.toggle("on", PREFS.filter > 0);
-  try{ localStorage.setItem("hmNoise", PREFS.filter > 0 ? "1" : ""); }catch(_){}
+  PREFS.filter = !PREFS.filter;
+  e.currentTarget.classList.toggle("on", !!PREFS.filter);
+  try{ localStorage.setItem("hmNoise", PREFS.filter ? "1" : ""); }catch(_){}
   renderAll(false);
 };
 TARGETS.forEach(tg => { GRAN_DD[tg] = mkDD("#dd" + tg, GRAN_STEPS, granLabel,

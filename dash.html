@@ -179,6 +179,8 @@
   .card .head .rm:hover{color:var(--red)}
   /* Carte heatmap : même palette et même lecture que la page /heatmap */
   .hmbox{overflow:auto; -webkit-overflow-scrolling:touch}
+  .cchips .hmnoise{font-size:11px; padding:2px 7px; line-height:1.4}
+  .cchips .hmnoise.on{color:var(--gold); border-color:rgba(240,185,11,.5)}
   .hmload{padding:22px; text-align:center; color:var(--faint); font-size:11px}
   .hmt{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:9.5px}
   .hmt th{position:sticky; top:0; z-index:2; background:var(--surface2); color:var(--muted);
@@ -378,11 +380,11 @@ const GROUP_KINDS = {
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
-  fr: {hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
+  fr: {noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
        feedKo:"flux indisponible", edit:"Éditer", done:"Terminé"},
-  en: {hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
+  en: {noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
        hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
        feedKo:"feed unavailable", edit:"Edit", done:"Done"},
@@ -855,6 +857,17 @@ async function mountHeatCard(cfg, host){
         const at = t => mags.length ? mags[Math.min(mags.length - 1, Math.floor(mags.length * t))] : 0;
         p95.push(at(.95)); p99.push(at(.99));
       }
+      /* Seuil « zones fortes » calculé sur les magnitudes DU MARCHÉ affiché :
+         un seuil en dollars ne vaut pas pour NQ, ES et SPX à la fois. */
+      let flt = 0;
+      if (cfg.nz){
+        const all = [];
+        for (const r of m.rows) for (let c = 0; c < nc; c++){
+          const v = Math.abs(r.v[c] || 0); if (v > 0) all.push(v);
+        }
+        all.sort((a, b) => a - b);
+        flt = all.length ? all[Math.min(all.length - 1, Math.floor(all.length * 0.70))] : 0;
+      }
       let h = `<table class="hmt"><thead><tr><th>PX</th>`
             + m.cols.map(c => `<th>${c.label}</th>`).join("") + `</tr></thead><tbody>`;
       let done = false;
@@ -863,7 +876,11 @@ async function mountHeatCard(cfg, host){
         if (live) done = true;
         h += `<tr${live ? ' class="live"' : ""}><td class="k">${Math.round(r.p).toLocaleString("fr-FR")}</td>`;
         for (let c = 0; c < nc; c++)
-          h += `<td><span class="cell" style="${hmCellStyle(r.v[c], p95[c], p99[c])}">${hmFmt(r.v[c])}</span></td>`;
+        {
+          const v = r.v[c];
+          const dim = flt && Math.abs(v || 0) < flt;
+          h += `<td><span class="cell" style="${dim ? "opacity:.12" : hmCellStyle(v, p95[c], p99[c])}">${dim ? "" : hmFmt(v)}</span></td>`;
+        }
         h += `</tr>`;
       }
       box.innerHTML = h + `</tbody></table>`;
@@ -875,6 +892,7 @@ async function mountHeatCard(cfg, host){
       box.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
     }
   };
+  host._redraw = draw;
   await draw();
   // même rythme que le reste : rien le week-end, lent hors séance
   const arm = () => {
@@ -957,9 +975,19 @@ function render(){
     card.className = "card";
     if (cfg.iv === "heat"){
       card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ▦ GEX</span>
-        <span class="n"></span><span class="gh"></span>
+        <span class="n"></span>
+        <span class="cchips"><button class="hmnoise${cfg.nz ? " on" : ""}">⚡</button></span>
+        <span class="gh"></span>
         <button class="rm" title="Retirer">✕</button></div>
         <div class="box hmbox"><div class="hmload">…</div></div>`;
+      const nb = card.querySelector(".hmnoise");
+      nb.title = tx("noise");
+      nb.onclick = () => {
+        cfg.nz = !cfg.nz;
+        nb.classList.toggle("on", cfg.nz);
+        saveCards();
+        if (card._redraw) card._redraw();
+      };
       card.querySelector(".rm").onclick = () => {
         if (card._timer) clearInterval(card._timer);
         if (card._pollWatch) clearInterval(card._pollWatch);
