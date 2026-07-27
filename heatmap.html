@@ -55,6 +55,20 @@
   .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
   .dot.pre,.dot.post{background:var(--gold)}
   .dot.globex{background:#6E7681}
+  /* Marqueur de prix : un trait fin superposé à la grille, positionné par
+     interpolation entre deux paliers et animé en CSS. La ligne surlignée
+     changeait de rang d'un coup, ce qui donnait cet effet de saut. */
+  .tblwrap{position:relative}
+  .pxline{position:absolute; left:0; right:0; height:0; z-index:6;
+    pointer-events:none; transition:transform .45s cubic-bezier(.22,.61,.36,1);
+    will-change:transform}
+  .pxline.noanim{transition:none}
+  .pxline .bar{position:absolute; left:0; right:0; top:-1px; height:2px;
+    background:linear-gradient(90deg, rgba(240,185,11,.15), rgba(240,185,11,.95) 22%, rgba(240,185,11,.95) 78%, rgba(240,185,11,.15));
+    box-shadow:0 0 9px rgba(240,185,11,.45)}
+  .pxline .tag{position:absolute; right:4px; top:-9px; font-family:var(--mono);
+    font-size:10px; font-weight:600; color:#0A0A0C; background:var(--gold);
+    padding:1px 6px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,.5)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   .dd{position:relative; display:inline-flex}
@@ -173,14 +187,14 @@ const TARGETS = ["NQ", "ES", "SPX"];
 const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
 
 const NOISE_PCT = 0.70;   // « zones fortes » = les 30% de cellules les plus lourdes
-const GRAN_STEPS  = [20, 10, 5];                 // Easy / Medium / Expert (points)
+const GRAN_STEPS  = [20, 10, 5];   // pas de la grille, en points d'indice
 const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
 /* Filtre de bruit : trois niveaux nommés plutôt que six seuils en dollars.
    « ±5M » ne dit rien à la lecture ; « Zones » et « Majeur » si. */
 
 const T = {
   fr: { term:"Terminal", dash:"Dashboard", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
-    filter:"Filtre", filterOff:"Off", lock:"Sync", gEasy:"Facile", gMed:"Moyen", gExpert:"Expert",
+    filter:"Filtre", filterOff:"Off", lock:"Sync",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
     globex:"GLOBEX", noise:"Zones fortes", today:"Niveaux du jour",
     pxLive:"live", pxDelay:"différé", dUnit:"j", hUnit:"h", snap:"snap", upd:"maj", unavail:"Indisponible",
@@ -192,7 +206,7 @@ const T = {
     lCW:"Call Wall — résistance", lPW:"Put Wall — support", lFlip:"Gamma Flip — bascule +/−γ", lMP:"Max Pain", lEM:"Expected Move ▲/▼",
     tip:"Sélectionne 1, 2 ou 3 actifs — la page s'ajuste toute seule." },
   en: { term:"Terminal", dash:"Dashboard", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
-    filter:"Filter", filterOff:"Off", lock:"Sync", gEasy:"Easy", gMed:"Medium", gExpert:"Expert",
+    filter:"Filter", filterOff:"Off", lock:"Sync",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
     globex:"GLOBEX", noise:"Strong zones", today:"Today's levels",
     pxLive:"live", pxDelay:"delayed", dUnit:"d", hUnit:"h", snap:"snap", upd:"upd", unavail:"Unavailable",
@@ -322,6 +336,7 @@ function render(tgt, center){
   $("#px" + tgt).textContent = num(price);
   LAST_PX[tgt] = price;
   paintState(tgt);
+  requestAnimationFrame(() => movePxLine(tgt, price));
   const snap = c.levels && c.levels.generated_utc ? c.levels.generated_utc.slice(11,16) + " UTC" : "";
   const net = c.levels && c.levels.net_gex_bn != null ? c.levels.net_gex_bn : null;
   const reg = c.levels && c.levels.regime ? c.levels.regime : "";
@@ -366,7 +381,7 @@ function render(tgt, center){
   let html = "<table><thead><tr><th>PX</th>" + cols.map(col => `<th>${col.label}</th>`).join("") + "</tr></thead><tbody>";
   rows.forEach((r, i) => {
     const chips = (chipByRow[i] || []).map(lv => `<span class="chip" style="color:${KCOL[lv.kind]};border-color:${KCOL[lv.kind]}55">${KLAB[lv.kind]}</span>`).join("");
-    html += `<tr${i === liveIdx ? ' class="live"' : ""}><td class="px">${chips}${num(r.p)}</td>`;
+    html += `<tr data-p="${r.p}"${i === liveIdx ? ' class="live"' : ""}><td class="px">${chips}${num(r.p)}</td>`;
     colIdx.forEach(ci => {
       const v = r.v[ci];
       const pass = !flt || Math.abs(v) >= flt;
@@ -437,23 +452,56 @@ async function loadStatic(tgt){
   $("#upd").textContent = t("upd") + " " + new Date().toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US", {hour:"2-digit", minute:"2-digit"});
 }
 const LAST_PX = {};
+
+/* Place le marqueur de prix par INTERPOLATION entre les deux paliers qui
+   encadrent le prix : il glisse en continu au lieu de sauter d'une ligne à
+   l'autre. La grille elle-même n'est pas retouchée. */
+function movePxLine(tgt, price){
+  const panel = $("#p" + tgt); if (!panel) return;
+  const host = panel.querySelector(".tblwrap"); if (!host) return;
+  const tbody = host.querySelector("tbody"); if (!tbody) return;
+  const rows = [...tbody.rows];
+  if (!rows.length) return;
+  let line = host.querySelector(".pxline");
+  if (!line){
+    line = document.createElement("div");
+    line.className = "pxline noanim";
+    line.innerHTML = '<span class="bar"></span><span class="tag"></span>';
+    host.appendChild(line);
+    requestAnimationFrame(() => requestAnimationFrame(
+      () => line.classList.remove("noanim")));
+  }
+  // le prix de chaque ligne est mémorisé sur l'élément au moment du rendu
+  let hi = null, lo = null;
+  for (const r of rows){
+    const p = +r.dataset.p;
+    if (isNaN(p)) continue;
+    if (p >= price && (hi === null || p < +rows[hi].dataset.p)) hi = rows.indexOf(r);
+    if (p <= price && (lo === null || p > +rows[lo].dataset.p)) lo = rows.indexOf(r);
+  }
+  let y;
+  if (hi !== null && lo !== null && hi !== lo){
+    const ph = +rows[hi].dataset.p, pl = +rows[lo].dataset.p;
+    const f = (ph - price) / (ph - pl || 1);          // 0 en haut, 1 en bas
+    y = rows[hi].offsetTop + rows[hi].offsetHeight / 2
+      + f * (rows[lo].offsetTop - rows[hi].offsetTop);
+  } else {
+    const r = rows[hi !== null ? hi : (lo !== null ? lo : 0)];
+    y = r.offsetTop + r.offsetHeight / 2;
+  }
+  line.style.transform = `translateY(${y}px)`;
+  line.querySelector(".tag").textContent = num(price);
+}
+
 async function pollQuote(tgt){
   const q = await fetch(`/api/quote?target=${tgt}`).then(r => r.json()).catch(() => null);
   if (!q || !q.price) return;
   const c = (CACHE[tgt] = CACHE[tgt] || {});
   c.quote = q;
-  /* Le prix s'affiche à CHAQUE tour, mais la grille n'est redessinée que si
-     le prix a bougé d'au moins un demi-palier — sinon la ligne surlignée
-     resterait la même et on reconstruirait des centaines de cellules pour
-     rien. Résultat : un prix qui vit, sans le coût du rendu complet. */
   const el = $("#px" + tgt);
   if (el) el.textContent = num(q.price);
-  const step = PREFS.gran[tgt] || 10;
-  const prev = LAST_PX[tgt];
-  if (prev == null || Math.abs(q.price - prev) >= step / 2){
-    LAST_PX[tgt] = q.price;
-    render(tgt, false);
-  }
+  LAST_PX[tgt] = q.price;
+  movePxLine(tgt, q.price);            // glissement fluide, sans re-rendu
 }
 
 function buildExpiries(cols){
@@ -556,7 +604,9 @@ TARGETS.forEach(tg => {
 });
 
 const saveGran = () => { try{ localStorage.setItem("hmGran", JSON.stringify(PREFS.gran)); }catch(_){} };
-const granLabel = v => Number(v) === 20 ? t("gEasy") : Number(v) === 10 ? t("gMed") : t("gExpert");
+/* On affiche la valeur réelle du pas — « Facile / Moyen / Expert » ne
+   décrivait pas ce que le réglage fait : c'est un espacement de prix. */
+const granLabel = v => Number(v) + " pts";
 /* Le pas découle de l'échelle : regarder ±50 avec des paliers de 5 points
    n'a aucun sens, et regarder ±10 avec des paliers de 20 non plus. On les
    accorde donc automatiquement — un réglage de moins à comprendre. */
@@ -598,7 +648,7 @@ function hmPollMs(){
   if (pa.weekday === "Sun" && pm < 23 * 60 + 50) return 0;
   const et = P("America/New_York");
   const em = (+et.hour % 24) * 60 + (+et.minute);
-  if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 6000;
+  if (et.weekday !== "Sat" && et.weekday !== "Sun" && em >= 570 && em <= 960) return 3000;
   return 60000;
 }
 let HM_MS = 0, HM_TIMER = 0;
