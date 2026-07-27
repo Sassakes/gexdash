@@ -678,14 +678,6 @@
     <div class="chartbox" id="chartBox"></div>
   </section>
 
-  <section class="panel">
-    <h2 id="levelsTitle">Niveaux du jour</h2>
-    <table>
-      <thead><tr><th id="th1">Niveau</th><th id="th2">Prix</th><th id="th3">Distance</th></tr></thead>
-      <tbody id="levelsBody"></tbody>
-    </table>
-  </section>
-
   <section class="panel" id="dpPanel">
     <h2>Dark Pool <span class="note" id="dpNoteTxt">FINRA off-exchange · publié J-1</span></h2>
     <div class="pad dp">
@@ -719,6 +711,20 @@
       </div>
     </section>
   </div>
+
+  <!-- Liste complète des niveaux : reléguée en bas et repliée par défaut.
+       Tout est déjà lisible sur la chart ; ce tableau ne sert qu'en appoint. -->
+  <div class="gtog" id="lvToggle" style="margin:18px 0 0">
+    <span class="gline"></span>
+    <button id="lvBtn" type="button"><span id="levelsTitle">Niveaux du jour</span><span class="arw">▾</span></button>
+    <span class="gline"></span>
+  </div>
+  <section class="panel" id="lvPanel" hidden style="margin-top:10px">
+    <table>
+      <thead><tr><th id="th1">Niveau</th><th id="th2">Prix</th><th id="th3">Distance</th></tr></thead>
+      <tbody id="levelsBody"></tbody>
+    </table>
+  </section>
 </div>
 
 <footer>
@@ -953,6 +959,17 @@ async function loadTarget(){
     $("status").textContent = t("noSnap")(TARGET);
   }
 }
+
+(function wireLevelsToggle(){
+  const btn = document.getElementById("lvBtn");
+  if (!btn || btn._wired) return;
+  btn._wired = true;
+  btn.addEventListener("click", () => {
+    const p = document.getElementById("lvPanel"), open = p.hidden;
+    p.hidden = !open;
+    document.getElementById("lvToggle").classList.toggle("open", open);
+  });
+})();
 
 (function wireDarkToggle(){
   const btn = document.getElementById("darkBtn");

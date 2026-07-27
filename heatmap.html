@@ -55,20 +55,20 @@
   .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
   .dot.pre,.dot.post{background:var(--gold)}
   .dot.globex{background:#6E7681}
-  /* Marqueur de prix : un trait fin superposé à la grille, positionné par
-     interpolation entre deux paliers et animé en CSS. La ligne surlignée
-     changeait de rang d'un coup, ce qui donnait cet effet de saut. */
+  /* Le repère de prix est le MÊME rectangle qu'avant, mais détaché du flux
+     du tableau : posé en absolu, il peut glisser d'un palier à l'autre au
+     lieu de sauter. La ligne sous-jacente n'est plus surlignée. */
   .tblwrap{position:relative}
-  .pxline{position:absolute; left:0; right:0; height:0; z-index:6;
-    pointer-events:none; transition:transform .45s cubic-bezier(.22,.61,.36,1);
-    will-change:transform}
-  .pxline.noanim{transition:none}
-  .pxline .bar{position:absolute; left:0; right:0; top:-1px; height:2px;
-    background:linear-gradient(90deg, rgba(240,185,11,.15), rgba(240,185,11,.95) 22%, rgba(240,185,11,.95) 78%, rgba(240,185,11,.15));
-    box-shadow:0 0 9px rgba(240,185,11,.45)}
-  .pxline .tag{position:absolute; right:4px; top:-9px; font-family:var(--mono);
-    font-size:10px; font-weight:600; color:#0A0A0C; background:var(--gold);
-    padding:1px 6px; border-radius:2px; box-shadow:0 2px 8px rgba(0,0,0,.5)}
+  .pxbox{position:absolute; left:0; right:0; z-index:5; pointer-events:none;
+    border:1px solid var(--gold); border-radius:2px;
+    background:rgba(240,185,11,.07);
+    box-shadow:0 0 12px rgba(240,185,11,.18), inset 0 0 12px rgba(240,185,11,.05);
+    transition:top .4s cubic-bezier(.22,.61,.36,1), height .2s ease;
+    will-change:top}
+  .pxbox.noanim{transition:none}
+  .pxbox .tag{position:absolute; right:3px; top:50%; transform:translateY(-50%);
+    font-family:var(--mono); font-size:9.5px; font-weight:600; color:#0A0A0C;
+    background:var(--gold); padding:1px 6px; border-radius:2px; white-space:nowrap}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
   .dd{position:relative; display:inline-flex}
@@ -127,7 +127,7 @@
   tbody td{font-size:10px; padding:0 4px; height:20px; text-align:center; white-space:nowrap}
   tbody td.px{color:var(--muted); font-size:10.5px}
   tr.live td.px{color:var(--gold); font-weight:600}
-  tr.live{outline:1px solid var(--gold-glow); outline-offset:-1px; background:rgba(240,185,11,.04)}
+  tr.live{background:transparent}
   .cell{display:block; padding:2px 5px; border-radius:2px}
   .cell.dim{opacity:.14}
   .chip{font-size:7.5px; font-weight:600; padding:1px 3px; margin-right:5px; border:1px solid; border-radius:3px; letter-spacing:.02em; vertical-align:middle}
@@ -453,44 +453,33 @@ async function loadStatic(tgt){
 }
 const LAST_PX = {};
 
-/* Place le marqueur de prix par INTERPOLATION entre les deux paliers qui
-   encadrent le prix : il glisse en continu au lieu de sauter d'une ligne à
-   l'autre. La grille elle-même n'est pas retouchée. */
+/* Place le rectangle sur le palier le plus proche du prix. La transition CSS
+   fait le reste : il GLISSE d'un palier à l'autre au lieu de réapparaître
+   ailleurs. Positionné en absolu dans .tblwrap, il suit le défilement. */
 function movePxLine(tgt, price){
   const panel = $("#p" + tgt); if (!panel) return;
   const host = panel.querySelector(".tblwrap"); if (!host) return;
   const tbody = host.querySelector("tbody"); if (!tbody) return;
-  const rows = [...tbody.rows];
+  const rows = [...tbody.rows].filter(r => r.dataset.p !== undefined);
   if (!rows.length) return;
-  let line = host.querySelector(".pxline");
-  if (!line){
-    line = document.createElement("div");
-    line.className = "pxline noanim";
-    line.innerHTML = '<span class="bar"></span><span class="tag"></span>';
-    host.appendChild(line);
-    requestAnimationFrame(() => requestAnimationFrame(
-      () => line.classList.remove("noanim")));
-  }
-  // le prix de chaque ligne est mémorisé sur l'élément au moment du rendu
-  let hi = null, lo = null;
+  let best = null, bd = Infinity;
   for (const r of rows){
-    const p = +r.dataset.p;
-    if (isNaN(p)) continue;
-    if (p >= price && (hi === null || p < +rows[hi].dataset.p)) hi = rows.indexOf(r);
-    if (p <= price && (lo === null || p > +rows[lo].dataset.p)) lo = rows.indexOf(r);
+    const d = Math.abs(+r.dataset.p - price);
+    if (d < bd){ bd = d; best = r; }
   }
-  let y;
-  if (hi !== null && lo !== null && hi !== lo){
-    const ph = +rows[hi].dataset.p, pl = +rows[lo].dataset.p;
-    const f = (ph - price) / (ph - pl || 1);          // 0 en haut, 1 en bas
-    y = rows[hi].offsetTop + rows[hi].offsetHeight / 2
-      + f * (rows[lo].offsetTop - rows[hi].offsetTop);
-  } else {
-    const r = rows[hi !== null ? hi : (lo !== null ? lo : 0)];
-    y = r.offsetTop + r.offsetHeight / 2;
+  if (!best) return;
+  let box = host.querySelector(".pxbox");
+  if (!box){
+    box = document.createElement("div");
+    box.className = "pxbox noanim";
+    box.innerHTML = '<span class="tag"></span>';
+    host.appendChild(box);
+    requestAnimationFrame(() => requestAnimationFrame(
+      () => box.classList.remove("noanim")));
   }
-  line.style.transform = `translateY(${y}px)`;
-  line.querySelector(".tag").textContent = num(price);
+  box.style.top = best.offsetTop + "px";
+  box.style.height = best.offsetHeight + "px";
+  box.querySelector(".tag").textContent = num(price);
 }
 
 async function pollQuote(tgt){
