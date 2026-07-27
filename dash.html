@@ -961,9 +961,17 @@ function layoutCard(card, cfg){
 
 function render(){
   for (const el of Array.from(board.children)){
+    // Nettoyage EXHAUSTIF : _pollWatch et _geoRaf manquaient, donc chaque
+    // ajout ou déplacement de carte laissait des surveillances actives sur
+    // des éléments détachés — elles s'arrêtaient d'elles-mêmes, mais une à
+    // deux minutes plus tard, en recréant des minuteurs entre-temps.
     if (el._timer) clearInterval(el._timer);
     if (el._timer2) clearInterval(el._timer2);
+    if (el._pollWatch) clearInterval(el._pollWatch);
+    if (el._geoSafe) clearInterval(el._geoSafe);
+    if (el._touchT) clearTimeout(el._touchT);
     if (el._anim) cancelAnimationFrame(el._anim);
+    if (el._geoRaf) cancelAnimationFrame(el._geoRaf);
     try{ el._chart && el._chart.remove(); }catch(_){}
   }
   board.innerHTML = "";

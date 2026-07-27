@@ -221,7 +221,10 @@ try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 
-const PREFS = { range:25, cols:null, overlay:true, filter:false, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
+/* range = nombre de paliers affichés de part et d'autre du prix.
+   50 par défaut : on arrive sur une vue déjà fournie, sans avoir à régler
+   quoi que ce soit. */
+const PREFS = { range:50, cols:null, overlay:true, filter:false, lock:false, assets:new Set(TARGETS), gran:Object.assign({}, GRAN_DEF) };
 try{ const a = (localStorage.getItem("hmAssets")||"").split(",").filter(Boolean);
      if (a.length) PREFS.assets = new Set(a.filter(x => TARGETS.includes(x))); }catch(_){}
 try{ const g = JSON.parse(localStorage.getItem("hmGran")||"null"); if (g) Object.assign(PREFS.gran, g); }catch(_){}
@@ -480,6 +483,15 @@ function movePxLine(tgt, price){
   }
   box.style.top = best.offsetTop + "px";
   box.style.height = best.offsetHeight + "px";
+  /* La classe .live (prix en doré) était posée UNIQUEMENT au rendu complet,
+     donc elle restait figée sur l'ancienne ligne pendant que le rectangle
+     glissait. On la déplace ici, en même temps que le rectangle : les deux
+     ne peuvent plus se désynchroniser. */
+  const cur = tbody.querySelector("tr.live");
+  if (cur !== best){
+    if (cur) cur.classList.remove("live");
+    best.classList.add("live");
+  }
 }
 
 async function pollQuote(tgt){
@@ -599,13 +611,13 @@ const granLabel = v => Number(v) + " pts";
 /* Le pas découle de l'échelle : regarder ±50 avec des paliers de 5 points
    n'a aucun sens, et regarder ±10 avec des paliers de 20 non plus. On les
    accorde donc automatiquement — un réglage de moins à comprendre. */
-const STEP_FOR = {10: 5, 25: 10, 50: 20};
+const STEP_FOR = {25: 5, 50: 10, 100: 20};
 
 /* boot */
 applyLayout();
 if (PREFS.lock){ $("#btnLock").classList.add("lockon"); $("#btnLock .lk").textContent = "🔒"; }
 const GRAN_DD = {};
-mkDD("#ddRange", [10, 25, 50], v => "±" + v, () => PREFS.range, v => {
+mkDD("#ddRange", [25, 50, 100], v => "±" + v, () => PREFS.range, v => {
   PREFS.range = v;
   const st = STEP_FOR[v];
   if (st){ for (const tg of TARGETS) PREFS.gran[tg] = st; saveGran();
