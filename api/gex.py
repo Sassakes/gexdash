@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -252,8 +252,9 @@ def _q_target(qs):
     return t if t in TARGETS else None
 
 
-YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC"}
-YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
+YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F"}
+# ETF servant de proxy temps réel pendant la séance US (le future est différé)
+YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
@@ -773,7 +774,7 @@ class handler(BaseHTTPRequestHandler):
             qs0 = parse_qs(parsed.query)
             target = "NQ" if path == "/nq_levels.json" else _q_target(qs0)
             if target is None:
-                self._send(400, json.dumps({"error": "target must be NQ, ES or SPX"}).encode(),
+                self._send(400, json.dumps({"error": "target must be " + ", ".join(TARGETS)}).encode(),
                            "application/json")
                 return
             payload = _latest_payload(target)
@@ -808,9 +809,20 @@ class handler(BaseHTTPRequestHandler):
                            "application/json")
                 return
             try:
-                data = fetch_cboe(TARGETS[tgt]["chain"])
+                cfg = TARGETS[tgt]
+                data = fetch_cboe(cfg["chain"])
                 spot, opts, _exps = parse_chain(data, 8, today=et_today())
-                bucket = {"NQ": 10.0, "ES": 5.0, "SPX": 5.0}.get(tgt)
+                # même remise à l'échelle que le moteur : sans elle, la
+                # matrice de l'or resterait à l'échelle de l'ETF (~389 $)
+                # au lieu de celle de l'once (~4200 $)
+                if cfg.get("scale_to"):
+                    tgt_spot = yahoo_spot(cfg["scale_to"])
+                    if tgt_spot and tgt_spot > 0:
+                        sc = spot / tgt_spot
+                        for o in opts:
+                            o.scale = sc
+                        spot = tgt_spot
+                bucket = cfg.get("bucket") or {"NQ": 10.0, "ES": 5.0, "SPX": 5.0}.get(tgt)
                 pay = _latest_payload(tgt) or {}
                 basis = float(pay.get("basis") or 0.0)
                 dtes = sorted({o.dte for o in opts})[:6]
@@ -948,7 +960,7 @@ class handler(BaseHTTPRequestHandler):
             qs0 = parse_qs(parsed.query)
             target = _q_target(qs0)
             if target is None:
-                self._send(400, json.dumps({"error": "target must be NQ, ES or SPX"}).encode(),
+                self._send(400, json.dumps({"error": "target must be " + ", ".join(TARGETS)}).encode(),
                            "application/json")
                 return
             interval = (qs0.get("interval", ["5m"])[0] or "5m")
@@ -1210,7 +1222,7 @@ class handler(BaseHTTPRequestHandler):
                 n = max(1, min(int(q("n", 10)), 16))
                 target = (q("target", "NQ") or "NQ").upper()
                 if target not in TARGETS:
-                    raise ValueError("target must be NQ, ES or SPX")
+                    raise ValueError("target must be " + ", ".join(TARGETS))
                 bands = tuple(
                     float(x) for x in q("em_bands", "0.5,1.5").split(",") if x.strip()
                 )

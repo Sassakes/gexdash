@@ -26,6 +26,13 @@ TARGETS = {
     "NQ":  {"chain": "_NDX", "future": "NQ=F", "etf": "QQQ", "ychart": "NQ=F"},
     "ES":  {"chain": "_SPX", "future": "ES=F", "etf": "SPY", "ychart": "ES=F"},
     "SPX": {"chain": "_SPX", "future": None,   "etf": "SPY", "ychart": "^GSPC"},
+    # OR — pas d'indice sous-jacent chez CBOE : la chaîne est celle de l'ETF
+    # GLD, dont les strikes sont ramenées à l'échelle du future GC (une part
+    # de GLD vaut ~1/10 d'once). "scale_to" indique le symbole dont le prix
+    # devient l'échelle de référence ; la basis est alors nulle puisque le
+    # spot EST déjà celui du future.
+    "GC":  {"chain": "GLD", "future": None, "etf": None, "ychart": "GC=F",
+            "scale_to": "GC=F", "bucket": 10.0, "min_oi": 100000},
 }
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
 CONTRACT_MULT = 100
@@ -301,16 +308,20 @@ def zero_dte_walls(spot, opts, bucket=None):
 
 def max_pain(opts):
     """Classic max pain on the nearest expiry of the INDEX chain (ETF legs
-    excluded: mixing payout scales is not meaningful)."""
-    opts = [o for o in opts if o.scale == 1.0]
+    excluded: mixing payout scales is not meaningful).
+    Quand la chaîne EST l'ETF (or : GLD ramené à l'once), aucune option n'a
+    scale 1.0 — on prend alors toute la chaîne, homogène par construction."""
+    prim = [o for o in opts if o.scale == 1.0]
+    opts = prim if prim else opts
     if not opts:
         return None
     min_dte = min(o.dte for o in opts)
     sub = [o for o in opts if o.dte == min_dte]
-    ks = np.array(sorted({o.K for o in sub}))
+    # strikes ramenées à l'échelle du produit (cf. per_strike_gex)
+    ks = np.array(sorted({o.K / (o.scale or 1.0) for o in sub}))
     if not len(ks):
         return None
-    K = np.array([o.K for o in sub])
+    K = np.array([o.K / (o.scale or 1.0) for o in sub])
     OI = np.array([o.OI for o in sub])
     is_call = np.array([o.is_call for o in sub])
     pay = np.array([
@@ -321,9 +332,13 @@ def max_pain(opts):
 
 
 def _expiry_iv(spot, opts, dte):
-    """Median IV of the ~8 strikes closest to spot on one expiry (noise-proof)."""
+    """Median IV of the ~8 strikes closest to spot on one expiry (noise-proof).
+    La distance est mesurée à l'ÉCHELLE DU PRODUIT (K / scale) : sans cela, une
+    chaîne ETF ramenée à une autre échelle — GLD vers l'once d'or — verrait
+    tous ses strikes à égale distance du spot, et le tri retiendrait les plus
+    éloignés au lieu des ATM, faussant l'IV puis toute la grille sigma."""
     sub = sorted((o for o in opts if o.dte == dte and o.iv > 0),
-                 key=lambda o: abs(o.K - spot))
+                 key=lambda o: abs(o.K / (o.scale or 1.0) - spot))
     ivs = sorted(o.iv for o in sub[:8])
     if not ivs:
         return None
@@ -339,7 +354,13 @@ def atm_iv_detail(spot, opts, now_et=None):
     either leg alone. Before 13:00 ET the 0DTE is eligible as front; after,
     its IV is a decaying-intraday artefact and the front rolls to dte>=1.
     Returns {iv, mode, front:{dte,iv}, next:{dte,iv}} or None."""
-    opts = [o for o in opts if o.scale == 1.0]
+    # On privilégie les options de la chaîne de référence (scale 1.0) pour
+    # écarter l'ETF mélangé — mais quand la chaîne EST l'ETF (or : GLD ramené
+    # à l'échelle de l'once), aucune option n'a scale 1.0 et ce filtre les
+    # supprimait toutes, renvoyant None : plus d'IV, donc plus d'Expected
+    # Move et une grille repliée sur l'ATR.
+    prim = [o for o in opts if o.scale == 1.0]
+    opts = prim if prim else opts
     if now_et is None:
         now_et = dt.datetime.now(ET)
     min_ok = 0 if now_et.hour < 13 else 1
@@ -422,6 +443,18 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 # --------------------------------------------------------------------------- #
 # NQ basis (direct Yahoo HTTP, no yfinance dependency)                         #
 # --------------------------------------------------------------------------- #
+def yahoo_spot(sym):
+    """Dernier prix Yahoo pour un symbole. None si indisponible."""
+    try:
+        import requests
+        r = requests.get(YAHOO_URL.format(sym=sym), timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        return float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
+    except Exception:
+        return None
+
+
 def future_basis(index_spot, yahoo_future, override=None):
     """basis = front future - index spot. yahoo_future=None -> index scale (0).
     Returns (basis, target_price_or_None, source)."""
@@ -800,12 +833,31 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
 
     data = _chain(symbol)
     spot, opts, exps = parse_chain(data, n_expiries, today=today)
+
+    # Remise à l'échelle : quand la chaîne n'est pas celle du produit tracé
+    # (or : chaîne GLD, produit GC), on prend le spot du produit comme
+    # référence et on marque chaque option de son facteur d'échelle. Le
+    # dollar-gamma reste calculé avec le spot propre à l'option ; seules les
+    # strikes sont ramenées, exactement comme pour le mélange QQQ/NDX.
+    if cfg.get("scale_to"):
+        tgt_spot = yahoo_spot(cfg["scale_to"])
+        if not tgt_spot or tgt_spot <= 0:
+            raise ValueError(f"prix {cfg['scale_to']} indisponible — publication refusée")
+        sc = spot / tgt_spot
+        for o in opts:
+            o.scale = sc
+        spot = tgt_spot
+
     # garde-fous : refuser une chaîne dégénérée plutôt que publier du bruit
     idx_oi = sum(o.OI for o in opts)
-    if len(opts) < 50 or idx_oi < 1000:
+    if len(opts) < 50 or idx_oi < cfg.get("min_oi", 1000):
         raise ValueError(
             f"index chain too thin ({len(opts)} opts, OI {idx_oi:.0f}) — refusing")
     sources = [{"chain": symbol, "opts": len(opts), "oi": round(idx_oi)}]
+    if cfg.get("scale_to") and opts:
+        # indispensable : /api/quote et /api/chart lisent ce facteur pour
+        # convertir le prix et les bougies de l'ETF vers l'échelle du produit
+        sources[0]["scale"] = round(opts[0].scale, 6)
 
     # blend ETF (QQQ/SPY) : le gros du positionnement gamma vit là.
     # Strikes ramenées à l'échelle indice, dollar-gamma agrégé par bucket.
@@ -824,7 +876,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
         except Exception as e:
             sources.append({"chain": etf_sym, "error": str(e)[:120]})
 
-    bucket = 10.0 if spot >= 10000 else 5.0
+    bucket = cfg.get("bucket") or (10.0 if spot >= 10000 else 5.0)
     strikes, net = per_strike_gex(spot, opts, bucket=bucket)
     flip = zero_gamma_flip(opts, spot * 0.92, spot * 1.08)
     if flip is None:  # régime très déséquilibré : élargir avant d'abandonner

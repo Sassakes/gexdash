@@ -156,6 +156,7 @@
     <button data-a="NQ" class="on">NQ</button>
     <button data-a="ES" class="on">ES</button>
     <button data-a="SPX" class="on">SPX</button>
+    <button data-a="GC" class="on">GOLD</button>
   </div>
   <span class="tdiv"></span>
   <div class="tgroup"><span class="tlabel" id="lblScale">Échelle</span><span id="ddRange"></span></div>
@@ -175,18 +176,19 @@
   <section class="panel" id="pNQ"><div class="phead"><span class="sym">NQ</span><span class="px" id="pxNQ">—</span><span class="pxstate" id="stNQ"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddNQ"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
   <section class="panel" id="pES"><div class="phead"><span class="sym">ES</span><span class="px" id="pxES">—</span><span class="pxstate" id="stES"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddES"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
   <section class="panel" id="pSPX"><div class="phead"><span class="sym">SPX</span><span class="px" id="pxSPX">—</span><span class="pxstate" id="stSPX"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddSPX"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
+    <section class="panel" id="pGC"><div class="phead"><span class="sym">GOLD</span><span class="px" id="pxGC">—</span><span class="pxstate" id="stGC"></span><span class="pas"><span class="tlabel lblStep">Pas</span><span id="ddGC"></span></span><span class="meta"></span></div><div class="tblwrap"><div class="loading">…</div></div></section>
 </div>
 
 <script>
 "use strict";
 const $  = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
-const TARGETS = ["NQ", "ES", "SPX"];
+const TARGETS = ["NQ", "ES", "SPX", "GC"];
 const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
 
 const NOISE_PCT = 0.70;   // « zones fortes » = les 30% de cellules les plus lourdes
 const GRAN_STEPS  = [20, 10, 5];   // pas de la grille, en points d'indice
-const GRAN_DEF    = { NQ:10, ES:10, SPX:10 };    // default Medium
+const GRAN_DEF    = { NQ:10, ES:10, SPX:10, GC:10 };   // pas par défaut
 /* Filtre de bruit : trois niveaux nommés plutôt que six seuils en dollars.
    « ±5M » ne dit rien à la lecture ; « Zones » et « Majeur » si. */
 
