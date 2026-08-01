@@ -9,6 +9,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
 <style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
+     une déclaration display: sur un id ou une classe le neutralise — c'est ce
+     qui affichait la fenêtre de connexion en permanence, sans pouvoir la
+     fermer. Le !important est ici volontaire et sûr. */
+  [hidden]{display:none !important}
+
   :root{
     --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
     --text:#E8E6E1; --muted:#7A7A85; --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
@@ -147,7 +153,7 @@
     <h2>Refresh des niveaux (publication silencieuse)</h2>
     <div class="row" style="grid-template-columns:auto 1fr auto auto auto">
       <select id="rfTarget" style="background:var(--panel2); border:1px solid var(--border); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
-        <option>NQ</option><option>ES</option><option>SPX</option>
+        <option>NQ</option><option>ES</option><option>SPX</option><option value="GC">GOLD</option>
       </select>
       <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
       <input id="rfIv" inputmode="decimal" placeholder="IV % (calibration, ex: 22.04)" style="max-width:190px">
@@ -201,6 +207,18 @@
       Le lien « Soutenir » n'apparaît sur le site que s'il est renseigné ici — laisse vide pour le masquer.</div>
   </section>
   <button id="saveLinksBtn">Enregistrer les liens</button>
+
+  <section>
+    <h2>Accès membres <span class="note">page /news réservée aux comptes ci-dessous</span></h2>
+    <div class="row" style="grid-template-columns:auto 1fr auto; align-items:center">
+      <span class="t" style="font-size:11px">Nouvelle invitation</span>
+      <input id="invNote" placeholder="Pour qui ? (note, facultatif)">
+      <button id="invBtn">Générer un code</button>
+    </div>
+    <div id="invOut" class="status" style="margin:6px 0 14px"></div>
+    <div id="usersBox"></div>
+  </section>
+
   <div id="msg"></div>
 </main>
 
@@ -233,6 +251,68 @@ function rowHtml(t){
     <button class="ghost" data-del="${t}" title="Retirer ce webhook">✕</button>
     <span class="status" data-st="${t}">—</span>
   </div>`;
+}
+
+/* ═══ GESTION DES ACCÈS ═══════════════════════════════════════════════
+   Les codes d'invitation sont à usage unique : générés ici, consommés à
+   l'inscription. Un compte supprimé ne peut plus se connecter, mais sa
+   session en cours reste valide jusqu'à son expiration — pour la couper
+   immédiatement, change GEX_AUTH_SECRET sur Vercel (déconnecte tout le
+   monde d'un coup). */
+async function loadUsers(){
+  const box = document.getElementById("usersBox");
+  if (!box) return;
+  try{
+    const d = await api("/api/users");
+    const us = Object.entries(d.users || {});
+    const inv = Object.entries(d.invites || {}).filter(([, v]) => !v.used_by);
+    let h = "";
+    h += `<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+          color:var(--muted);margin-bottom:6px">Comptes (${us.length})</div>`;
+    h += us.length
+      ? `<table class="tb"><thead><tr><th>Identifiant</th><th>Note</th><th>Créé</th>
+         <th style="text-align:right">Actions</th></tr></thead><tbody>` +
+        us.map(([u, v]) =>
+          `<tr><td><b>${u}</b></td><td>${v.note || "—"}</td>
+           <td class="mut">${(v.created || "").slice(0, 10)}</td>
+           <td style="text-align:right;white-space:nowrap">
+             <button data-reset="${u}" style="font-size:11px">Mot de passe</button>
+             <button data-del="${u}" style="font-size:11px;color:#EF5350">Supprimer</button>
+           </td></tr>`).join("") + "</tbody></table>"
+      : `<div class="status">Aucun compte pour l'instant.</div>`;
+    h += `<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+          color:var(--muted);margin:16px 0 6px">Codes en attente (${inv.length})</div>`;
+    h += inv.length
+      ? `<table class="tb"><tbody>` + inv.map(([c, v]) =>
+          `<tr><td style="font-family:ui-monospace,monospace;color:var(--gold)">${c}</td>
+           <td>${v.note || "—"}</td><td class="mut">${(v.created || "").slice(0, 10)}</td>
+           <td style="text-align:right"><button data-revoke="${c}"
+             style="font-size:11px">Révoquer</button></td></tr>`).join("") + "</tbody></table>"
+      : `<div class="status">Aucun code en attente.</div>`;
+    box.innerHTML = h;
+    box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+      if (!confirm(`Supprimer le compte ${b.dataset.del} ?`)) return;
+      await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "delete", user: b.dataset.del})});
+      loadUsers();
+    });
+    box.querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
+      const p = prompt(`Nouveau mot de passe pour ${b.dataset.reset} (8 caractères min) :`);
+      if (!p) return;
+      try{
+        await api("/api/users", {method: "POST",
+          body: JSON.stringify({op: "reset", user: b.dataset.reset, pass: p})});
+        alert("Mot de passe modifié.");
+      }catch(e){ alert("Échec : " + e.message); }
+    });
+    box.querySelectorAll("[data-revoke]").forEach(b => b.onclick = async () => {
+      await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "revoke", code: b.dataset.revoke})});
+      loadUsers();
+    });
+  }catch(e){
+    box.innerHTML = `<div class="status">Comptes indisponibles : ${e.message}</div>`;
+  }
 }
 
 async function refreshLock(){
@@ -384,6 +464,28 @@ refreshLock(); }
   };
   loadStatus();
   refreshLock();
+  loadUsers();
+  const ib = document.getElementById("invBtn");
+  if (ib) ib.onclick = async () => {
+    ib.disabled = true;
+    try{
+      const note = document.getElementById("invNote").value.trim();
+      const d = await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "invite", note})});
+      const out = document.getElementById("invOut");
+      out.innerHTML = `Code à transmettre : <b style="color:var(--gold);
+        font-family:ui-monospace,monospace;font-size:14px">${d.code}</b>
+        <button id="invCopy" style="font-size:11px;margin-left:8px">Copier</button>`;
+      document.getElementById("invCopy").onclick = () => {
+        navigator.clipboard && navigator.clipboard.writeText(d.code);
+        document.getElementById("invCopy").textContent = "Copié ✓";
+      };
+      document.getElementById("invNote").value = "";
+      loadUsers();
+    }catch(e){
+      document.getElementById("invOut").textContent = "Échec : " + e.message;
+    }finally{ ib.disabled = false; }
+  };
 
   try{
     const L = await (await fetch("/api/links")).json();

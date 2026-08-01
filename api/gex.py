@@ -21,6 +21,9 @@ path lands here. We therefore route explicitly:
 import hmac
 import datetime as dt
 import json
+import base64
+import secrets
+import hashlib
 import os
 import time
 import traceback
@@ -62,6 +65,105 @@ DP_SYMS = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY"}
 
 
 _FINRA_MEM = {}          # ymd -> {"QQQ": (short, total), ...} ; fichiers immuables
+
+
+# ═══════════════ TERMINAL NEWS ═══════════════
+# Sources : Finnhub (clé serveur, jamais exposée) et FairEconomy (sans clé).
+# Caches mémoire courts : on reste très loin des limites des fournisseurs.
+_NEWS_MEM = {}
+_NEWS_SHOCK = ["nuclear", "missile", "airstrike", "air strike", "invasion", "invade",
+               "declares war", "act of war", "military strike", "ceasefire",
+               "retaliat", "escalat", "tariff", "sanction", "state of emergency",
+               "government shutdown", "debt default", "rate cut", "rate hike",
+               "emergency cut", "market crash", "circuit breaker", "bank failure",
+               "bankruptc", "recession fears"]
+
+
+def _news_cached(key, ttl, fn):
+    now = time.time()
+    hit = _NEWS_MEM.get(key)
+    if hit and now - hit[1] < ttl:
+        return hit[0]
+    data = fn()
+    _NEWS_MEM[key] = (data, now)
+    return data
+
+
+def _news_finnhub(path_, params, key, ttl):
+    def fetch():
+        import requests
+        p = dict(params)
+        p["token"] = os.environ.get("FINNHUB_API_KEY", "")
+        return requests.get(f"https://finnhub.io/api/v1/{path_}", params=p,
+                            timeout=10).json()
+    return _news_cached(key, ttl, fetch)
+
+
+def _news_impact(headline):
+    h = (headline or "").lower()
+    return "high" if any(k in h for k in _NEWS_SHOCK) else "none"
+
+
+def _news_headlines(cat):
+    raw = _news_finnhub("news", {"category": cat}, f"news:{cat}", ttl=90)
+    if not isinstance(raw, list):
+        return []
+    now = time.time()
+    out = []
+    for x in raw[:70]:
+        imp = _news_impact(x.get("headline"))
+        ts = x.get("datetime") or 0
+        out.append({"headline": x.get("headline"), "source": x.get("source"),
+                    "url": x.get("url"), "datetime": ts,
+                    "summary": (x.get("summary") or "")[:260],
+                    "impact": imp, "pinned": imp == "high" and (now - ts) < 3600})
+    return out
+
+
+def _news_calendar():
+    def fetch():
+        import requests
+        return requests.get(
+            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; gexdash/1.0)"},
+            timeout=10).json()
+    raw = _news_cached("cal", 900, fetch)
+    out = []
+    if isinstance(raw, list):
+        for x in raw:
+            if x.get("country") != "USD":
+                continue
+            out.append({"time": x.get("date"), "title": x.get("title"),
+                        "impact": (x.get("impact") or "").lower(),
+                        "forecast": x.get("forecast"), "previous": x.get("previous"),
+                        "actual": x.get("actual")})
+    return out
+
+
+_MAG7 = ["NVDA", "MSFT", "META", "GOOGL", "TSLA", "AMZN", "AAPL", "COIN"]
+
+
+def _news_mag_one(sym):
+    q = _news_finnhub("quote", {"symbol": sym}, f"q:{sym}", ttl=30)
+    m = _news_finnhub("stock/metric", {"symbol": sym, "metric": "price"},
+                      f"m:{sym}", ttl=1800)
+    met = m.get("metric", {}) if isinstance(m, dict) else {}
+    return {"sym": sym, "price": q.get("c"), "dp": q.get("dp"),
+            "week": met.get("5DayPriceReturnDaily"),
+            "month": met.get("monthToDatePriceReturnDaily")}
+
+
+def _news_mag7():
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        rows = list(ex.map(_news_mag_one, _MAG7))
+
+    def avg(k):
+        vals = [r[k] for r in rows if r.get(k) is not None]
+        return round(sum(vals) / len(vals), 2) if vals else None
+
+    return {"rows": rows, "agg": {"day": avg("dp"), "week": avg("week"),
+                                  "month": avg("month")}}
 
 
 def _finra_dp_day(ymd):
@@ -161,6 +263,9 @@ STATIC = {
     "/admin": ("admin.html", "text/html; charset=utf-8"),
     "/dash": ("dash.html", "text/html; charset=utf-8"),
     "/heatmap": ("heatmap.html", "text/html; charset=utf-8"),
+    # instantané macro produit par la GitHub Action (FRED est injoignable
+    # depuis Vercel) et lu par la bannière du terminal news
+    "/macro.json": ("macro.json", "application/json"),
     "/doc": ("doc.html", "text/html; charset=utf-8"),
     "/wiki": ("doc.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
@@ -405,6 +510,80 @@ class handler(BaseHTTPRequestHandler):
         given = self.headers.get("x-gex-key") or ((qs or {}).get("key", [None])[0] or "")
         return bool(given) and hmac.compare_digest(given, secret)
 
+    # ═══════════════ AUTHENTIFICATION ═══════════════
+    # Mots de passe : PBKDF2-HMAC-SHA256, 200 000 itérations, sel aléatoire par
+    # utilisateur — jamais de mot de passe en clair, jamais réversible.
+    # Sessions : jeton SIGNÉ (HMAC) dans un cookie HttpOnly. Rien n'est stocké
+    # côté serveur, donc aucune lecture Redis par requête ; la validité est
+    # portée par la signature et l'horodatage d'expiration.
+
+    @staticmethod
+    def _auth_secret():
+        return (os.environ.get("GEX_AUTH_SECRET")
+                or os.environ.get("GEX_REFRESH_KEY") or "gexdash-dev").encode()
+
+    @staticmethod
+    def _pw_hash(password, salt=None):
+        salt = salt or secrets.token_hex(16)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000)
+        return salt, dk.hex()
+
+    @classmethod
+    def _pw_verify(cls, password, salt, expected):
+        _, got = cls._pw_hash(password, salt)
+        return hmac.compare_digest(got, expected)   # comparaison à temps constant
+
+    @classmethod
+    def _mk_token(cls, user, days=30):
+        exp = int(time.time()) + days * 86400
+        body = f"{user}|{exp}"
+        sig = hmac.new(cls._auth_secret(), body.encode(), hashlib.sha256).hexdigest()[:32]
+        return base64.urlsafe_b64encode(f"{body}|{sig}".encode()).decode().rstrip("=")
+
+    @classmethod
+    def _read_token(cls, tok):
+        """Retourne le nom d'utilisateur si le jeton est valide et non expiré."""
+        try:
+            pad = "=" * (-len(tok) % 4)
+            raw = base64.urlsafe_b64decode(tok + pad).decode()
+            user, exp, sig = raw.rsplit("|", 2)
+            body = f"{user}|{exp}"
+            good = hmac.new(cls._auth_secret(), body.encode(),
+                            hashlib.sha256).hexdigest()[:32]
+            if not hmac.compare_digest(sig, good):
+                return None
+            if int(exp) < time.time():
+                return None
+            return user
+        except Exception:
+            return None
+
+    def _cookie(self, name):
+        raw = self.headers.get("Cookie", "") or ""
+        for part in raw.split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return None
+
+    def _current_user(self):
+        tok = self._cookie("gexauth")
+        return self._read_token(tok) if tok else None
+
+    @staticmethod
+    def _users():
+        try:
+            return json.loads(kv_get("gex:users") or "{}")
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _invites():
+        try:
+            return json.loads(kv_get("gex:invites") or "{}")
+        except Exception:
+            return {}
+
     def _read_json(self):
         try:
             n = int(self.headers.get("Content-Length", 0) or 0)
@@ -415,6 +594,145 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        # ── inscription / connexion / déconnexion ──
+        if path == "/api/auth":
+            qs = parse_qs(parsed.query)
+            act = (qs.get("action", ["login"])[0] or "login").lower()
+            body = self._read_json()
+            user = (body.get("user") or "").strip().lower()
+            pwd = body.get("pass") or ""
+
+            def fail(code, msg):
+                self._send(code, json.dumps({"error": msg}).encode(),
+                           "application/json")
+
+            if act == "logout":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie",
+                                 "gexauth=; Path=/; Max-Age=0; HttpOnly; "
+                                 "Secure; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+                return
+
+            if act == "register":
+                code = (body.get("code") or "").strip()
+                if not (3 <= len(user) <= 32) or not user.replace("_", "").replace("-", "").isalnum():
+                    return fail(400, "Identifiant invalide (3-32 caractères, lettres/chiffres)")
+                if len(pwd) < 8:
+                    return fail(400, "Mot de passe : 8 caractères minimum")
+                invites = self._invites()
+                inv = invites.get(code)
+                if not inv or inv.get("used_by"):
+                    return fail(403, "Code d'invitation invalide ou déjà utilisé")
+                users = self._users()
+                if user in users:
+                    return fail(409, "Cet identifiant existe déjà")
+                salt, h = self._pw_hash(pwd)
+                users[user] = {"salt": salt, "hash": h, "note": inv.get("note", ""),
+                               "created": dt.datetime.now(dt.timezone.utc)
+                                            .isoformat(timespec="seconds")}
+                inv["used_by"] = user
+                inv["used_at"] = users[user]["created"]
+                kv_set("gex:users", json.dumps(users))
+                kv_set("gex:invites", json.dumps(invites))
+                tok = self._mk_token(user)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie",
+                                 f"gexauth={tok}; Path=/; Max-Age={30*86400}; "
+                                 "HttpOnly; Secure; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "user": user}).encode())
+                return
+
+            # connexion — verrou après échecs répétés
+            lock_key = f"gex:lockout:{user}"
+            try:
+                fails = int(kv_get(lock_key) or 0)
+            except Exception:
+                fails = 0
+            if fails >= 8:
+                return fail(429, "Trop de tentatives — réessaie dans 15 minutes")
+            # Base injoignable : on refuse l'accès (sens de défaillance sûr),
+            # mais avec un message distinct — sinon l'utilisateur croit s'être
+            # trompé de mot de passe alors que le service est en panne.
+            try:
+                all_users = self._users()
+                if not all_users and kv_get("gex:users") is None:
+                    pass          # base réellement vide : premier compte à créer
+            except Exception:
+                return fail(503, "Service temporairement indisponible, réessaie")
+            u = all_users.get(user)
+            if not u or not self._pw_verify(pwd, u.get("salt", ""), u.get("hash", "")):
+                try:
+                    kv_set(lock_key, str(fails + 1), ex=900)
+                except Exception:
+                    pass
+                return fail(401, "Identifiant ou mot de passe incorrect")
+            try:
+                kv_set(lock_key, "0", ex=1)
+            except Exception:
+                pass
+            tok = self._mk_token(user)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie",
+                             f"gexauth={tok}; Path=/; Max-Age={30*86400}; "
+                             "HttpOnly; Secure; SameSite=Lax")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True, "user": user}).encode())
+            return
+
+        # ── administration des comptes (protégée par la clé admin) ──
+        if path == "/api/users":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            body = self._read_json()
+            op = (body.get("op") or "").lower()
+            users, invites = self._users(), self._invites()
+            if op == "invite":
+                code = secrets.token_urlsafe(9)
+                invites[code] = {"note": (body.get("note") or "").strip()[:80],
+                                 "created": dt.datetime.now(dt.timezone.utc)
+                                              .isoformat(timespec="seconds"),
+                                 "used_by": None}
+                kv_set("gex:invites", json.dumps(invites))
+                self._send(200, json.dumps({"ok": True, "code": code}).encode(),
+                           "application/json")
+                return
+            if op == "delete":
+                users.pop((body.get("user") or "").lower(), None)
+                kv_set("gex:users", json.dumps(users))
+            elif op == "reset":
+                u = (body.get("user") or "").lower()
+                new_pwd = body.get("pass") or ""
+                if u not in users or len(new_pwd) < 8:
+                    self._send(400, json.dumps({"error": "utilisateur inconnu ou "
+                                                "mot de passe trop court"}).encode(),
+                               "application/json")
+                    return
+                salt, h = self._pw_hash(new_pwd)
+                users[u].update({"salt": salt, "hash": h})
+                kv_set("gex:users", json.dumps(users))
+            elif op == "note":
+                u = (body.get("user") or "").lower()
+                if u in users:
+                    users[u]["note"] = (body.get("note") or "").strip()[:80]
+                    kv_set("gex:users", json.dumps(users))
+            elif op == "revoke":
+                invites.pop(body.get("code") or "", None)
+                kv_set("gex:invites", json.dumps(invites))
+            else:
+                self._send(400, json.dumps({"error": "opération inconnue"}).encode(),
+                           "application/json")
+                return
+            self._send(200, json.dumps({"ok": True}).encode(), "application/json")
+            return
 
         if path == "/api/webhooks":
             if not self._auth_key():
@@ -787,6 +1105,68 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ---- static: dashboard + committed daily files ----
+        # ── état de la session (consulté par le bouton de connexion) ──
+        if path == "/api/auth":
+            u = self._current_user()
+            self._send(200 if u else 401,
+                       json.dumps({"user": u} if u else {"error": "anonyme"}).encode(),
+                       "application/json")
+            return
+
+        # ── liste des comptes et invitations (admin) ──
+        if path == "/api/users":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            users = {k: {"note": v.get("note", ""), "created": v.get("created", "")}
+                     for k, v in self._users().items()}
+            self._send(200, json.dumps({"users": users,
+                                        "invites": self._invites()}).encode(),
+                       "application/json")
+            return
+
+        # ── données du terminal news : mêmes droits que la page ──
+        if path == "/api/news":
+            if not self._current_user():
+                self._send(401, json.dumps({"error": "connexion requise"}).encode(),
+                           "application/json")
+                return
+            qs = parse_qs(parsed.query)
+            typ = (qs.get("type", ["news"])[0] or "news").lower()
+            try:
+                if typ == "calendar":
+                    out = {"calendar": _news_calendar()}
+                elif typ == "mag7":
+                    out = {"mag7": _news_mag7()}
+                else:
+                    out = {"news": _news_headlines("general")}
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "private, max-age=60")
+                self.end_headers()
+                self.wfile.write(json.dumps(out).encode())
+            except Exception as e:
+                self._send(502, json.dumps({"error": str(e)}).encode(),
+                           "application/json")
+            return
+
+        # ── /news : réservé aux comptes autorisés ──
+        if path == "/news":
+            if not self._current_user():
+                self.send_response(302)
+                self.send_header("Location", "/?login=1&next=/news")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            fpath = ROOT / "news.html"
+            if not fpath.is_file():
+                self._send(404, json.dumps({"error": "news.html absent"}).encode(),
+                           "application/json")
+                return
+            self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")
+            return
+
         if path in STATIC:
             fname, ctype = STATIC[path]
             fpath = ROOT / fname

@@ -9,6 +9,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
+     une déclaration display: sur un id ou une classe le neutralise — c'est ce
+     qui affichait la fenêtre de connexion en permanence, sans pouvoir la
+     fermer. Le !important est ici volontaire et sûr. */
+  [hidden]{display:none !important}
+
   :root{
     --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
     --line:#212127; --line-strong:#2E2E36;

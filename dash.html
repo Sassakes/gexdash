@@ -12,6 +12,10 @@
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/ui.js"></script>
 <style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
+     déclaration display: portée par un id ou une classe. */
+  [hidden]{display:none !important}
+
   :root{
     --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
     --line:#212127; --line-strong:#2B2B33;
