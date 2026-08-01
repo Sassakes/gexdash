@@ -126,14 +126,18 @@ def _news_headlines(cat):
 # sont publics, stables et pensés pour ça. Un pont RSS vers X peut être ajouté
 # depuis l'admin comme n'importe quelle autre source.
 DEFAULT_FEEDS = [
-    {"n": "Reuters Business", "u": "https://feeds.reuters.com/reuters/businessNews", "t": "marché"},
-    {"n": "CNBC Marchés", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20409666", "t": "marché"},
-    {"n": "CNBC Économie", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258", "t": "macro"},
-    {"n": "MarketWatch", "u": "https://feeds.content.dowjones.io/public/rss/mw_topstories", "t": "marché"},
-    {"n": "Réserve fédérale", "u": "https://www.federalreserve.gov/feeds/press_all.xml", "t": "banque centrale"},
+    # Sources primaires : ce que disent les institutions elles-mêmes.
+    # Aucune source « conseils perso / lifestyle » — ces flux-là noient le
+    # signal sous des articles sans valeur pour un terminal.
+    {"n": "Fed · communiqués", "u": "https://www.federalreserve.gov/feeds/press_all.xml", "t": "banque centrale"},
+    {"n": "Fed · politique monétaire", "u": "https://www.federalreserve.gov/feeds/press_monetary.xml", "t": "banque centrale"},
     {"n": "Trésor US", "u": "https://home.treasury.gov/rss/press.xml", "t": "gouvernement"},
+    {"n": "BLS · statistiques", "u": "https://www.bls.gov/feed/bls_latest.rss", "t": "macro"},
+    {"n": "SEC · communiqués", "u": "https://www.sec.gov/news/pressreleases.rss", "t": "régulateur"},
     {"n": "Maison-Blanche", "u": "https://www.whitehouse.gov/presidential-actions/feed/", "t": "politique"},
-    {"n": "Yahoo Finance", "u": "https://finance.yahoo.com/news/rssindex", "t": "marché"},
+    {"n": "BCE", "u": "https://www.ecb.europa.eu/rss/press.html", "t": "banque centrale"},
+    {"n": "CNBC · économie", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258", "t": "macro"},
+    {"n": "CNBC · marchés", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20409666", "t": "marché"},
 ]
 
 
@@ -146,6 +150,24 @@ def _feed_sources():
     except Exception:
         pass
     return DEFAULT_FEEDS
+
+
+# Un flux grand public mélange dépêches et « conseils perso » (retraite,
+# crédit, listes d'actions à acheter). Ces titres n'ont aucune valeur ici et
+# noient le signal : on les écarte.
+_FEED_NOISE = [
+    "i'm ", "i am ", "my wife", "my husband", "should i", "how to", "here's how",
+    "here's why you", "retirement", "401(k)", "roth ira", "my savings", "nest egg",
+    "credit card", "mortgage rate", "best stocks to", "stocks to buy",
+    "top picks", "dividend stocks to", "personal finance", "suze orman",
+    "dave ramsey", "moneywise", "quiz", "horoscope", "recipe", "celebrity",
+    "worth it?", "millionaire next", "afraid to", "am i ready to retire",
+]
+
+
+def _feed_is_noise(title):
+    t = (title or "").lower()
+    return any(k in t for k in _FEED_NOISE)
 
 
 def _feed_one(srcdef):
@@ -182,7 +204,7 @@ def _feed_one(srcdef):
                         return el.get("href")
             return ""
         title = txt("title")
-        if not title:
+        if not title or _feed_is_noise(title):
             continue
         link = txt("link", "id")
         date = txt("pubDate", "published", "updated", "date")
