@@ -67,6 +67,23 @@
 
   /* ── columns ────────────────────────────────────────────────── */
   .wrap{display:flex; gap:14px; padding:14px 20px; height:calc(100vh - 250px); min-height:340px}
+  /* Flux direct : pastille de source colorée par thème, mise en avant des
+     événements à fort impact. */
+  .feeditem{display:block; padding:9px 12px; border-bottom:1px solid var(--line);
+    text-decoration:none; color:inherit; transition:background .12s}
+  .feeditem:hover{background:rgba(255,255,255,.03)}
+  .feeditem.hot{border-left:2px solid var(--red); background:rgba(239,83,80,.05)}
+  .feeditem .ftop{display:flex; align-items:center; gap:7px; margin-bottom:3px}
+  .feeditem .fsrc{font-size:9px; letter-spacing:.08em; text-transform:uppercase;
+    padding:1px 6px; border-radius:2px; background:var(--surface2); color:var(--muted)}
+  .feeditem .fsrc.macro{color:#8B5CF6} .feeditem .fsrc.marché{color:#26A69A}
+  .feeditem .fsrc[data-t="banque centrale"]{color:var(--gold)}
+  .feeditem[data-hot="1"] .fsrc{color:var(--red)}
+  .feeditem .fago{margin-left:auto; font-size:9.5px; color:var(--faint);
+    font-family:var(--mono)}
+  .feeditem .ftitle{font-size:12.5px; line-height:1.45; color:var(--text)}
+  .feeditem .fdesc{font-size:11px; color:var(--muted); margin-top:3px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
   .col{background:var(--surface); border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; overflow:hidden}
   .col.news{flex:1 1 42%} .col.cal{flex:1 1 32%} .col.mag{flex:1 1 26%; min-width:250px}
   .chead{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex:none}
@@ -141,6 +158,10 @@
 </section>
 
 <div class="wrap">
+  <section class="col feed">
+    <div class="chead"><h2 id="colFeed">Flux direct</h2><span class="cnt" id="feedCnt"></span></div>
+    <div class="cbody" id="feedBody"><div class="empty">…</div></div>
+  </section>
   <section class="col news">
     <div class="chead"><h2 id="colNews">Actualités marché</h2><span class="cnt" id="newsCnt"></span></div>
     <div class="cbody" id="newsBody"><div class="empty">…</div></div>
@@ -163,7 +184,7 @@ const $$ = s => document.querySelectorAll(s);
 
 const T = {
   fr: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
-    macroTitle:"Environnement macro actuel", colNews:"Actualités marché", colCal:"Calendrier éco.", colMag:"MAG7",
+    macroTitle:"Environnement macro actuel", colFeed:"Flux direct", colNews:"Actualités marché", colCal:"Calendrier éco.", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
     now:"à l'instant", unavail:"Indisponible", pinned:"ÉPINGLÉ",
     rising:"Hausse", falling:"Baisse", stable:"Stable",
@@ -175,7 +196,7 @@ const T = {
     fc:"prév.", pv:"préc.", aggLbl:"MAG7 · équipondéré (comme un ETF)", day:"Jour", week:"Sem.", month:"Mois·MTD",
     macroNa:"Synthèse indisponible — source macro à configurer" },
   en: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
-    macroTitle:"Current Macro Environment", colNews:"Market news", colCal:"Economic Calendar", colMag:"MAG7",
+    macroTitle:"Current Macro Environment", colFeed:"Live feed", colNews:"Market news", colCal:"Economic Calendar", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
     now:"just now", unavail:"Unavailable", pinned:"PINNED",
     rising:"Rising", falling:"Falling", stable:"Stable",
@@ -286,6 +307,30 @@ function renderMag(){
 
 /* ── loaders ── */
 async function jget(u){ try{ return await (await fetch(u)).json(); }catch(_){ return null; } }
+let FEED = [];
+function renderFeed(){
+  const box = $("#feedBody");
+  if (!FEED.length){
+    box.innerHTML = `<div class="empty">${t("unavail")}</div>`;
+    $("#feedCnt").textContent = ""; return;
+  }
+  box.innerHTML = FEED.map(x => {
+    const hot = x.impact === "high" ? 1 : 0;
+    return `<a class="feeditem${hot ? " hot" : ""}" data-hot="${hot}"
+      href="${esc(x.url)}" target="_blank" rel="noopener">
+      <div class="ftop"><span class="fsrc ${esc(x.tag || "")}" data-t="${esc(x.tag || "")}">${esc(x.source)}</span>
+      <span class="fago">${x.ts ? ago(x.ts) : ""}</span></div>
+      <div class="ftitle">${esc(x.title)}</div>
+      ${x.desc ? `<div class="fdesc">${esc(x.desc)}</div>` : ""}</a>`;
+  }).join("");
+  $("#feedCnt").textContent = FEED.length;
+}
+async function loadFeed(){
+  const d = await jget("/api/news?type=feed");
+  FEED = (d && d.feed) || [];
+  renderFeed();
+}
+
 async function loadNews(){ const d = await jget("/api/news"); NEWS = (d&&d.news)||[]; renderNews(); }
 async function loadCal(){ const d = await jget("/api/news?type=calendar"); CAL = (d&&d.calendar)||[]; renderCal(); }
 async function loadMag(){ const d = await jget("/api/news?type=mag7"); MAG = (d&&d.mag7)||null; renderMag();
@@ -296,13 +341,15 @@ function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   $("#navTerm").textContent = t("term"); $("#navHeat").textContent = t("heat"); $("#navDash").textContent = t("dash");
   $("#macroTitle").textContent = t("macroTitle");
-  $("#colNews").textContent = t("colNews"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
-  updateSession(); renderMacro(); renderNews(); renderCal(); renderMag();
+  $("#colNews").textContent = t("colNews");
+  $("#colFeed").textContent = t("colFeed"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
+  updateSession(); renderMacro(); renderFeed(); renderNews(); renderCal(); renderMag();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
 applyLang();
-loadMacro(); loadNews(); loadCal(); loadMag();
+loadMacro(); loadFeed(); loadNews(); loadCal(); loadMag();
+setInterval(loadFeed, 120000);      // flux : toutes les 2 minutes
 setInterval(loadNews, 90000);
 setInterval(loadCal, 900000);
 setInterval(loadMag, 30000);

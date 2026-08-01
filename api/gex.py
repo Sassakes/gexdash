@@ -120,13 +120,134 @@ def _news_headlines(cat):
     return out
 
 
+# ─────────── FLUX EN DIRECT (agrégateur RSS) ───────────
+# Les comptes X ne sont pas accessibles gratuitement (l'API officielle est
+# payante et le scraping est interdit) : on passe donc par des flux RSS, qui
+# sont publics, stables et pensés pour ça. Un pont RSS vers X peut être ajouté
+# depuis l'admin comme n'importe quelle autre source.
+DEFAULT_FEEDS = [
+    {"n": "Reuters Business", "u": "https://feeds.reuters.com/reuters/businessNews", "t": "marché"},
+    {"n": "CNBC Marchés", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20409666", "t": "marché"},
+    {"n": "CNBC Économie", "u": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258", "t": "macro"},
+    {"n": "MarketWatch", "u": "https://feeds.content.dowjones.io/public/rss/mw_topstories", "t": "marché"},
+    {"n": "Réserve fédérale", "u": "https://www.federalreserve.gov/feeds/press_all.xml", "t": "banque centrale"},
+    {"n": "Trésor US", "u": "https://home.treasury.gov/rss/press.xml", "t": "gouvernement"},
+    {"n": "Maison-Blanche", "u": "https://www.whitehouse.gov/presidential-actions/feed/", "t": "politique"},
+    {"n": "Yahoo Finance", "u": "https://finance.yahoo.com/news/rssindex", "t": "marché"},
+]
+
+
+def _feed_sources():
+    """Sources du flux : celles de l'admin si définies, sinon la liste par défaut."""
+    try:
+        cfg = json.loads(kv_get("gex:feeds") or "null")
+        if isinstance(cfg, list) and cfg:
+            return [f for f in cfg if f.get("u")]
+    except Exception:
+        pass
+    return DEFAULT_FEEDS
+
+
+def _feed_one(srcdef):
+    """Lit un flux RSS/Atom. Tolérant : un flux mort n'en casse aucun autre."""
+    import re as _re
+    import xml.etree.ElementTree as ET
+    import email.utils as eut
+    try:
+        import requests
+        r = requests.get(srcdef["u"], timeout=8,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; gexdash/1.0)"})
+        if r.status_code != 200:
+            return []
+        root = ET.fromstring(r.content)
+    except Exception:
+        return []
+    out = []
+    items = root.iter("item")
+    entries = list(items) or [e for e in root.iter()
+                              if e.tag.endswith("}entry") or e.tag == "entry"]
+    for it in entries[:25]:
+        def txt(*names):
+            for n in names:
+                el = it.find(n)
+                if el is None:
+                    for c in it:
+                        if c.tag.endswith("}" + n) or c.tag == n:
+                            el = c
+                            break
+                if el is not None:
+                    if el.text:
+                        return el.text.strip()
+                    if el.get("href"):
+                        return el.get("href")
+            return ""
+        title = txt("title")
+        if not title:
+            continue
+        link = txt("link", "id")
+        date = txt("pubDate", "published", "updated", "date")
+        ts = 0
+        try:
+            ts = int(eut.parsedate_to_datetime(date).timestamp())
+        except Exception:
+            try:
+                ts = int(dt.datetime.fromisoformat(
+                    date.replace("Z", "+00:00")).timestamp())
+            except Exception:
+                ts = 0
+        desc = _re.sub(r"<[^>]+>", "", txt("description", "summary", "content"))[:220]
+        out.append({"title": title[:200], "url": link, "source": srcdef.get("n", "?"),
+                    "tag": srcdef.get("t", ""), "ts": ts, "desc": desc.strip(),
+                    "impact": _news_impact(title + " " + desc)})
+    return out
+
+
+def _news_feed():
+    from concurrent.futures import ThreadPoolExecutor
+    srcs = _feed_sources()
+
+    def fetch():
+        with ThreadPoolExecutor(max_workers=min(10, len(srcs) or 1)) as ex:
+            batches = list(ex.map(_feed_one, srcs))
+        seen, rows = set(), []
+        for b in batches:
+            for x in b:
+                key = (x["title"] or "")[:90].lower()
+                if key in seen:          # même dépêche reprise par plusieurs sources
+                    continue
+                seen.add(key)
+                rows.append(x)
+        rows.sort(key=lambda x: x["ts"], reverse=True)
+        return rows[:80]
+
+    return _news_cached("feed", 120, fetch)
+
+
 def _news_calendar():
+    """Calendrier économique. La source est derrière Cloudflare et refuse
+    souvent les IP de datacenter (donc Vercel) : on tente le direct, puis on
+    retombe sur calendar.json, produit par la GitHub Action — même parade que
+    pour macro.json avec FRED."""
     def fetch():
         import requests
-        return requests.get(
-            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-            headers={"User-Agent": "Mozilla/5.0 (compatible; gexdash/1.0)"},
-            timeout=10).json()
+        try:
+            r = requests.get(
+                "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                       "Chrome/124.0 Safari/537.36",
+                         "Accept": "application/json,text/plain,*/*"},
+                timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and data:
+                    return data
+        except Exception:
+            pass
+        try:                                  # repli : instantané committé
+            return json.loads((ROOT / "calendar.json").read_text())
+        except Exception:
+            return []
     raw = _news_cached("cal", 900, fetch)
     out = []
     if isinstance(raw, list):
@@ -266,6 +387,7 @@ STATIC = {
     # instantané macro produit par la GitHub Action (FRED est injoignable
     # depuis Vercel) et lu par la bannière du terminal news
     "/macro.json": ("macro.json", "application/json"),
+    "/calendar.json": ("calendar.json", "application/json"),
     "/doc": ("doc.html", "text/html; charset=utf-8"),
     "/wiki": ("doc.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
@@ -619,8 +741,16 @@ class handler(BaseHTTPRequestHandler):
 
             if act == "register":
                 code = (body.get("code") or "").strip()
+                email = (body.get("email") or "").strip().lower()
                 if not (3 <= len(user) <= 32) or not user.replace("_", "").replace("-", "").isalnum():
                     return fail(400, "Identifiant invalide (3-32 caractères, lettres/chiffres)")
+                # validation volontairement simple : on veut une adresse
+                # exploitable pour te recontacter, pas un filtrage exhaustif
+                if ("@" not in email or "." not in email.split("@")[-1]
+                        or len(email) < 6 or len(email) > 120 or " " in email):
+                    return fail(400, "Adresse e-mail invalide")
+                if any(v.get("email") == email for v in self._users().values()):
+                    return fail(409, "Cette adresse est déjà utilisée")
                 if len(pwd) < 8:
                     return fail(400, "Mot de passe : 8 caractères minimum")
                 invites = self._invites()
@@ -631,7 +761,8 @@ class handler(BaseHTTPRequestHandler):
                 if user in users:
                     return fail(409, "Cet identifiant existe déjà")
                 salt, h = self._pw_hash(pwd)
-                users[user] = {"salt": salt, "hash": h, "note": inv.get("note", ""),
+                users[user] = {"salt": salt, "hash": h, "email": email,
+                               "note": inv.get("note", ""),
                                "created": dt.datetime.now(dt.timezone.utc)
                                             .isoformat(timespec="seconds")}
                 inv["used_by"] = user
@@ -732,6 +863,26 @@ class handler(BaseHTTPRequestHandler):
                            "application/json")
                 return
             self._send(200, json.dumps({"ok": True}).encode(), "application/json")
+            return
+
+        if path == "/api/feeds":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            body = self._read_json()
+            feeds = body.get("feeds")
+            if not isinstance(feeds, list):
+                self._send(400, json.dumps({"error": "liste attendue"}).encode(),
+                           "application/json")
+                return
+            clean = [{"n": (f.get("n") or "?")[:40], "u": (f.get("u") or "")[:300],
+                      "t": (f.get("t") or "")[:24]}
+                     for f in feeds if (f.get("u") or "").startswith("http")][:30]
+            kv_set("gex:feeds", json.dumps(clean))
+            _NEWS_MEM.pop("feed", None)         # purge immédiate du cache
+            self._send(200, json.dumps({"ok": True, "n": len(clean)}).encode(),
+                       "application/json")
             return
 
         if path == "/api/webhooks":
@@ -1113,13 +1264,25 @@ class handler(BaseHTTPRequestHandler):
                        "application/json")
             return
 
+        # ── sources du flux direct (admin) ──
+        if path == "/api/feeds":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            self._send(200, json.dumps({"feeds": _feed_sources(),
+                                        "defaults": DEFAULT_FEEDS}).encode(),
+                       "application/json")
+            return
+
         # ── liste des comptes et invitations (admin) ──
         if path == "/api/users":
             if not self._auth_key():
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(),
                            "application/json")
                 return
-            users = {k: {"note": v.get("note", ""), "created": v.get("created", "")}
+            users = {k: {"note": v.get("note", ""), "email": v.get("email", ""),
+                         "created": v.get("created", "")}
                      for k, v in self._users().items()}
             self._send(200, json.dumps({"users": users,
                                         "invites": self._invites()}).encode(),
@@ -1137,6 +1300,8 @@ class handler(BaseHTTPRequestHandler):
             try:
                 if typ == "calendar":
                     out = {"calendar": _news_calendar()}
+                elif typ == "feed":
+                    out = {"feed": _news_feed()}
                 elif typ == "mag7":
                     out = {"mag7": _news_mag7()}
                 else:

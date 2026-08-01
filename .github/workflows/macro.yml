@@ -6,8 +6,10 @@ name: Macro snapshot
 
 on:
   schedule:
-    - cron: "30 12 * * 1-5"   # ~pre-US-open, catches 8:30 ET data releases
-    - cron: "30 20 * * 1-5"   # after the US close
+    - cron: "30 12 * * 1-5"   # avant l'ouverture US (données de 8h30 ET)
+    - cron: "30 16 * * 1-5"   # milieu de séance : valeurs publiées du jour
+    - cron: "30 20 * * 1-5"   # après la clôture US
+    - cron: "0 6 * * 1"       # lundi matin : calendrier de la semaine
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add macro.json
-          git diff --staged --quiet || git commit -m "macro snapshot $(date -u +%FT%TZ)"
+          git add macro.json calendar.json
+          git diff --staged --quiet || git commit -m "macro + calendrier $(date -u +%FT%TZ)"
           git push

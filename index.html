@@ -651,7 +651,9 @@
     <input id="authUser" autocomplete="username" spellcheck="false">
     <label id="authLp">Mot de passe</label>
     <input id="authPass" type="password" autocomplete="current-password">
-    <div id="authCodeWrap" hidden>
+    <div id="authRegWrap" hidden>
+      <label id="authLe">Adresse e-mail</label>
+      <input id="authEmail" type="email" autocomplete="email" spellcheck="false">
       <label id="authLc">Code d'invitation</label>
       <input id="authCode" spellcheck="false">
     </div>
@@ -838,7 +840,7 @@ const T = {
     authRegSub:"Un code d'invitation est nécessaire.",
     authNoAcc:"Pas encore de compte ? S'inscrire",
     authHaveAcc:"Déjà un compte ? Se connecter",
-    authFill:"Identifiant et mot de passe requis",
+    authFill:"Identifiant et mot de passe requis", authMail:"Adresse e-mail",
     authWelcome:"Connecté ✓", authOutAsk:"Se déconnecter ?",
     authInTip:"Accès membre", authOutTip:"Cliquer pour se déconnecter",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
@@ -880,7 +882,7 @@ const T = {
     authRegSub:"An invitation code is required.",
     authNoAcc:"No account yet? Sign up",
     authHaveAcc:"Already registered? Sign in",
-    authFill:"Username and password required",
+    authFill:"Username and password required", authMail:"Email address",
     authWelcome:"Signed in ✓", authOutAsk:"Sign out?",
     authInTip:"Member access", authOutTip:"Click to sign out",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
@@ -1070,8 +1072,9 @@ function authOpen(mode){
   AUTH_MODE = mode || "login";
   const reg = AUTH_MODE === "register";
   $("authTitle").textContent = reg ? t("authReg") : t("authIn");
+  const le = $("authLe"); if (le) le.textContent = t("authMail");
   $("authSub").textContent = reg ? t("authRegSub") : t("authInSub");
-  $("authCodeWrap").hidden = !reg;
+  $("authRegWrap").hidden = !reg;
   $("authGo").textContent = reg ? t("authRegGo") : t("authInGo");
   $("authSwap").textContent = reg ? t("authHaveAcc") : t("authNoAcc");
   $("authPass").setAttribute("autocomplete", reg ? "new-password" : "current-password");
@@ -1085,13 +1088,14 @@ async function authSubmit(){
   const user = $("authUser").value.trim();
   const pass = $("authPass").value;
   const code = $("authCode").value.trim();
+  const email = $("authEmail").value.trim();
   if (!user || !pass){ msg.className = "err"; msg.textContent = t("authFill"); return; }
   go.disabled = true;
   msg.className = ""; msg.textContent = "…";
   try{
     const r = await fetch(`/api/auth?action=${AUTH_MODE}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({user, pass, code}),
+      body: JSON.stringify({user, pass, code, email}),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Erreur");
@@ -1126,7 +1130,7 @@ async function authSubmit(){
   $("authWrap").onclick = e => { if (e.target === $("authWrap")) $("authWrap").hidden = true; };
   $("authSwap").onclick = () => authOpen(AUTH_MODE === "login" ? "register" : "login");
   $("authGo").onclick = authSubmit;
-  for (const id of ["authUser", "authPass", "authCode"])
+  for (const id of ["authUser", "authPass", "authCode", "authEmail"])
     $(id).addEventListener("keydown", e => { if (e.key === "Enter") authSubmit(); });
   // état de session + ouverture automatique si on vient d'une page protégée
   fetch("/api/auth").then(r => r.ok ? r.json() : null).then(d => {

@@ -190,3 +190,33 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Calendrier economique : la source refuse les IP de datacenter (Vercel), mais
+# repond aux runners GitHub. On l'enregistre donc ici, comme macro.json.
+# ─────────────────────────────────────────────────────────────────────────────
+def save_calendar():
+    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    ua = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0 Safari/537.36",
+          "Accept": "application/json,text/plain,*/*"}
+    try:
+        r = requests.get(url, headers=ua, timeout=25)
+        data = r.json() if r.status_code == 200 else None
+        if isinstance(data, list) and data:
+            with open("calendar.json", "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False)
+            print(f"calendar.json : {len(data)} evenements")
+            return True
+        print(f"calendrier indisponible (HTTP {r.status_code})")
+    except Exception as exc:
+        print(f"calendrier : echec ({exc})")
+    return False
+
+
+try:
+    save_calendar()
+except Exception as exc:      # ne doit jamais faire echouer le job macro
+    print(f"calendrier ignore : {exc}")
