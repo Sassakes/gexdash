@@ -1,0 +1,40 @@
+name: Macro snapshot
+
+# FRED is reachable from GitHub runners (blocked from Vercel's edge), so we compute
+# macro.json here and commit it — the /news Macro Synthesis banner reads it statically.
+# Commit is authored as the repo owner so Vercel (Hobby) builds it.
+
+on:
+  schedule:
+    - cron: "30 12 * * 1-5"   # ~pre-US-open, catches 8:30 ET data releases
+    - cron: "30 20 * * 1-5"   # after the US close
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macro
+  cancel-in-progress: false
+
+jobs:
+  macro:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install requests
+      - name: Compute macro.json
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        run: python scripts/macro_snapshot.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add macro.json
+          git diff --staged --quiet || git commit -m "macro snapshot $(date -u +%FT%TZ)"
+          git push
