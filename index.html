@@ -589,72 +589,7 @@
   @media (prefers-reduced-motion:reduce){
     .topnav a.donate{ animation:none; }
   }
-  /* Accès membre : bouton discret près du logo, dans la même famille
-     visuelle que les liens de navigation. */
-  #authBtn{
-    margin-left:14px; background:var(--surface2); border:1px solid var(--line-strong);
-    color:var(--muted); font:inherit; font-size:11.5px; padding:6px 12px;
-    cursor:pointer; display:inline-flex; align-items:center; gap:7px;
-    white-space:nowrap; transition:color .12s ease, border-color .12s ease;
-  }
-  #authBtn:hover{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  #authBtn.on{color:var(--teal); border-color:rgba(38,166,154,.5)}
-  #authWrap{
-    position:fixed; inset:0; background:rgba(0,0,0,.74); z-index:80;
-    display:flex; align-items:center; justify-content:center; padding:18px;
-  }
-  #authCard{
-    background:var(--surface); border:1px solid var(--line-strong);
-    max-width:380px; width:100%; padding:24px 26px; position:relative;
-  }
-  #authCard h3{font-size:14px; letter-spacing:.14em; text-transform:uppercase;
-    color:var(--gold); margin-bottom:4px}
-  #authCard .sub2{font-size:12px; color:var(--muted); margin-bottom:18px}
-  #authCard label{display:block; font-size:10px; letter-spacing:.12em;
-    text-transform:uppercase; color:var(--faint); margin:12px 0 5px}
-  #authCard input{
-    width:100%; background:var(--bg); border:1px solid var(--line-strong);
-    color:var(--text); font-family:var(--mono); font-size:14px; padding:10px 12px;
-  }
-  #authCard input:focus{outline:none; border-color:var(--gold)}
-  #authGo{
-    width:100%; margin-top:18px; background:var(--gold); border:none; color:#0A0A0C;
-    font:inherit; font-size:13px; font-weight:600; padding:11px; cursor:pointer;
-  }
-  #authGo:hover{background:#ffd23f}
-  #authGo:disabled{opacity:.5; cursor:default}
-  #authSwap{background:none; border:none; color:var(--muted); font:inherit;
-    font-size:11.5px; cursor:pointer; margin-top:14px; text-decoration:underline}
-  #authSwap:hover{color:var(--gold)}
-  #authMsg{font-size:12px; margin-top:12px; min-height:16px}
-  #authMsg.err{color:var(--red)}
-  #authMsg.ok{color:var(--teal)}
-  #authClose{position:absolute; top:10px; right:13px; background:none; border:none;
-    color:var(--muted); font-size:16px; cursor:pointer}
-  @media(max-width:640px){
-    #authBtn{min-height:40px; font-size:13px}
-    #authCard input{font-size:16px}   /* évite le zoom automatique iOS */
-  }
 </style>
-<div id="authWrap" hidden>
-  <div id="authCard">
-    <button id="authClose" aria-label="Fermer">✕</button>
-    <h3 id="authTitle">Connexion</h3>
-    <div class="sub2" id="authSub">Accès réservé aux membres.</div>
-    <label id="authLu">Identifiant</label>
-    <input id="authUser" autocomplete="username" spellcheck="false">
-    <label id="authLp">Mot de passe</label>
-    <input id="authPass" type="password" autocomplete="current-password">
-    <div id="authCodeWrap" hidden>
-      <label id="authLc">Code d'invitation</label>
-      <input id="authCode" spellcheck="false">
-    </div>
-    <button id="authGo">Se connecter</button>
-    <div id="authMsg"></div>
-    <button id="authSwap">Pas encore de compte ? S'inscrire</button>
-  </div>
-</div>
-
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
@@ -674,13 +609,11 @@
     <h1>GEX <em>Terminal</em></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
-  <button id="authBtn" type="button" title="Accès membre">⬡ <span id="authLbl">Connexion</span></button>
   <nav class="topnav">
     <!-- 1. espace applicatif : le dashboard est une section du produit -->
     <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
 
     <a href="/heatmap" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="heatLbl">Heatmap</span></a>
-    <a href="/news" class="nav-app" id="newsLink" hidden><span class="ic" aria-hidden="true">▤</span><span id="newsLbl">News</span></a>
     <a href="/doc" class="nav-app"><span class="ic" aria-hidden="true">?</span><span id="docLbl">Doc</span></a>
 
     <span class="nav-sep" aria-hidden="true"></span>
@@ -827,14 +760,6 @@ const T = {
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
     tv:"TradingView", dash:"Mon dashboard", doc:"Doc", heat:"Heatmap",
-    news:"News", authIn:"Connexion", authReg:"Inscription", authInGo:"Se connecter",
-    authRegGo:"Créer mon compte", authInSub:"Accès réservé aux membres.",
-    authRegSub:"Un code d'invitation est nécessaire.",
-    authNoAcc:"Pas encore de compte ? S'inscrire",
-    authHaveAcc:"Déjà un compte ? Se connecter",
-    authFill:"Identifiant et mot de passe requis",
-    authWelcome:"Connecté ✓", authOutAsk:"Se déconnecter ?",
-    authInTip:"Accès membre", authOutTip:"Cliquer pour se déconnecter",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -869,14 +794,6 @@ const T = {
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
     tv:"TradingView", dash:"My dashboard", doc:"Docs", heat:"Heatmap",
-    news:"News", authIn:"Sign in", authReg:"Sign up", authInGo:"Sign in",
-    authRegGo:"Create account", authInSub:"Members only.",
-    authRegSub:"An invitation code is required.",
-    authNoAcc:"No account yet? Sign up",
-    authHaveAcc:"Already registered? Sign in",
-    authFill:"Username and password required",
-    authWelcome:"Signed in ✓", authOutAsk:"Sign out?",
-    authInTip:"Member access", authOutTip:"Click to sign out",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -1044,92 +961,6 @@ async function loadTarget(){
   }
 }
 
-/* ═══ ACCÈS MEMBRE ══════════════════════════════════════════════════════
-   Le mot de passe ne transite qu'une fois, vers /api/auth ; la session vit
-   ensuite dans un cookie HttpOnly que le JavaScript ne peut pas lire — c'est
-   volontaire, cela protège la session même en cas de faille d'affichage. */
-let AUTH_USER = null, AUTH_MODE = "login";
-
-function authPaint(){
-  const btn = $("authBtn"), lbl = $("authLbl");
-  if (!btn) return;
-  btn.classList.toggle("on", !!AUTH_USER);
-  lbl.textContent = AUTH_USER || t("authIn");
-  const nl = $("newsLink");                 // réservé aux membres
-  if (nl) nl.hidden = !AUTH_USER;
-  btn.title = AUTH_USER ? t("authOutTip") : t("authInTip");
-}
-
-function authOpen(mode){
-  AUTH_MODE = mode || "login";
-  const reg = AUTH_MODE === "register";
-  $("authTitle").textContent = reg ? t("authReg") : t("authIn");
-  $("authSub").textContent = reg ? t("authRegSub") : t("authInSub");
-  $("authCodeWrap").hidden = !reg;
-  $("authGo").textContent = reg ? t("authRegGo") : t("authInGo");
-  $("authSwap").textContent = reg ? t("authHaveAcc") : t("authNoAcc");
-  $("authPass").setAttribute("autocomplete", reg ? "new-password" : "current-password");
-  $("authMsg").textContent = "";
-  $("authWrap").hidden = false;
-  setTimeout(() => $("authUser").focus(), 40);
-}
-
-async function authSubmit(){
-  const msg = $("authMsg"), go = $("authGo");
-  const user = $("authUser").value.trim();
-  const pass = $("authPass").value;
-  const code = $("authCode").value.trim();
-  if (!user || !pass){ msg.className = "err"; msg.textContent = t("authFill"); return; }
-  go.disabled = true;
-  msg.className = ""; msg.textContent = "…";
-  try{
-    const r = await fetch(`/api/auth?action=${AUTH_MODE}`, {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({user, pass, code}),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Erreur");
-    AUTH_USER = d.user;
-    const nlb = $("newsLbl"); if (nlb) nlb.textContent = t("news");
-  authPaint();
-    msg.className = "ok"; msg.textContent = t("authWelcome");
-    setTimeout(() => {
-      $("authWrap").hidden = true;
-      const u = new URL(location.href);
-      const next = u.searchParams.get("next");
-      if (next) location.href = next;          // retour vers la page demandée
-    }, 500);
-  }catch(e){
-    msg.className = "err"; msg.textContent = e.message;
-  }finally{
-    go.disabled = false;
-  }
-}
-
-(function wireAuth(){
-  const btn = $("authBtn");
-  if (!btn || btn._wired) return;
-  btn._wired = true;
-  btn.onclick = async () => {
-    if (!AUTH_USER) return authOpen("login");
-    if (!confirm(t("authOutAsk"))) return;
-    await fetch("/api/auth?action=logout", {method: "POST"});
-    AUTH_USER = null; authPaint();
-  };
-  $("authClose").onclick = () => { $("authWrap").hidden = true; };
-  $("authWrap").onclick = e => { if (e.target === $("authWrap")) $("authWrap").hidden = true; };
-  $("authSwap").onclick = () => authOpen(AUTH_MODE === "login" ? "register" : "login");
-  $("authGo").onclick = authSubmit;
-  for (const id of ["authUser", "authPass", "authCode"])
-    $(id).addEventListener("keydown", e => { if (e.key === "Enter") authSubmit(); });
-  // état de session + ouverture automatique si on vient d'une page protégée
-  fetch("/api/auth").then(r => r.ok ? r.json() : null).then(d => {
-    AUTH_USER = d && d.user ? d.user : null;
-    authPaint();
-    if (!AUTH_USER && new URL(location.href).searchParams.get("login")) authOpen("login");
-  }).catch(() => authPaint());
-})();
-
 (function wireLevelsToggle(){
   const btn = document.getElementById("lvBtn");
   if (!btn || btn._wired) return;
@@ -1168,7 +999,6 @@ function applyLang(){
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
   $("docLbl").textContent = t("doc");
   const hl = $("heatLbl"); if (hl) hl.textContent = t("heat");
-  authPaint();
   $("donLbl").textContent = t("don");
   $("donateLink").title = t("donTip");
   const th = t("th");
