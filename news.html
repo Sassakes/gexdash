@@ -88,10 +88,15 @@
      dans une iframe qu'on force en pleine largeur, sinon elle garde sa taille
      fixe d'origine et laisse une bande vide à droite. */
   .cbody.nopad{padding:0; overflow:hidden}
-  .fjwrap{height:100%; min-height:340px; position:relative; overflow:auto}
-  .fjwrap iframe{border:0 !important; width:100% !important; min-height:340px;
-    height:100% !important; display:block; background:var(--surface)}
-  .fjwrap > div{width:100% !important; max-width:100% !important}
+  /* Le widget se rend dans une iframe à taille fixe : on force elle ET ses
+     conteneurs intermédiaires à occuper toute la colonne, sinon une bande
+     vide subsiste à droite ou en bas selon la largeur d'écran. */
+  .fjwrap{height:100%; min-height:340px; position:relative; overflow:hidden;
+    display:flex}
+  .fjwrap > *{flex:1 1 auto; width:100% !important; max-width:100% !important;
+    min-width:0}
+  .fjwrap iframe{border:0 !important; width:100% !important; height:100% !important;
+    min-height:340px; display:block; background:var(--surface); flex:1 1 auto}
   .col{background:var(--surface); border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; overflow:hidden}
   .col.news{flex:1 1 42%} .col.cal{flex:1 1 32%} .col.mag{flex:1 1 26%; min-width:250px}
   .chead{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex:none}
@@ -123,6 +128,13 @@
   .crow .cfv{font-size:10px; color:var(--muted); text-align:right; white-space:nowrap}
   .crow .cfv b{color:var(--text)}
 
+  .chelp{background:none; border:1px solid var(--line-strong); color:var(--faint);
+    font:inherit; font-size:10px; width:19px; height:19px; border-radius:50%;
+    cursor:pointer; margin-left:7px; line-height:1; padding:0}
+  .chelp:hover{color:var(--gold); border-color:var(--gold)}
+  .chelp.on{color:var(--gold); border-color:var(--gold)}
+  .chelpbox{padding:11px 13px; font-size:11.5px; line-height:1.55; color:var(--muted);
+    background:var(--surface2); border-bottom:1px solid var(--line-strong)}
   .msep{padding:9px 12px 6px; font-size:9px; letter-spacing:.14em;
     text-transform:uppercase; color:var(--faint); border-top:1px solid var(--line-strong);
     margin-top:6px; background:var(--surface2)}
@@ -234,7 +246,8 @@
     <div class="cbody nopad" id="calBody"><div class="fjwrap" id="fjCal"></div></div>
   </section>
   <section class="col mag">
-    <div class="chead"><h2 id="colMag">MAG7</h2><span class="cnt" id="magUpd"></span></div>
+    <div class="chead"><h2 id="colMag">MAG7</h2><span class="cnt" id="magUpd"></span><button class="chelp" id="magHelpBtn" type="button" aria-label="Aide">?</button></div>
+    <div class="chelpbox" id="magHelpBox" hidden></div>
     <div class="cbody" id="magBody"><div class="empty">…</div></div>
     <div class="magg" id="magAgg" hidden></div>
   </section>
@@ -257,6 +270,12 @@ const T = {
     sc_goldilocks:"Économie Goldilocks", sc_overheating:"Surchauffe", sc_stagflation:"Stagflation",
     sc_recession:"Ralentissement / Récession", sc_reflation:"Reprise / Reflation",
     fc:"prév.", pv:"préc.", aggLbl:"MAG7 · équipondéré (comme un ETF)", day:"Jour", week:"Sem.", month:"Mois·MTD",
+    mkts:"Panorama marché",
+    magHelp:"MAG7 — les sept plus grosses capitalisations technologiques, moteur "
+      + "principal du Nasdaq 100. La moyenne équipondérée traite chaque titre à "
+      + "poids égal : elle montre si la hausse est portée par l'ensemble du groupe "
+      + "ou par une seule valeur. Le panorama en dessous replace le tout dans son "
+      + "contexte — indices, taux, dollar, matières premières et volatilité.",
     macroNa:"Synthèse indisponible — source macro à configurer" },
   en: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
     macroTitle:"Current Macro Environment", colFeed:"Live feed", colNews:"Market news", colCal:"Economic Calendar", colMag:"MAG7",
@@ -269,6 +288,12 @@ const T = {
     sc_goldilocks:"Goldilocks Economy", sc_overheating:"Overheating", sc_stagflation:"Stagflation",
     sc_recession:"Slowdown / Recession", sc_reflation:"Recovery / Reflation",
     fc:"est.", pv:"prev", aggLbl:"MAG7 · equal-weight (ETF-style)", day:"Day", week:"Week", month:"Month·MTD",
+    mkts:"Market snapshot",
+    magHelp:"MAG7 — the seven largest technology names, the main driver of the "
+      + "Nasdaq 100. The equal-weighted average treats each name alike: it shows "
+      + "whether a move is carried by the whole group or by a single stock. The "
+      + "snapshot below puts it in context — indices, rates, dollar, commodities "
+      + "and volatility.",
     macroNa:"Synthesis unavailable — macro source to configure" },
 };
 let LANG = "fr";
@@ -320,6 +345,19 @@ function applyMTab(){
     window.scrollTo({top: 0, behavior: "smooth"});
   });
   MOBILE_Q.addEventListener("change", applyMTab);
+})();
+
+(function wireMagHelp(){
+  const b = document.getElementById("magHelpBtn");
+  if (!b || b._wired) return;
+  b._wired = true;
+  b.onclick = () => {
+    const box = document.getElementById("magHelpBox");
+    const show = box.hidden;
+    box.textContent = t("magHelp");
+    box.hidden = !show;
+    b.classList.toggle("on", show);
+  };
 })();
 
 function updateSession(){ const s = sessionState(); $("#sessDot").className = "dot " + s; $("#sessTxt").textContent = t(s); }
@@ -378,15 +416,18 @@ function renderCal(){
   const build = () => {
     if (!window.FJWidgets) return;
     host.innerHTML = "";
+    // La mesure doit avoir lieu APRÈS que la colonne ait sa taille définitive :
+    // construire immédiatement donnait une largeur encore nulle ou provisoire,
+    // d'où un widget mal dimensionné. On attend donc une frame de rendu.
+    requestAnimationFrame(() => {
+    const w = Math.max(240, Math.round(host.getBoundingClientRect().width));
+    const h = Math.max(320, Math.round(host.getBoundingClientRect().height));
     try{
       new window.FJWidgets.createWidget({
         container: "fjCal",
         mode: "standard",
-        // dimensions EN PIXELS, mesurées sur le conteneur : en "100%" le
-        // widget retombe sur sa taille par défaut (340x600) et laisse une
-        // bande vide dans la colonne.
-        width: Math.max(240, host.clientWidth) + "px",
-        height: Math.max(300, host.clientHeight) + "px",
+        width: w + "px",
+        height: h + "px",
         backColor: "111114",      // --surface
         fontColor: "8A8A94",      // --muted
         widgetType: "ECOCAL",
@@ -394,6 +435,7 @@ function renderCal(){
     }catch(e){
       host.innerHTML = `<div class="empty">${t("unavail")}</div>`;
     }
+    });
   };
   // Le widget est figé à sa taille de construction : on le reconstruit quand
   // la colonne change de dimensions (rotation, redimensionnement de fenêtre).
@@ -484,18 +526,35 @@ function applyLang(){
   $("#navTerm").textContent = t("term"); $("#navHeat").textContent = t("heat"); $("#navDash").textContent = t("dash");
   $("#macroTitle").textContent = t("macroTitle");
   $("#colNews").textContent = t("colNews");
-  $("#colFeed").textContent = t("colFeed"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
+  $("#colFeed").textContent = t("colFeed");
+  const hb = document.getElementById("magHelpBox");
+  if (hb && !hb.hidden) hb.textContent = t("magHelp"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
   updateSession(); renderMacro(); renderFeed(); renderNews(); renderMag(); applyMTab();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
 applyLang();
 loadMacro(); loadFeed(); loadNews(); loadCal(); loadMag();
-setInterval(loadFeed, 120000);      // flux : toutes les 2 minutes
-setInterval(loadNews, 90000);
-setInterval(loadMag, 30000);
-setInterval(loadMacro, 3600000);
-setInterval(updateSession, 30000);
+/* Rythmes de rafraîchissement. Deux garde-fous :
+   • rien ne tourne quand l'onglet est en arrière-plan — le navigateur bride
+     déjà les minuteurs, mais on évite surtout la rafale au retour ;
+   • au retour sur l'onglet après une absence, on recharge une fois pour
+     rattraper ce qui a été manqué. */
+function everyVisible(fn, ms){
+  return setInterval(() => { if (!document.hidden) fn(); }, ms);
+}
+everyVisible(loadFeed, 120000);
+everyVisible(loadNews, 90000);
+everyVisible(loadMag, 45000);        // aligné sur le cache serveur
+everyVisible(loadMacro, 3600000);
+setInterval(updateSession, 60000);   // l'état ne change qu'aux bornes horaires
+
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden){ hiddenAt = Date.now(); return; }
+  if (Date.now() - hiddenAt > 60000){ loadFeed(); loadNews(); loadMag(); }
+  updateSession();
+});
 </script>
 </body>
 </html>

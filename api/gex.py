@@ -287,7 +287,10 @@ _MAG7 = ["NVDA", "MSFT", "META", "GOOGL", "TSLA", "AMZN", "AAPL", "COIN"]
 
 
 def _news_mag_one(sym):
-    q = _news_finnhub("quote", {"symbol": sym}, f"q:{sym}", ttl=30)
+    # 45 s : le client rafraîchit toutes les 30 s, mais 16 symboles à 2 appels
+    # dépasseraient la limite de 60 requêtes/minute du palier gratuit. Le cache
+    # absorbe, sans que l'utilisateur perçoive de retard.
+    q = _news_finnhub("quote", {"symbol": sym}, f"q:{sym}", ttl=45)
     m = _news_finnhub("stock/metric", {"symbol": sym, "metric": "price"},
                       f"m:{sym}", ttl=1800)
     met = m.get("metric", {}) if isinstance(m, dict) else {}
@@ -307,10 +310,17 @@ _MARKETS = [
 
 
 def _news_markets():
+    """Panorama : seulement la cotation du jour. Les métriques hebdomadaires et
+    mensuelles ne sont affichées que pour le MAG7 — les demander ici doublerait
+    les appels pour une information qu'on n'affiche pas."""
     from concurrent.futures import ThreadPoolExecutor
+
+    def one(p):
+        q = _news_finnhub("quote", {"symbol": p[0]}, f"q:{p[0]}", ttl=45)
+        return {"sym": p[0], "name": p[1], "price": q.get("c"), "dp": q.get("dp")}
+
     with ThreadPoolExecutor(max_workers=8) as ex:
-        rows = list(ex.map(lambda p: {**_news_mag_one(p[0]), "name": p[1]}, _MARKETS))
-    return rows
+        return list(ex.map(one, _MARKETS))
 
 
 def _news_mag7():

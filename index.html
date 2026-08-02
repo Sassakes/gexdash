@@ -841,6 +841,7 @@ const T = {
     authNoAcc:"Pas encore de compte ? S'inscrire",
     authHaveAcc:"Déjà un compte ? Se connecter",
     authFill:"Identifiant et mot de passe requis", authMail:"Adresse e-mail",
+    authUser:"Identifiant", authPwd:"Mot de passe", authCode:"Code d'invitation",
     authWelcome:"Connecté ✓", authOutAsk:"Se déconnecter ?",
     authInTip:"Accès membre", authOutTip:"Cliquer pour se déconnecter",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
@@ -883,6 +884,7 @@ const T = {
     authNoAcc:"No account yet? Sign up",
     authHaveAcc:"Already registered? Sign in",
     authFill:"Username and password required", authMail:"Email address",
+    authUser:"Username", authPwd:"Password", authCode:"Invitation code",
     authWelcome:"Signed in ✓", authOutAsk:"Sign out?",
     authInTip:"Member access", authOutTip:"Click to sign out",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
@@ -1072,7 +1074,13 @@ function authOpen(mode){
   AUTH_MODE = mode || "login";
   const reg = AUTH_MODE === "register";
   $("authTitle").textContent = reg ? t("authReg") : t("authIn");
-  const le = $("authLe"); if (le) le.textContent = t("authMail");
+  // tous les libellés suivent la langue, y compris ceux des champs qui
+  // restaient figés en français
+  const setL = (id, key) => { const e = $(id); if (e) e.textContent = t(key); };
+  setL("authLu", "authUser");
+  setL("authLp", "authPwd");
+  setL("authLe", "authMail");
+  setL("authLc", "authCode");
   $("authSub").textContent = reg ? t("authRegSub") : t("authInSub");
   $("authRegWrap").hidden = !reg;
   $("authGo").textContent = reg ? t("authRegGo") : t("authInGo");

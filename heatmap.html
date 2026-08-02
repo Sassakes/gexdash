@@ -689,14 +689,29 @@ function armHeatPoll(){
   if (HM_MS){
     if (!prev) TARGETS.forEach(loadStatic);      // reprise après coupure
     TARGETS.forEach(pollQuote);
-    HM_TIMER = setInterval(() => TARGETS.forEach(pollQuote), HM_MS);
+    HM_TIMER = setInterval(() => {
+      if (!document.hidden) TARGETS.forEach(pollQuote);
+    }, HM_MS);
   }
 }
 armHeatPoll();
 setInterval(() => { if (hmPollMs() !== HM_MS) armHeatPoll(); }, 60000);
-setInterval(() => { if (hmPollMs()) TARGETS.forEach(loadStatic); }, 300000);
-setInterval(updateSession, 30000);
-setInterval(tickStates, 1000);
+setInterval(() => {
+  if (!document.hidden && hmPollMs()) TARGETS.forEach(loadStatic);
+}, 300000);
+setInterval(updateSession, 60000);      // l'état ne change qu'aux bornes horaires
+/* tickStates redessine le compte à rebours chaque seconde : inutile quand la
+   page n'est pas regardée, et c'est le minuteur le plus fréquent du site. */
+setInterval(() => { if (!document.hidden) tickStates(); }, 1000);
+
+/* Retour sur l'onglet après une absence : on rattrape en une fois plutôt que
+   d'attendre le prochain cycle. */
+let hmHidden = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden){ hmHidden = Date.now(); return; }
+  updateSession();
+  if (hmPollMs() && Date.now() - hmHidden > 60000) TARGETS.forEach(loadStatic);
+});
 </script>
 </body>
 </html>
