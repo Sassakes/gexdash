@@ -84,15 +84,14 @@
   .feeditem .ftitle{font-size:12.5px; line-height:1.45; color:var(--text)}
   .feeditem .fdesc{font-size:11px; color:var(--muted); margin-top:3px;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
-  /* Calendrier : widget officiel TradingView, encastré pour se fondre dans
-     la colonne (fond transparent, mêmes marges que les autres panneaux). */
+  /* Calendrier : widget FinancialJuice encastré dans la colonne. Il se rend
+     dans une iframe qu'on force en pleine largeur, sinon elle garde sa taille
+     fixe d'origine et laisse une bande vide à droite. */
   .cbody.nopad{padding:0; overflow:hidden}
-  .tvwrap{height:100%; min-height:320px; position:relative}
-  .tvwrap iframe{border:0 !important; width:100% !important; height:100% !important}
-  .tvwrap .tradingview-widget-copyright{
-    position:absolute; bottom:0; left:0; right:0; font-size:9px; text-align:center;
-    padding:3px 0; color:var(--faint); background:var(--surface)}
-  .tvwrap .tradingview-widget-copyright a{color:var(--faint); text-decoration:none}
+  .fjwrap{height:100%; min-height:340px; position:relative; overflow:auto}
+  .fjwrap iframe{border:0 !important; width:100% !important; min-height:340px;
+    height:100% !important; display:block; background:var(--surface)}
+  .fjwrap > div{width:100% !important; max-width:100% !important}
   .col{background:var(--surface); border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; overflow:hidden}
   .col.news{flex:1 1 42%} .col.cal{flex:1 1 32%} .col.mag{flex:1 1 26%; min-width:250px}
   .chead{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex:none}
@@ -177,7 +176,7 @@
   </section>
   <section class="col cal">
     <div class="chead"><h2 id="colCal">Calendrier éco.</h2><span class="cnt" id="calCnt"></span></div>
-    <div class="cbody nopad" id="calBody"><div class="tvwrap" id="tvCal"></div></div>
+    <div class="cbody nopad" id="calBody"><div class="fjwrap" id="fjCal"></div></div>
   </section>
   <section class="col mag">
     <div class="chead"><h2 id="colMag">MAG7</h2><span class="cnt" id="magUpd"></span></div>
@@ -281,28 +280,41 @@ function renderNews(){
 }
 
 /* ── calendar ── */
-/* Calendrier économique : widget officiel TradingView. Il porte ses propres
-   données en temps réel (prévision, précédent, publié) — plus de dépendance à
-   une source bloquée par Cloudflare ni au fichier de repli. On le recharge
-   uniquement au changement de langue, sinon il se met à jour tout seul. */
+/* Calendrier économique : widget officiel FinancialJuice, aux couleurs du
+   terminal (fond #111114, texte #8A8A94). Il porte ses propres données en
+   temps réel — aucune dépendance à une source bloquée ni à un fichier de
+   repli. Le script tiers n'est chargé qu'une fois ; on ne recrée le widget
+   qu'au changement de langue. */
 function renderCal(){
-  const host = $("#tvCal");
-  if (!host || host.dataset.built === LANG) return;
-  host.dataset.built = LANG;
-  host.innerHTML = "";
+  const host = $("#fjCal");
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+  const build = () => {
+    if (!window.FJWidgets) return;
+    host.innerHTML = "";
+    try{
+      new window.FJWidgets.createWidget({
+        container: "fjCal",
+        mode: "standard",
+        width: "100%",
+        height: "100%",
+        backColor: "111114",      // --surface
+        fontColor: "8A8A94",      // --muted
+        widgetType: "ECOCAL",
+      });
+    }catch(e){
+      host.innerHTML = `<div class="empty">${t("unavail")}</div>`;
+    }
+  };
+  if (window.FJWidgets) return build();
   const s = document.createElement("script");
-  s.async = true;
-  s.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
-  s.textContent = JSON.stringify({
-    colorTheme: "dark",
-    isTransparent: true,
-    width: "100%",
-    height: "100%",
-    locale: LANG === "fr" ? "fr" : "en",
-    importanceFilter: "0,1",          // impact moyen et fort seulement
-    countryFilter: "us,eu,gb,jp",
-  });
-  host.appendChild(s);
+  s.type = "text/javascript";
+  s.id = "FJ-Widgets";
+  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+        + Math.floor(Math.random() * 10000);
+  s.onload = build;
+  s.onerror = () => { host.innerHTML = `<div class="empty">${t("unavail")}</div>`; };
+  document.head.appendChild(s);
   const c = $("#calCnt");
   if (c) c.textContent = "";
 }
