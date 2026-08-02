@@ -128,6 +128,47 @@ def _fetch_status(url, name):
 
 
 _FJ_BACKOFF = {"until": 0.0}
+FJ_KEY = "gex:fjnews"
+FJ_TTL = 60          # fraicheur visee du fil, en secondes
+
+
+def _news_fj_shared():
+    """Fil FinancialJuice avec cache PARTAGE entre toutes les instances.
+
+    Le 429 venait de la : chaque instance Vercel avait son propre cache
+    memoire et interrogeait leur RSS pour son compte, donc N instances =
+    N requetes depuis la meme plage d'adresses. En passant par Redis, une
+    seule requete par minute alimente tout le deploiement — largement sous
+    leur limite, et le fil reste reellement live."""
+    now = time.time()
+    try:
+        blob = kv_get(FJ_KEY)
+        if blob:
+            data = json.loads(blob)
+            if now - data.get("at", 0) < FJ_TTL:
+                return data.get("rows") or []
+    except Exception:
+        data = None
+
+    if now < _FJ_BACKOFF["until"]:
+        try:                              # perime mais mieux que rien
+            return json.loads(kv_get(FJ_KEY) or "{}").get("rows") or []
+        except Exception:
+            return []
+
+    rows, err = _fetch_status(FJ_RSS, "FinancialJuice")
+    if err.startswith("HTTP 429") or err.startswith("HTTP 5"):
+        _FJ_BACKOFF["until"] = now + 300
+        try:                              # on ressert le dernier fil connu
+            return json.loads(kv_get(FJ_KEY) or "{}").get("rows") or []
+        except Exception:
+            return []
+    if rows:
+        try:
+            kv_set(FJ_KEY, json.dumps({"at": now, "rows": rows[:60]}), ex=1800)
+        except Exception:
+            pass
+    return rows
 
 
 def _news_fj():
@@ -1465,14 +1506,17 @@ class handler(BaseHTTPRequestHandler):
                         }, ensure_ascii=False).encode(), "application/json")
                         return
 
-                    rows, srcname = [], "finnhub"
+                    rows, srcname = [], "fj"
                     try:
-                        rows = _news_headlines("general")
+                        rows = _news_fj_shared()
                     except Exception:
                         rows = []
-                    if not rows:                       # repli : FinancialJuice
-                        rows = _news_cached("fjcol", 300, _news_fj)
-                        srcname = "fj" if rows else srcname
+                    if not rows:                       # repli : depeches Finnhub
+                        try:
+                            rows = _news_headlines("general")
+                            srcname = "finnhub"
+                        except Exception:
+                            rows = []
                     if not rows:                       # dernier recours
                         rows = _news_feed()
                         srcname = "institutionnel"
