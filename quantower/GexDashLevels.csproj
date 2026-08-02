@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       GexDash Levels — projet d'indicateur Quantower
+
+       ATTENTION : adapte les deux valeurs ci-dessous a TON installation.
+         · QuantowerDir : dossier d'installation de Quantower
+         · TargetFramework : doit correspondre a la version .NET de ton
+           Quantower (net8.0 sur les versions recentes, net472 sur les
+           anciennes). En cas de doute, cree le projet depuis le modele
+           "Indicator" de l'extension Quantower Algo : il regle tout seul
+           le framework et les references.
+       ═══════════════════════════════════════════════════════════════════ -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>GexDashLevels</AssemblyName>
+    <RootNamespace>GexDashLevels</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultItems>true</EnableDefaultItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- Chemin d'installation de Quantower -->
+    <QuantowerDir>C:\Quantower</QuantowerDir>
+    <!-- Dossier ou Quantower va chercher les indicateurs compiles -->
+    <QuantowerScripts>$(USERPROFILE)\Documents\Quantower\Settings\Scripts\Indicators\GexDashLevels</QuantowerScripts>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Assemblages de la plateforme : jamais copies dans la sortie, ils
+         sont deja charges par Quantower au demarrage. -->
+    <Reference Include="TradingPlatform.BusinessLayer">
+      <HintPath>$(QuantowerDir)\TradingPlatform.BusinessLayer.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Copie automatique vers le dossier des scripts apres chaque build,
+       pour ne pas avoir a deplacer les fichiers a la main. -->
+  <Target Name="CopyToQuantower" AfterTargets="Build">
+    <MakeDir Directories="$(QuantowerScripts)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(QuantowerScripts)"
+          ContinueOnError="true" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).pdb" DestinationFolder="$(QuantowerScripts)"
+          ContinueOnError="true" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+    <Message Importance="high" Text="GexDashLevels copie vers $(QuantowerScripts)" />
+  </Target>
+
+</Project>

@@ -104,6 +104,16 @@ def _news_impact(headline):
     return "high" if any(k in h for k in _NEWS_SHOCK) else "none"
 
 
+FJ_RSS = "https://www.financialjuice.com/feed.ashx?xy=rss"
+
+
+def _news_fj():
+    """Titres FinancialJuice via leur RSS public. Repli implicite : si le flux
+    ne répond pas, la liste est vide et l'appelant bascule sur Finnhub."""
+    rows = _feed_one({"n": "FinancialJuice", "u": FJ_RSS, "t": "temps réel"})
+    return _news_cached("fj", 45, lambda: rows) if rows else []
+
+
 def _news_headlines(cat):
     raw = _news_finnhub("news", {"category": cat}, f"news:{cat}", ttl=90)
     if not isinstance(raw, list):
@@ -126,6 +136,11 @@ def _news_headlines(cat):
 # sont publics, stables et pensés pour ça. Un pont RSS vers X peut être ajouté
 # depuis l'admin comme n'importe quelle autre source.
 DEFAULT_FEEDS = [
+    # Fil FinancialJuice : titres rapides, pensés pour le trading intraday.
+    # On passe par leur RSS public plutôt que par leur widget, ce qui permet
+    # de les afficher dans NOTRE rendu au lieu d'une iframe non stylable.
+    {"n": "FinancialJuice", "u": "https://www.financialjuice.com/feed.ashx?xy=rss",
+     "t": "temps réel"},
     # Sources primaires : ce que disent les institutions elles-mêmes.
     # Aucune source « conseils perso / lifestyle » — ces flux-là noient le
     # signal sous des articles sans valeur pour un terminal.
@@ -1386,6 +1401,12 @@ class handler(BaseHTTPRequestHandler):
             try:
                 if typ == "calendar":
                     out = {"calendar": _news_calendar()}
+                elif typ == "fj":
+                    rows = _news_cached("fjcol", 45, _news_fj)
+                    # sans réponse, on sert les dépêches classiques plutôt
+                    # que de laisser la colonne vide
+                    out = {"news": rows or _news_headlines("general"),
+                           "src": "fj" if rows else "finnhub"}
                 elif typ == "feed":
                     out = {"feed": _news_feed()}
                 elif typ == "mag7":

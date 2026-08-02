@@ -280,7 +280,7 @@
   </section>
   <section class="col news">
     <div class="chead"><h2 id="colNews">Actualités marché</h2><span class="cnt" id="newsCnt"></span></div>
-    <div class="cbody nopad" id="newsBody"><div class="fjwrap" id="fjNews"></div></div>
+    <div class="cbody" id="newsBody"><div class="empty">…</div></div>
   </section>
   <section class="col cal">
     <div class="chead"><h2 id="colCal">Calendrier éco.</h2><span class="cnt" id="calCnt"></span></div>
@@ -462,11 +462,22 @@ function renderMacro(){
 /* ── news ── */
 function renderNews(){
   const box = $("#newsBody");
-  if (!NEWS.length){ box.innerHTML = `<div class="empty">${t("unavail")}</div>`; $("#newsCnt").textContent = ""; return; }
-  const sorted = [...NEWS].sort((a,b) => (b.pinned?1:0)-(a.pinned?1:0) || b.datetime-a.datetime);
-  box.innerHTML = sorted.map(n => `<a class="item${n.pinned?" pin":""}" href="${esc(n.url)}" target="_blank" rel="noopener">
-      <div class="item-top"><span class="src">${esc(n.source)}</span>${n.pinned?`<span class="pintag">${t("pinned")} · ${ago(n.datetime)}</span>`:""}<span class="ago">${ago(n.datetime)}</span></div>
-      <div class="head">${esc(n.headline)}</div>${n.summary?`<div class="sum">${esc(n.summary)}</div>`:""}</a>`).join("");
+  if (!NEWS.length){
+    box.innerHTML = `<div class="empty">${t("unavail")}</div>`;
+    $("#newsCnt").textContent = ""; return;
+  }
+  // même gabarit que la colonne Flux : une seule identité visuelle
+  box.innerHTML = NEWS.map(x => {
+    const hot = x.impact === "high";
+    const ts = x.ts || x.datetime || 0;
+    const title = x.title || x.headline || "";
+    return `<a class="feeditem${hot ? " hot" : ""}" href="${esc(x.url || "#")}"
+      target="_blank" rel="noopener">
+      <div class="ftop"><span class="fsrc">${esc(x.source || "")}</span>
+      <span class="fago">${ts ? ago(ts) : ""}</span></div>
+      <div class="ftitle">${esc(title)}</div>
+      ${x.desc ? `<div class="fdesc">${esc(x.desc)}</div>` : ""}</a>`;
+  }).join("");
   $("#newsCnt").textContent = NEWS.length;
 }
 
@@ -644,60 +655,16 @@ async function loadFeed(){
   renderFeed();
 }
 
-/* Colonne Actus : fil FinancialJuice, plus rapide et plus orienté trading que
-   les dépêches génériques. Si le widget ne se charge pas (bloqueur, réseau),
-   on retombe sur le flux Finnhub — la colonne n'est jamais vide. */
-let NEWS_MODE = "fj";
-function buildNewsWidget(){
-  const host = $("#fjNews");
-  if (!host || host.dataset.built) return;
-  host.dataset.built = "1";
-  const build = () => {
-    if (!window.FJWidgets) return fallbackNews();
-    requestAnimationFrame(() => {
-      const r = host.getBoundingClientRect();
-      try{
-        new window.FJWidgets.createWidget({
-          container: "fjNews", mode: "Dark",
-          width: Math.max(240, Math.round(r.width)) + "px",
-          height: MOBILE_Q.matches ? 1000 : Math.max(340, Math.round(r.height)) + "px",
-          backColor: "111114", fontColor: "8A8A94", widgetType: "NEWS",
-        });
-      }catch(e){ fallbackNews(); }
-    });
-  };
-  if (window.FJWidgets) return build();
-  const s = document.createElement("script");
-  s.id = "FJ-Widgets-news";
-  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
-        + Math.floor(Math.random() * 10000);
-  s.onload = build;
-  s.onerror = fallbackNews;
-  document.head.appendChild(s);
-}
-function fallbackNews(){
-  NEWS_MODE = "finnhub";
-  const b = $("#newsBody");
-  if (b) b.classList.remove("nopad");
-  loadNewsFallback();
-}
-async function loadNewsFallback(){
-  const d = await jget("/api/news");
-  NEWS = (d && d.news) || [];
-  const box = $("#newsBody");
-  if (!box) return;
-  box.innerHTML = NEWS.length
-    ? NEWS.map(x => `<a class="feeditem${x.impact === "high" ? " hot" : ""}"
-        href="${esc(x.url)}" target="_blank" rel="noopener">
-        <div class="ftop"><span class="fsrc">${esc(x.source || "")}</span>
-        <span class="fago">${x.datetime ? ago(x.datetime) : ""}</span></div>
-        <div class="ftitle">${esc(x.headline || "")}</div></a>`).join("")
-    : `<div class="empty">${t("unavail")}</div>`;
-  $("#newsCnt").textContent = NEWS.length || "";
-}
+/* Colonne Actus : titres FinancialJuice récupérés côté serveur via leur RSS
+   public, puis rendus par NOUS. Leur widget officiel est plus rapide à mettre
+   en place mais s'affiche dans une iframe d'un autre domaine : impossible d'y
+   appliquer notre CSS, donc identité graphique cassée. En passant par le flux,
+   on garde leur réactivité ET l'apparence du reste du site. */
 async function loadNews(){
-  if (NEWS_MODE === "fj") buildNewsWidget();
-  else loadNewsFallback();
+  const d = await jget("/api/news?type=fj");
+  NEWS = (d && d.news) || [];
+  NEWS_SRC = (d && d.src) || "";
+  renderNews();
 }
 async function loadCal(){ renderCal(); }   // le widget gère ses propres données
 async function loadMag(){ const d = await jget("/api/news?type=mag7"); MAG = (d&&d.mag7)||null; renderMag();
@@ -713,7 +680,7 @@ function applyLang(){
   const hb = document.getElementById("magHelpBox");
   if (hb && !hb.hidden) hb.textContent = t("magHelp"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
   updateSession(); renderMacro(); renderFeed(); renderMag(); applyMTab();
-  if (NEWS_MODE !== "fj") loadNewsFallback();
+  renderNews();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
