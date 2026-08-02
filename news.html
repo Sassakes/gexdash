@@ -312,6 +312,7 @@ const T = {
     sc_recession:"Ralentissement / Récession", sc_reflation:"Reprise / Reflation",
     fc:"prév.", pv:"préc.", aggLbl:"MAG7 · équipondéré (comme un ETF)", day:"Jour", week:"Sem.", month:"Mois·MTD",
     mkts:"Panorama marché", bias:"Biais", breadth:"Largeur",
+    instSrc:"sources institutionnelles",
     nWide:  b => `Hausse LARGE — ${b}% du groupe participe`,
     nNarrow:(b, up) => up ? `Mouvement ÉTROIT — seuls ${b}% suivent`
                           : `Baisse LARGE — ${b}% seulement résistent`,
@@ -344,6 +345,7 @@ const T = {
     sc_recession:"Slowdown / Recession", sc_reflation:"Recovery / Reflation",
     fc:"est.", pv:"prev", aggLbl:"MAG7 · equal-weight (ETF-style)", day:"Day", week:"Week", month:"Month·MTD",
     mkts:"Market snapshot", bias:"Bias", breadth:"Breadth",
+    instSrc:"institutional sources",
     nWide:  b => `BROAD advance — ${b}% of the group participating`,
     nNarrow:(b, up) => up ? `NARROW move — only ${b}% following`
                           : `BROAD decline — only ${b}% holding up`,
@@ -478,7 +480,9 @@ function renderNews(){
       <div class="ftitle">${esc(title)}</div>
       ${x.desc ? `<div class="fdesc">${esc(x.desc)}</div>` : ""}</a>`;
   }).join("");
-  $("#newsCnt").textContent = NEWS.length;
+  const lbl = {fj: "FinancialJuice", finnhub: "Finnhub",
+               institutionnel: t("instSrc")}[NEWS_SRC] || "";
+  $("#newsCnt").textContent = lbl ? `${NEWS.length} · ${lbl}` : NEWS.length;
 }
 
 /* ── calendar ── */

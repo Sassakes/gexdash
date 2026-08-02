@@ -107,11 +107,29 @@ def _news_impact(headline):
 FJ_RSS = "https://www.financialjuice.com/feed.ashx?xy=rss"
 
 
+def _fetch_status(url, name):
+    """Récupère un flux ET renvoie la raison d'un éventuel échec : sans cela,
+    une colonne vide ne dit pas si la source est bloquée, injoignable ou
+    simplement sans contenu."""
+    try:
+        import requests
+        r = requests.get(url, timeout=9, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0 Safari/537.36",
+            "Accept": "application/rss+xml,application/xml,text/xml,*/*",
+        })
+        if r.status_code != 200:
+            return [], f"HTTP {r.status_code}"
+        rows = _feed_parse(r.content, {"n": name, "t": "temps réel"})
+        return rows, ("aucun élément" if not rows else "")
+    except Exception as e:
+        return [], type(e).__name__
+
+
 def _news_fj():
-    """Titres FinancialJuice via leur RSS public. Repli implicite : si le flux
-    ne répond pas, la liste est vide et l'appelant bascule sur Finnhub."""
-    rows = _feed_one({"n": "FinancialJuice", "u": FJ_RSS, "t": "temps réel"})
-    return _news_cached("fj", 45, lambda: rows) if rows else []
+    rows, _err = _fetch_status(FJ_RSS, "FinancialJuice")
+    return rows
 
 
 def _news_headlines(cat):
@@ -187,16 +205,26 @@ def _feed_is_noise(title):
 
 def _feed_one(srcdef):
     """Lit un flux RSS/Atom. Tolérant : un flux mort n'en casse aucun autre."""
+    try:
+        import requests
+        r = requests.get(srcdef["u"], timeout=8,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; "
+                                                "x64) AppleWebKit/537.36 (KHTML, like "
+                                                "Gecko) Chrome/124.0 Safari/537.36"})
+        if r.status_code != 200:
+            return []
+        return _feed_parse(r.content, srcdef)
+    except Exception:
+        return []
+
+
+def _feed_parse(content, srcdef):
+    """Décode un contenu RSS ou Atom en liste d'entrées normalisées."""
     import re as _re
     import xml.etree.ElementTree as ET
     import email.utils as eut
     try:
-        import requests
-        r = requests.get(srcdef["u"], timeout=8,
-                         headers={"User-Agent": "Mozilla/5.0 (compatible; gexdash/1.0)"})
-        if r.status_code != 200:
-            return []
-        root = ET.fromstring(r.content)
+        root = ET.fromstring(content)
     except Exception:
         return []
     out = []
@@ -1402,11 +1430,36 @@ class handler(BaseHTTPRequestHandler):
                 if typ == "calendar":
                     out = {"calendar": _news_calendar()}
                 elif typ == "fj":
+                    # Diagnostic : ?diag=1 indique quelle source répond et
+                    # pourquoi les autres échouent — évite de deviner.
+                    if qs.get("diag"):
+                        fj_rows, fj_err = _fetch_status(FJ_RSS, "FinancialJuice")
+                        try:
+                            fh = _news_headlines("general")
+                            fh_err = "" if fh else "aucun élément"
+                        except Exception as e:
+                            fh, fh_err = [], type(e).__name__
+                        inst = _news_feed()
+                        self._send(200, json.dumps({
+                            "financialjuice": {"n": len(fj_rows), "err": fj_err},
+                            "finnhub": {"n": len(fh), "err": fh_err,
+                                        "key": bool(os.environ.get("FINNHUB_API_KEY"))},
+                            "institutionnel": {"n": len(inst)},
+                        }, ensure_ascii=False).encode(), "application/json")
+                        return
+
                     rows = _news_cached("fjcol", 45, _news_fj)
-                    # sans réponse, on sert les dépêches classiques plutôt
-                    # que de laisser la colonne vide
-                    out = {"news": rows or _news_headlines("general"),
-                           "src": "fj" if rows else "finnhub"}
+                    srcname = "fj"
+                    if not rows:                       # 2e source : dépêches Finnhub
+                        try:
+                            rows = _news_headlines("general")
+                            srcname = "finnhub"
+                        except Exception:
+                            rows = []
+                    if not rows:                       # 3e : nos sources institutionnelles
+                        rows = _news_feed()            # celles de la colonne Flux
+                        srcname = "institutionnel"
+                    out = {"news": rows, "src": srcname}
                 elif typ == "feed":
                     out = {"feed": _news_feed()}
                 elif typ == "mag7":
