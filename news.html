@@ -123,6 +123,9 @@
   .crow .cfv{font-size:10px; color:var(--muted); text-align:right; white-space:nowrap}
   .crow .cfv b{color:var(--text)}
 
+  .msep{padding:9px 12px 6px; font-size:9px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--faint); border-top:1px solid var(--line-strong);
+    margin-top:6px; background:var(--surface2)}
   .mrow{display:flex; align-items:center; gap:9px; padding:9px 14px; border-bottom:1px solid var(--line); font-family:var(--mono)}
   .mrow .msym{font-size:12.5px; font-weight:600; flex:1}
   .mrow .mpx{font-size:12px; color:var(--text)}
@@ -379,8 +382,11 @@ function renderCal(){
       new window.FJWidgets.createWidget({
         container: "fjCal",
         mode: "standard",
-        width: "100%",
-        height: "100%",
+        // dimensions EN PIXELS, mesurées sur le conteneur : en "100%" le
+        // widget retombe sur sa taille par défaut (340x600) et laisse une
+        // bande vide dans la colonne.
+        width: Math.max(240, host.clientWidth) + "px",
+        height: Math.max(300, host.clientHeight) + "px",
         backColor: "111114",      // --surface
         fontColor: "8A8A94",      // --muted
         widgetType: "ECOCAL",
@@ -389,6 +395,19 @@ function renderCal(){
       host.innerHTML = `<div class="empty">${t("unavail")}</div>`;
     }
   };
+  // Le widget est figé à sa taille de construction : on le reconstruit quand
+  // la colonne change de dimensions (rotation, redimensionnement de fenêtre).
+  if (!host._ro){
+    let last = 0;
+    host._ro = new ResizeObserver(() => {
+      const w = host.clientWidth;
+      if (!w || Math.abs(w - last) < 30) return;
+      last = w;
+      clearTimeout(host._rt);
+      host._rt = setTimeout(() => { host.dataset.built = ""; renderCal(); }, 250);
+    });
+    host._ro.observe(host);
+  }
   if (window.FJWidgets) return build();
   const s = document.createElement("script");
   s.type = "text/javascript";
@@ -414,6 +433,18 @@ function renderMag(){
   const cell = (k,v) => `<div class="acell"><div class="k">${t(k)}</div><div class="v ${pctCls(v)}">${pctTxt(v)}</div></div>`;
   $("#magAgg").hidden = false;
   $("#magAgg").innerHTML = `<div class="al">${t("aggLbl")}</div><div class="arow">${cell("day",a.day)}${cell("week",a.week)}${cell("month",a.month)}</div>`;
+
+  /* La colonne n'était remplie qu'au tiers par les 8 valeurs du MAG7. On la
+     complète par un panorama de marché — indices, taux, dollar, or, pétrole,
+     volatilité — qui donne le contexte que la tech seule ne montre pas. */
+  const mk = MAG.markets || [];
+  if (mk.length){
+    box.innerHTML += `<div class="msep">${t("mkts")}</div>` + mk.map(r =>
+      `<div class="mrow">
+        <span class="msym" title="${esc(r.sym)}">${esc(r.name || r.sym)}</span>
+        <span class="mpx">${r.price != null ? r.price.toLocaleString(loc(), {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>
+        <span class="mdp ${pctCls(r.dp)}">${pctTxt(r.dp)}</span></div>`).join("");
+  }
 }
 
 /* ── loaders ── */

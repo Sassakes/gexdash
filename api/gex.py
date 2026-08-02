@@ -296,17 +296,36 @@ def _news_mag_one(sym):
             "month": met.get("monthToDatePriceReturnDaily")}
 
 
-def _news_mag7():
+# Panorama de marché : indices, taux, dollar, or, pétrole et volatilité, via
+# leurs ETF de référence (les indices bruts ne sont pas servis sur le palier
+# gratuit). Complète le MAG7, qui ne couvre que la tech méga-capitalisation.
+_MARKETS = [
+    ("SPY", "S&P 500"), ("QQQ", "Nasdaq 100"), ("IWM", "Russell 2000"),
+    ("TLT", "Taux 20 ans"), ("UUP", "Dollar"), ("GLD", "Or"),
+    ("USO", "Pétrole"), ("VIXY", "Volatilité"),
+]
+
+
+def _news_markets():
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=8) as ex:
-        rows = list(ex.map(_news_mag_one, _MAG7))
+        rows = list(ex.map(lambda p: {**_news_mag_one(p[0]), "name": p[1]}, _MARKETS))
+    return rows
+
+
+def _news_mag7():
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_mag = ex.submit(lambda: [_news_mag_one(s) for s in _MAG7])
+        f_mkt = ex.submit(_news_markets)
+        rows, markets = f_mag.result(), f_mkt.result()
 
     def avg(k):
         vals = [r[k] for r in rows if r.get(k) is not None]
         return round(sum(vals) / len(vals), 2) if vals else None
 
-    return {"rows": rows, "agg": {"day": avg("dp"), "week": avg("week"),
-                                  "month": avg("month")}}
+    return {"rows": rows, "markets": markets,
+            "agg": {"day": avg("dp"), "week": avg("week"), "month": avg("month")}}
 
 
 def _finra_dp_day(ymd):
