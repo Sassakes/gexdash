@@ -127,8 +127,20 @@ def _fetch_status(url, name):
         return [], type(e).__name__
 
 
+_FJ_BACKOFF = {"until": 0.0}
+
+
 def _news_fj():
-    rows, _err = _fetch_status(FJ_RSS, "FinancialJuice")
+    """FinancialJuice n'est qu'un REPLI : leur RSS limite le debit par IP
+    (HTTP 429 depuis Vercel, dont les adresses sont partagees). On respecte
+    cette limite plutot que de la forcer — apres un refus, on s'abstient dix
+    minutes."""
+    now = time.time()
+    if now < _FJ_BACKOFF["until"]:
+        return []
+    rows, err = _fetch_status(FJ_RSS, "FinancialJuice")
+    if err.startswith("HTTP 429") or err.startswith("HTTP 5"):
+        _FJ_BACKOFF["until"] = now + 600
     return rows
 
 
@@ -1459,7 +1471,7 @@ class handler(BaseHTTPRequestHandler):
                     except Exception:
                         rows = []
                     if not rows:                       # repli : FinancialJuice
-                        rows = _news_cached("fjcol", 45, _news_fj)
+                        rows = _news_cached("fjcol", 300, _news_fj)
                         srcname = "fj" if rows else srcname
                     if not rows:                       # dernier recours
                         rows = _news_feed()
