@@ -232,9 +232,12 @@
        pour tout afficher, et c'est la PAGE qui défile — comportement naturel
        au doigt, et plus de blocage en bas de liste. */
     .col.cal{flex:1 1 100%; max-width:none}
+    /* On ne force PLUS la hauteur de l'iframe : elle est fixee a la
+       construction du widget (voir FJ_MOBILE_H). Imposer une valeur
+       differente en CSS laissait une bande vide sous le contenu. */
     .cbody.nopad{min-height:0; height:auto; overflow:visible}
     .fjwrap{height:auto; min-height:0; overflow:visible; display:block}
-    .fjwrap iframe{height:1150px !important; min-height:1150px; width:100% !important}
+    .fjwrap iframe{width:100% !important; display:block; height:auto}
 
     /* cibles tactiles et lisibilité */
     .feeditem, .nitem{padding:11px 13px}
@@ -394,6 +397,10 @@ function sessionState(){
    n'est construit qu'au moment où son onglet devient visible, sinon il se
    dimensionne dans un conteneur masqué et s'affiche de travers. */
 const MOBILE_Q = window.matchMedia("(max-width:700px)");
+// Hauteur des widgets sur telephone : assez grande pour afficher le contenu
+// sans defilement interne (une iframe ne defile pas dans son conteneur), la
+// page prend alors le relais.
+const FJ_MOBILE_H = 1100;
 let MTAB = "feed";
 try{ MTAB = localStorage.getItem("newsTab") || "feed"; }catch(_){}
 
@@ -488,7 +495,7 @@ function renderCal(){
     // Sur mobile on demande une hauteur généreuse : le widget affiche alors
     // toute la semaine et c'est la page qui défile, au lieu d'un contenu
     // tronqué dans une iframe qui refuse de bouger.
-    const h = MOBILE_Q.matches ? 1150 : Math.max(340, Math.round(r.height));
+    const h = MOBILE_Q.matches ? FJ_MOBILE_H : Math.max(340, Math.round(r.height));
     try{
       new window.FJWidgets.createWidget({
         container: "fjCal",
@@ -664,7 +671,8 @@ async function loadNews(){
           container: "fjNews",
           mode: "Dark",
           width: Math.max(240, Math.round(r.width)) + "px",
-          height: MOBILE_Q.matches ? 1000 : Math.max(340, Math.round(r.height)) + "px",
+          height: (MOBILE_Q.matches ? FJ_MOBILE_H
+                                   : Math.max(340, Math.round(r.height))) + "px",
           backColor: "111114",     // --surface, pour limiter la rupture visuelle
           fontColor: "8A8A94",     // --muted
           widgetType: "NEWS",
@@ -673,6 +681,24 @@ async function loadNews(){
       }catch(e){ newsFallback(); }
     });
   };
+
+  // Le widget est fige a sa taille de construction : sans cela, elargir ou
+  // reduire la fenetre laisse une bande vide ou un debordement.
+  if (!host._ro){
+    let last = 0;
+    host._ro = new ResizeObserver(() => {
+      const w = host.clientWidth;
+      if (!w || Math.abs(w - last) < 30) return;
+      last = w;
+      clearTimeout(host._rt);
+      host._rt = setTimeout(() => {
+        host.dataset.built = "";
+        host.innerHTML = "";
+        loadNews();
+      }, 250);
+    });
+    host._ro.observe(host);
+  }
 
   if (window.FJWidgets) return build();
   const s = document.createElement("script");
