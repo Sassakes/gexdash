@@ -98,7 +98,13 @@
   .fjwrap iframe{border:0 !important; width:100% !important; height:100% !important;
     min-height:340px; display:block; background:var(--surface); flex:1 1 auto}
   .col{background:var(--surface); border:1px solid var(--line); border-radius:8px; display:flex; flex-direction:column; overflow:hidden}
-  .col.news{flex:1 1 42%} .col.cal{flex:1 1 32%} .col.mag{flex:1 1 26%; min-width:250px}
+  /* Le widget du calendrier a une largeur naturelle d'environ 340px : lui en
+     donner 32% de l'écran laissait une large bande vide. On le fixe à sa
+     taille utile et on redistribue l'espace aux colonnes qui en profitent. */
+  .col.feed{flex:1 1 26%}
+  .col.news{flex:1 1 30%}
+  .col.cal{flex:0 0 366px; max-width:366px}
+  .col.mag{flex:1 1 22%; min-width:230px}
   .chead{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex:none}
   .chead h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--text)}
   .chead .cnt{font-family:var(--mono); font-size:10px; color:var(--faint); margin-left:auto}
@@ -192,8 +198,14 @@
     .col.mshow{display:flex; flex:1 1 100%}
     /* la section occupe l'écran : plus de double défilement */
     .cbody{max-height:none; height:auto; min-height:60vh; overflow:visible}
-    .cbody.nopad{min-height:70vh}
-    .fjwrap, .fjwrap iframe{min-height:70vh}
+    /* Une iframe ne défile pas à l'intérieur d'un conteneur sur mobile : son
+       contenu est simplement coupé. On lui donne donc une hauteur suffisante
+       pour tout afficher, et c'est la PAGE qui défile — comportement naturel
+       au doigt, et plus de blocage en bas de liste. */
+    .col.cal{flex:1 1 100%; max-width:none}
+    .cbody.nopad{min-height:0; height:auto; overflow:visible}
+    .fjwrap{height:auto; min-height:0; overflow:visible; display:block}
+    .fjwrap iframe{height:1150px !important; min-height:1150px; width:100% !important}
 
     /* cibles tactiles et lisibilité */
     .feeditem, .nitem{padding:11px 13px}
@@ -420,8 +432,12 @@ function renderCal(){
     // construire immédiatement donnait une largeur encore nulle ou provisoire,
     // d'où un widget mal dimensionné. On attend donc une frame de rendu.
     requestAnimationFrame(() => {
-    const w = Math.max(240, Math.round(host.getBoundingClientRect().width));
-    const h = Math.max(320, Math.round(host.getBoundingClientRect().height));
+    const r = host.getBoundingClientRect();
+    const w = Math.max(240, Math.round(r.width));
+    // Sur mobile on demande une hauteur généreuse : le widget affiche alors
+    // toute la semaine et c'est la page qui défile, au lieu d'un contenu
+    // tronqué dans une iframe qui refuse de bouger.
+    const h = MOBILE_Q.matches ? 1150 : Math.max(340, Math.round(r.height));
     try{
       new window.FJWidgets.createWidget({
         container: "fjCal",
