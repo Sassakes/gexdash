@@ -181,6 +181,35 @@
     font-size:13px; cursor:pointer; padding:4px 8px;
   }
   .card .head .rm:hover{color:var(--red)}
+  /* Fenêtres d'information : même densité que les colonnes de /news, mais
+     compactées pour tenir dans une carte du dashboard. */
+  .newsbox{overflow:auto; -webkit-overflow-scrolling:touch}
+  .nload{padding:20px; text-align:center; color:var(--faint); font-size:11px}
+  .nitem{display:block; padding:8px 11px; border-bottom:1px solid var(--line);
+    text-decoration:none; color:inherit}
+  .nitem:hover{background:rgba(255,255,255,.03)}
+  .nitem.hot{border-left:2px solid var(--red); background:rgba(239,83,80,.05)}
+  .nitem .ntop{display:flex; align-items:center; gap:6px; margin-bottom:2px}
+  .nitem .nsrc{font-size:8.5px; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--muted); background:var(--surface2); padding:1px 5px; border-radius:2px}
+  .nitem.hot .nsrc{color:var(--red)}
+  .nitem .nago{margin-left:auto; font-size:9px; color:var(--faint);
+    font-family:var(--mono)}
+  .nitem .ntitle{font-size:11.5px; line-height:1.4; color:var(--text)}
+  .mag7row{display:flex; align-items:center; gap:8px; padding:7px 11px;
+    border-bottom:1px solid var(--line); font-family:var(--mono); font-size:11px}
+  .mag7row .ms{color:var(--text); min-width:48px; font-weight:600}
+  .mag7row .mp{color:var(--muted); min-width:62px; text-align:right}
+  .mag7row .md{min-width:56px; text-align:right}
+  .mag7row .md.up{color:var(--teal)} .mag7row .md.dn{color:var(--red)}
+  .mag7agg{display:flex; gap:14px; padding:9px 11px; background:var(--surface2);
+    border-bottom:1px solid var(--line-strong); font-family:var(--mono); font-size:11px}
+  .mag7agg span{color:var(--muted)} .mag7agg b{margin-left:5px}
+  .ecowrap{height:100%; min-height:280px; overflow:auto}
+  .ecowrap iframe{border:0 !important; width:100% !important; min-height:280px;
+    height:100% !important; display:block}
+  .ecowrap > div{width:100% !important; max-width:100% !important}
+
   /* Carte heatmap : même palette et même lecture que la page /heatmap */
   .hmbox{overflow:auto; -webkit-overflow-scrolling:touch}
   .cchips .hmnoise{font-size:11px; padding:2px 7px; line-height:1.4}
@@ -334,7 +363,11 @@
 
 <div class="addbar">
   <select id="addT"><option>NQ</option><option>ES</option><option>SPX</option><option value="GC">GOLD</option></select>
-  <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option><option value="heat">▦ Heatmap</option></select>
+  <select id="addIv"><option value="1m">1m</option><option value="5m" selected>5m</option><option value="15m">15m</option><option value="heat">▦ Heatmap</option>
+    <option value="feed">▤ Flux direct</option>
+    <option value="news">▤ Actualités</option>
+    <option value="eco">▤ Calendrier éco</option>
+    <option value="mag7">▤ MAG7</option></select>
   <button id="addBtn">+ <span id="addLbl">Ajouter un chart</span></button>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
   <select id="tzDash" title="Fuseau horaire des charts">
@@ -384,11 +417,11 @@ const GROUP_KINDS = {
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
-  fr: {noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
+  fr: {needAuth:"Connexion requise", goSignIn:"Se connecter", noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
        feedKo:"flux indisponible", edit:"Éditer", done:"Terminé"},
-  en: {noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
+  en: {needAuth:"Sign-in required", goSignIn:"Sign in", noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
        hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
        feedKo:"feed unavailable", edit:"Edit", done:"Done"},
@@ -817,6 +850,111 @@ async function mountCard(cfg, host){
   }, 60000);
 }
 
+/* ═══ FENÊTRES D'INFORMATION ═══════════════════════════════════════════
+   Flux direct, actualités, calendrier et MAG7 — mêmes sources que la page
+   /news, dans une carte redimensionnable. Les données sont protégées par la
+   session : une carte affichée sans compte connecté invite à se connecter
+   plutôt que de rester vide sans explication. */
+function nEsc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+function nAgo(ts){
+  if (!ts) return "";
+  const d = Math.floor(Date.now() / 1000) - ts;
+  if (d < 60) return d + "s";
+  if (d < 3600) return Math.floor(d / 60) + "min";
+  if (d < 86400) return Math.floor(d / 3600) + "h";
+  return Math.floor(d / 86400) + "j";
+}
+function nPct(v){
+  if (v == null) return "—";
+  const s = v >= 0 ? "+" : "";
+  return `<span class="md ${v >= 0 ? "up" : "dn"}">${s}${Number(v).toFixed(2)}%</span>`;
+}
+
+async function mountNewsCard(cfg, host){
+  const box = host.querySelector(".newsbox");
+
+  // le calendrier est un widget tiers : il gère son propre rafraîchissement
+  if (cfg.iv === "eco"){
+    box.innerHTML = `<div class="ecowrap" id="eco_${Math.random().toString(36).slice(2, 9)}"></div>`;
+    const wrap = box.querySelector(".ecowrap");
+    const build = () => {
+      if (!window.FJWidgets) return;
+      try{
+        new window.FJWidgets.createWidget({
+          container: wrap.id, mode: "standard", width: "100%", height: "100%",
+          backColor: "111114", fontColor: "8A8A94", widgetType: "ECOCAL",
+        });
+      }catch(e){ wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; }
+    };
+    if (window.FJWidgets) return build();
+    const s = document.createElement("script");
+    s.id = "FJ-Widgets";
+    s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+          + Math.floor(Math.random() * 10000);
+    s.onload = build;
+    s.onerror = () => { wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; };
+    document.head.appendChild(s);
+    return;
+  }
+
+  const TYPE = {feed: "feed", news: "news", mag7: "mag7"}[cfg.iv];
+  const draw = async () => {
+    try{
+      const r = await fetch(`/api/news?type=${TYPE}`);
+      if (r.status === 401){
+        box.innerHTML = `<div class="nload">${tx("needAuth")}
+          <br><a href="/" style="color:var(--gold)">${tx("goSignIn")}</a></div>`;
+        clearInterval(host._timer);       // inutile d'insister sans session
+        return;
+      }
+      const d = await r.json();
+      if (TYPE === "mag7"){
+        const rows = (d.mag7 && d.mag7.rows) || [];
+        const agg = (d.mag7 && d.mag7.agg) || {};
+        if (!rows.length){ box.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; return; }
+        box.innerHTML =
+          `<div class="mag7agg"><span>J${nPct(agg.day)}</span>
+             <span>S${nPct(agg.week)}</span><span>M${nPct(agg.month)}</span></div>` +
+          rows.map(x => `<div class="mag7row"><span class="ms">${nEsc(x.sym)}</span>
+            <span class="mp">${x.price != null ? Number(x.price).toFixed(2) : "—"}</span>
+            ${nPct(x.dp)}</div>`).join("");
+        return;
+      }
+      const rows = d[TYPE] || [];
+      if (!rows.length){ box.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; return; }
+      box.innerHTML = rows.slice(0, 60).map(x => {
+        const hot = x.impact === "high";
+        const title = x.title || x.headline || "";
+        const ts = x.ts || x.datetime || 0;
+        return `<a class="nitem${hot ? " hot" : ""}" href="${nEsc(x.url || "#")}"
+          target="_blank" rel="noopener">
+          <div class="ntop"><span class="nsrc">${nEsc(x.source || "")}</span>
+          <span class="nago">${nAgo(ts)}</span></div>
+          <div class="ntitle">${nEsc(title)}</div></a>`;
+      }).join("");
+    }catch(e){
+      box.innerHTML = `<div class="nload">${tx("hmNone")}</div>`;
+    }
+  };
+  host._redraw = draw;
+  await draw();
+  // même rythme que la page /news, et rien le week-end
+  const MS = {feed: 120000, news: 90000, mag7: 30000}[cfg.iv] || 120000;
+  const arm = () => {
+    clearInterval(host._timer);
+    if (marketPollMs()) host._timer = setInterval(draw, MS);
+  };
+  arm();
+  clearInterval(host._pollWatch);
+  host._pollWatch = setInterval(() => {
+    if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
+    arm();
+  }, 120000);
+}
+
 /* ═══ CARTE HEATMAP ═══════════════════════════════════════════════════
    Version compacte de la page /heatmap : même source (/api/matrix), même
    palette (teal = gamma positif, rouge = négatif, or = extrême), centrée
@@ -986,6 +1124,24 @@ function render(){
     clampCard(cfg);
     const card = document.createElement("div");
     card.className = "card";
+    if (["feed", "news", "eco", "mag7"].includes(cfg.iv)){
+      const TITLES = {feed: "▤ Flux direct", news: "▤ Actualités",
+                      eco: "▤ Calendrier éco", mag7: "▤ MAG7"};
+      card.innerHTML = `<div class="head"><span class="t">${TITLES[cfg.iv]}</span>
+        <span class="n"></span><span class="gh"></span>
+        <button class="rm" title="Retirer">✕</button></div>
+        <div class="box newsbox"><div class="nload">…</div></div>`;
+      card.querySelector(".rm").onclick = () => {
+        if (card._timer) clearInterval(card._timer);
+        if (card._pollWatch) clearInterval(card._pollWatch);
+        CARDS.splice(idx, 1); saveCards(); render();
+      };
+      board.appendChild(card);
+      layoutCard(card, cfg);
+      wireEdit(card, cfg);
+      mountNewsCard(cfg, card);
+      return;
+    }
     if (cfg.iv === "heat"){
       card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ▦ GEX</span>
         <span class="n"></span>
