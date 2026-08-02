@@ -250,6 +250,16 @@
     .topnav{width:100%; margin-left:0}
     #board{position:static}
     .card{position:static !important; width:auto !important; height:380px !important; margin-bottom:14px}
+    /* Les fenêtres d'information sont des LISTES : 380px n'affiche que deux
+       ou trois entrées et impose un défilement interne pénible au pouce.
+       On leur donne plus de hauteur, et le calendrier davantage encore
+       puisque le widget tiers a sa propre densité. */
+    .card:has(.newsbox), .card.kind-news{height:520px !important}
+    .card:has(.ecowrap), .card.kind-eco{height:600px !important}
+    .newsbox{-webkit-overflow-scrolling:touch}
+    .nitem{padding:11px 13px}
+    .nitem .ntitle{font-size:12.5px; line-height:1.45}
+    .mag7row{padding:10px 13px; font-size:12px}
     .card .rsz{display:none !important}
     #editBtn{display:none}
   }
@@ -1127,6 +1137,7 @@ function render(){
     if (["feed", "news", "eco", "mag7"].includes(cfg.iv)){
       const TITLES = {feed: "▤ Flux direct", news: "▤ Actualités",
                       eco: "▤ Calendrier éco", mag7: "▤ MAG7"};
+      card.classList.add(cfg.iv === "eco" ? "kind-eco" : "kind-news");
       card.innerHTML = `<div class="head"><span class="t">${TITLES[cfg.iv]}</span>
         <span class="n"></span><span class="gh"></span>
         <button class="rm" title="Retirer">✕</button></div>

@@ -143,6 +143,29 @@
     .panel{flex:1 1 100%}
     .tblwrap{max-height:70vh}
   }
+
+  /* ───────── TÉLÉPHONE ─────────
+     La barre d'outils compte sept réglages : sur un écran étroit elle doit
+     défiler horizontalement plutôt que se comprimer, et chaque commande doit
+     rester visable au pouce (42px minimum). */
+  @media (max-width:700px){
+    header{padding:10px 13px; gap:8px; flex-wrap:wrap}
+    header h1{font-size:12px; letter-spacing:.12em}
+    .toolbar{
+      gap:7px; padding:9px 13px; overflow-x:auto; flex-wrap:nowrap;
+      -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    }
+    .toolbar::-webkit-scrollbar{display:none}
+    .tgroup{flex:0 0 auto}
+    .tlabel{display:none}                 /* les icônes suffisent, la place est rare */
+    .seg button, .toggle, .dd-trig{min-height:42px; font-size:12.5px; padding:0 13px}
+    .wrap{padding:8px 10px; gap:9px}
+    .tblwrap{max-height:62vh}
+    .phead{padding:9px 12px}
+    thead th{font-size:8px; padding:5px 2px}
+    tbody td{font-size:9px; padding:0 2px; height:18px}
+    .help{padding:14px 16px; font-size:12px}
+  }
 </style>
 <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
 <script defer src="/_vercel/insights/script.js"></script>

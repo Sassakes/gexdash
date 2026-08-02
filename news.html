@@ -135,10 +135,56 @@
   .magg .acell .k{font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:var(--muted); text-transform:uppercase}
   .magg .acell .v{font-family:var(--mono); font-size:15px; font-weight:600; margin-top:3px}
 
+  /* Barre d'onglets : masquée sur grand écran, où les colonnes cohabitent. */
+  .mtabs{display:none}
+
   @media (max-width:920px){
     body{overflow:auto; height:auto}
     .wrap{flex-wrap:wrap; height:auto} .col{flex:1 1 100%} .cbody{max-height:56vh}
     .metric{min-width:calc(50% - 10px)}
+  }
+
+  /* ───────── TÉLÉPHONE ─────────
+     Quatre colonnes empilées donnaient un défilement interminable, avec des
+     zones qui défilent à l'intérieur d'une page qui défile aussi. On affiche
+     donc UNE section à la fois, choisie par des onglets : chacune occupe
+     l'écran, et le défilement redevient celui de la page. */
+  @media (max-width:700px){
+    header{padding:10px 14px; gap:8px; flex-wrap:wrap}
+    header h1{font-size:12px; letter-spacing:.12em}
+    header a{font-size:11.5px; padding:5px 7px}
+    .macro{margin:10px 12px 0; padding:11px 13px; border-radius:8px}
+    .metric{min-width:calc(50% - 8px)}
+
+    .mtabs{
+      display:flex; gap:6px; margin:12px 12px 0; overflow-x:auto;
+      -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    }
+    .mtabs::-webkit-scrollbar{display:none}
+    .mtabs button{
+      flex:1 0 auto; min-height:42px; padding:0 15px; white-space:nowrap;
+      background:var(--surface); border:1px solid var(--line);
+      color:var(--muted); font:inherit; font-size:12.5px; cursor:pointer;
+      border-radius:8px;
+    }
+    .mtabs button.on{
+      color:var(--gold); border-color:rgba(240,185,11,.5);
+      background:rgba(240,185,11,.07);
+    }
+
+    .wrap{padding:10px 12px 24px; gap:0; height:auto; min-height:0}
+    .col{display:none}
+    .col.mshow{display:flex; flex:1 1 100%}
+    /* la section occupe l'écran : plus de double défilement */
+    .cbody{max-height:none; height:auto; min-height:60vh; overflow:visible}
+    .cbody.nopad{min-height:70vh}
+    .fjwrap, .fjwrap iframe{min-height:70vh}
+
+    /* cibles tactiles et lisibilité */
+    .feeditem, .nitem{padding:11px 13px}
+    .feeditem .ftitle{font-size:13px; line-height:1.5}
+    .feeditem .fdesc{font-size:11.5px; -webkit-line-clamp:3}
+    .chead{padding:11px 13px}
   }
 </style>
 </head>
@@ -165,6 +211,12 @@
   </div>
 </section>
 
+<nav class="mtabs" id="mtabs" aria-label="Sections">
+  <button data-c="feed" class="on">Flux</button>
+  <button data-c="news">Actus</button>
+  <button data-c="cal">Calendrier</button>
+  <button data-c="mag">MAG7</button>
+</nav>
 <div class="wrap">
   <section class="col feed">
     <div class="chead"><h2 id="colFeed">Flux direct</h2><span class="cnt" id="feedCnt"></span></div>
@@ -238,6 +290,35 @@ function sessionState(){
   if (m >= 570 && m < 960) return "live"; if (m >= 240 && m < 570) return "pre";
   if (m >= 960 && m < 1200) return "post"; return "closed";
 }
+/* Onglets mobile : une seule colonne affichée à la fois. Le choix est
+   mémorisé, et le calendrier — widget tiers qui se rend dans une iframe —
+   n'est construit qu'au moment où son onglet devient visible, sinon il se
+   dimensionne dans un conteneur masqué et s'affiche de travers. */
+const MOBILE_Q = window.matchMedia("(max-width:700px)");
+let MTAB = "feed";
+try{ MTAB = localStorage.getItem("newsTab") || "feed"; }catch(_){}
+
+function applyMTab(){
+  const on = MOBILE_Q.matches;
+  document.querySelectorAll(".wrap .col").forEach(c => {
+    const key = [...c.classList].find(x => ["feed","news","cal","mag"].includes(x));
+    c.classList.toggle("mshow", !on || key === MTAB);
+  });
+  document.querySelectorAll("#mtabs button").forEach(b =>
+    b.classList.toggle("on", b.dataset.c === MTAB));
+  if (!on || MTAB === "cal") renderCal();   // construit une fois visible
+}
+
+(function wireMTabs(){
+  document.querySelectorAll("#mtabs button").forEach(b => b.onclick = () => {
+    MTAB = b.dataset.c;
+    try{ localStorage.setItem("newsTab", MTAB); }catch(_){}
+    applyMTab();
+    window.scrollTo({top: 0, behavior: "smooth"});
+  });
+  MOBILE_Q.addEventListener("change", applyMTab);
+})();
+
 function updateSession(){ const s = sessionState(); $("#sessDot").className = "dot " + s; $("#sessTxt").textContent = t(s); }
 
 /* ── macro banner ── */
@@ -288,6 +369,8 @@ function renderNews(){
 function renderCal(){
   const host = $("#fjCal");
   if (!host || host.dataset.built) return;
+  // conteneur masqué (onglet non actif) : on attend qu'il soit visible
+  if (!host.offsetParent && MOBILE_Q.matches) return;
   host.dataset.built = "1";
   const build = () => {
     if (!window.FJWidgets) return;
@@ -371,7 +454,7 @@ function applyLang(){
   $("#macroTitle").textContent = t("macroTitle");
   $("#colNews").textContent = t("colNews");
   $("#colFeed").textContent = t("colFeed"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
-  updateSession(); renderMacro(); renderFeed(); renderNews(); renderCal(); renderMag();
+  updateSession(); renderMacro(); renderFeed(); renderNews(); renderMag(); applyMTab();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
