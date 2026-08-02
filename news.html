@@ -280,7 +280,7 @@
   </section>
   <section class="col news">
     <div class="chead"><h2 id="colNews">Actualités marché</h2><span class="cnt" id="newsCnt"></span></div>
-    <div class="cbody" id="newsBody"><div class="empty">…</div></div>
+    <div class="cbody nopad" id="newsBody"><div class="fjwrap" id="fjNews"></div></div>
   </section>
   <section class="col cal">
     <div class="chead"><h2 id="colCal">Calendrier éco.</h2><span class="cnt" id="calCnt"></span></div>
@@ -462,28 +462,7 @@ function renderMacro(){
 }
 
 /* ── news ── */
-function renderNews(){
-  const box = $("#newsBody");
-  if (!NEWS.length){
-    box.innerHTML = `<div class="empty">${t("unavail")}</div>`;
-    $("#newsCnt").textContent = ""; return;
-  }
-  // même gabarit que la colonne Flux : une seule identité visuelle
-  box.innerHTML = NEWS.map(x => {
-    const hot = x.impact === "high";
-    const ts = x.ts || x.datetime || 0;
-    const title = x.title || x.headline || "";
-    return `<a class="feeditem${hot ? " hot" : ""}" href="${esc(x.url || "#")}"
-      target="_blank" rel="noopener">
-      <div class="ftop"><span class="fsrc">${esc(x.source || "")}</span>
-      <span class="fago">${ts ? ago(ts) : ""}</span></div>
-      <div class="ftitle">${esc(title)}</div>
-      ${x.desc ? `<div class="fdesc">${esc(x.desc)}</div>` : ""}</a>`;
-  }).join("");
-  const lbl = {fj: "FinancialJuice", finnhub: "Finnhub",
-               institutionnel: t("instSrc")}[NEWS_SRC] || "";
-  $("#newsCnt").textContent = lbl ? `${NEWS.length} · ${lbl}` : NEWS.length;
-}
+
 
 /* ── calendar ── */
 /* Calendrier économique : widget officiel FinancialJuice, aux couleurs du
@@ -659,16 +638,78 @@ async function loadFeed(){
   renderFeed();
 }
 
-/* Colonne Actus : titres FinancialJuice récupérés côté serveur via leur RSS
-   public, puis rendus par NOUS. Leur widget officiel est plus rapide à mettre
-   en place mais s'affiche dans une iframe d'un autre domaine : impossible d'y
-   appliquer notre CSS, donc identité graphique cassée. En passant par le flux,
-   on garde leur réactivité ET l'apparence du reste du site. */
+/* Colonne Actus : widget officiel FinancialJuice.
+   Pourquoi le widget et pas leur RSS ? Les deux autres voies sont fermées :
+   depuis le serveur leur flux nous limite (HTTP 429, adresses Vercel
+   partagées), et depuis le navigateur la politique d'origine croisée
+   interdit de lire un flux d'un autre domaine. Le widget contourne les deux
+   puisque c'est le navigateur du visiteur qui appelle, avec sa propre
+   adresse. Contrepartie assumée : il se rend dans une iframe, donc notre CSS
+   ne s'y applique pas — seuls le fond et la couleur du texte sont réglables.
+   Si le widget ne charge pas, on bascule sur une liste maison. */
+let NEWS_SRC = "";        // "" = widget, "fallback" = liste maison
+
 async function loadNews(){
+  if (NEWS_SRC === "fallback") return loadNewsList();
+  const host = $("#fjNews");
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+
+  const build = () => {
+    if (!window.FJWidgets) return newsFallback();
+    requestAnimationFrame(() => {
+      const r = host.getBoundingClientRect();
+      try{
+        new window.FJWidgets.createWidget({
+          container: "fjNews",
+          mode: "Dark",
+          width: Math.max(240, Math.round(r.width)) + "px",
+          height: MOBILE_Q.matches ? 1000 : Math.max(340, Math.round(r.height)) + "px",
+          backColor: "111114",     // --surface, pour limiter la rupture visuelle
+          fontColor: "8A8A94",     // --muted
+          widgetType: "NEWS",
+        });
+        $("#newsCnt").textContent = "FinancialJuice";
+      }catch(e){ newsFallback(); }
+    });
+  };
+
+  if (window.FJWidgets) return build();
+  const s = document.createElement("script");
+  s.id = "FJ-Widgets-news";
+  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+        + Math.floor(Math.random() * 10000);
+  s.onload = build;
+  s.onerror = newsFallback;
+  document.head.appendChild(s);
+}
+
+function newsFallback(){
+  NEWS_SRC = "fallback";
+  const box = $("#newsBody");
+  if (box) box.classList.remove("nopad");
+  loadNewsList();
+}
+
+async function loadNewsList(){
   const d = await jget("/api/news?type=fj");
   NEWS = (d && d.news) || [];
-  NEWS_SRC = (d && d.src) || "";
-  renderNews();
+  const box = $("#newsBody");
+  if (!box) return;
+  box.innerHTML = NEWS.length
+    ? NEWS.map(x => {
+        const ts = x.ts || x.datetime || 0;
+        const title = x.title || x.headline || "";
+        return `<a class="feeditem${x.impact === "high" ? " hot" : ""}"
+          href="${esc(x.url || "#")}" target="_blank" rel="noopener">
+          <div class="ftop"><span class="fsrc">${esc(x.source || "")}</span>
+          <span class="fago">${ts ? ago(ts) : ""}</span></div>
+          <div class="ftitle">${esc(title)}</div></a>`;
+      }).join("")
+    : `<div class="empty">${t("unavail")}</div>`;
+  $("#newsCnt").textContent = NEWS.length
+    ? `${NEWS.length} · ${(d && d.src) === "finnhub" ? "Finnhub" : t("instSrc")}`
+    : "";
 }
 async function loadCal(){ renderCal(); }   // le widget gère ses propres données
 async function loadMag(){ const d = await jget("/api/news?type=mag7"); MAG = (d&&d.mag7)||null; renderMag();
@@ -684,7 +725,6 @@ function applyLang(){
   const hb = document.getElementById("magHelpBox");
   if (hb && !hb.hidden) hb.textContent = t("magHelp"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
   updateSession(); renderMacro(); renderFeed(); renderMag(); applyMTab();
-  renderNews();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
