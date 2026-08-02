@@ -200,9 +200,13 @@
   .mag7row{display:flex; align-items:center; gap:8px; padding:3px 10px;
     border-bottom:1px solid var(--line); font-family:var(--mono); font-size:10.5px;
     line-height:1.5}
-  .mag7row .ms{color:var(--text); min-width:48px; font-weight:600}
-  .mag7row .mp{color:var(--muted); min-width:62px; text-align:right}
-  .mag7row .md{min-width:56px; text-align:right}
+  /* Colonnes fluides : les libellés du panorama sont plus longs que les
+     tickers du MAG7, et des largeurs fixes faisaient déborder le texte hors
+     de la carte dès qu'on la rétrécissait. */
+  .mag7row .ms{color:var(--text); font-weight:600; flex:1 1 auto; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .mag7row .mp{color:var(--muted); flex:0 0 auto; text-align:right}
+  .mag7row .md{flex:0 0 auto; text-align:right; min-width:52px}
   .mag7row .md.up{color:var(--teal)} .mag7row .md.dn{color:var(--red)}
   .mag7sep{padding:4px 10px 3px; font-size:8.5px; letter-spacing:.13em;
     text-transform:uppercase; color:var(--faint); background:var(--surface2);
@@ -472,8 +476,10 @@ function px(c){
           width: c.w * cw + (c.w - 1) * GAP, height: c.h * CELL_H + (c.h - 1) * GAP};
 }
 function clampCard(c){
-  c.w = Math.max(3, Math.min(COLS, Math.round(c.w)));
-  c.h = Math.max(3, Math.round(c.h));
+  // 2 colonnes minimum au lieu de 3 : une liste de valeurs comme le MAG7 n'a
+  // pas besoin du quart de l'écran, et la contrainte empêchait de la réduire.
+  c.w = Math.max(2, Math.min(COLS, Math.round(c.w)));
+  c.h = Math.max(2, Math.round(c.h));
   c.x = Math.max(0, Math.min(COLS - c.w, Math.round(c.x)));
   c.y = Math.max(0, Math.round(c.y));
 }
@@ -1139,7 +1145,7 @@ const CARD_SIZE = {
   feed: {w: 4, h: 7},
   news: {w: 4, h: 7},
   eco:  {w: 4, h: 7},
-  mag7: {w: 3, h: 4},
+  mag7: {w: 2, h: 5},
 };
 function cardSize(kind){
   return CARD_SIZE[kind] || {w: 6, h: 4};

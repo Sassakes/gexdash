@@ -303,9 +303,9 @@ def _news_mag_one(sym):
 # leurs ETF de référence (les indices bruts ne sont pas servis sur le palier
 # gratuit). Complète le MAG7, qui ne couvre que la tech méga-capitalisation.
 _MARKETS = [
-    ("SPY", "S&P 500"), ("QQQ", "Nasdaq 100"), ("IWM", "Russell 2000"),
-    ("TLT", "Taux 20 ans"), ("UUP", "Dollar"), ("GLD", "Or"),
-    ("USO", "Pétrole"), ("VIXY", "Volatilité"),
+    ("SPY", "S&P 500"), ("QQQ", "Nasdaq 100"), ("SOXX", "Semis · SOX"),
+    ("IWM", "Russell 2000"), ("TLT", "Taux 20 ans"), ("UUP", "Dollar"),
+    ("GLD", "Or"), ("USO", "Pétrole"), ("VIXY", "Volatilité"),
 ]
 
 
@@ -334,8 +334,43 @@ def _news_mag7():
         vals = [r[k] for r in rows if r.get(k) is not None]
         return round(sum(vals) / len(vals), 2) if vals else None
 
+    # Lecture de régime : on ne se contente pas de la moyenne, qui masque une
+    # hausse portée par une seule valeur. On mesure aussi la LARGEUR (combien
+    # de titres montent) et on croise semis, small caps et volatilité — les
+    # trois signaux qui distinguent une vraie prise de risque d'un rebond
+    # étroit sur quelques méga-capitalisations.
+    ups = [r for r in rows if (r.get("dp") or 0) > 0]
+    breadth = round(100.0 * len(ups) / len(rows)) if rows else None
+    mk = {m["sym"]: (m.get("dp") or 0) for m in markets}
+    mag_d = avg("dp") or 0
+    score = 0
+    if mag_d > 0.15:
+        score += 1
+    elif mag_d < -0.15:
+        score -= 1
+    if (breadth or 0) >= 70:
+        score += 1
+    elif breadth is not None and breadth <= 30:
+        score -= 1
+    if mk.get("SOXX", 0) > 0.3:
+        score += 1                      # semis en tête = appétit pour le risque
+    elif mk.get("SOXX", 0) < -0.3:
+        score -= 1
+    if mk.get("IWM", 0) > 0.3:
+        score += 1                      # small caps suivent = hausse large
+    elif mk.get("IWM", 0) < -0.3:
+        score -= 1
+    if mk.get("VIXY", 0) < -1:
+        score += 1                      # volatilité qui reflue
+    elif mk.get("VIXY", 0) > 3:
+        score -= 1
+    bias = ("risk_on" if score >= 3 else "risk_off" if score <= -3
+            else "lean_on" if score > 0 else "lean_off" if score < 0 else "neutral")
     return {"rows": rows, "markets": markets,
-            "agg": {"day": avg("dp"), "week": avg("week"), "month": avg("month")}}
+            "agg": {"day": avg("dp"), "week": avg("week"), "month": avg("month"),
+                    "breadth": breadth, "score": score, "bias": bias,
+                    "sox": mk.get("SOXX"), "iwm": mk.get("IWM"),
+                    "vix": mk.get("VIXY")}}
 
 
 def _finra_dp_day(ymd):
