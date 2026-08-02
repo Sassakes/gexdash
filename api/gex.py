@@ -139,6 +139,11 @@ def _news_headlines(cat):
     now = time.time()
     out = []
     for x in raw[:70]:
+        # Le filtre anti-bruit ne s'appliquait qu'au flux RSS : les depeches
+        # Finnhub laissaient donc passer les listes d'actions et les conseils
+        # perso dans la colonne Actualites.
+        if _feed_is_noise(x.get("headline")):
+            continue
         imp = _news_impact(x.get("headline"))
         ts = x.get("datetime") or 0
         out.append({"headline": x.get("headline"), "source": x.get("source"),
@@ -154,11 +159,6 @@ def _news_headlines(cat):
 # sont publics, stables et pensés pour ça. Un pont RSS vers X peut être ajouté
 # depuis l'admin comme n'importe quelle autre source.
 DEFAULT_FEEDS = [
-    # Fil FinancialJuice : titres rapides, pensés pour le trading intraday.
-    # On passe par leur RSS public plutôt que par leur widget, ce qui permet
-    # de les afficher dans NOTRE rendu au lieu d'une iframe non stylable.
-    {"n": "FinancialJuice", "u": "https://www.financialjuice.com/feed.ashx?xy=rss",
-     "t": "temps réel"},
     # Sources primaires : ce que disent les institutions elles-mêmes.
     # Aucune source « conseils perso / lifestyle » — ces flux-là noient le
     # signal sous des articles sans valeur pour un terminal.
@@ -1430,6 +1430,11 @@ class handler(BaseHTTPRequestHandler):
                 if typ == "calendar":
                     out = {"calendar": _news_calendar()}
                 elif typ == "fj":
+                    # Source PRINCIPALE : Finnhub, éprouvée en production.
+                    # FinancialJuice n'est tenté qu'en complément — leur flux
+                    # peut être refusé aux IP de datacenter, et une colonne
+                    # doit s'afficher avec une source qui répond, pas avec la
+                    # plus rapide en théorie.
                     # Diagnostic : ?diag=1 indique quelle source répond et
                     # pourquoi les autres échouent — évite de deviner.
                     if qs.get("diag"):
@@ -1448,16 +1453,16 @@ class handler(BaseHTTPRequestHandler):
                         }, ensure_ascii=False).encode(), "application/json")
                         return
 
-                    rows = _news_cached("fjcol", 45, _news_fj)
-                    srcname = "fj"
-                    if not rows:                       # 2e source : dépêches Finnhub
-                        try:
-                            rows = _news_headlines("general")
-                            srcname = "finnhub"
-                        except Exception:
-                            rows = []
-                    if not rows:                       # 3e : nos sources institutionnelles
-                        rows = _news_feed()            # celles de la colonne Flux
+                    rows, srcname = [], "finnhub"
+                    try:
+                        rows = _news_headlines("general")
+                    except Exception:
+                        rows = []
+                    if not rows:                       # repli : FinancialJuice
+                        rows = _news_cached("fjcol", 45, _news_fj)
+                        srcname = "fj" if rows else srcname
+                    if not rows:                       # dernier recours
+                        rows = _news_feed()
                         srcname = "institutionnel"
                     out = {"news": rows, "src": srcname}
                 elif typ == "feed":
