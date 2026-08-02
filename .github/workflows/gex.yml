@@ -56,5 +56,13 @@ jobs:
           git config user.name "gex-bot"
           git config user.email "gex-bot@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "GEX levels $(date -u +%F)"
-          git push
+          git diff --staged --quiet && echo "rien a publier" && exit 0
+          git commit -m "GEX levels $(date -u +%F)"
+          # Reprise en cas de collision : si tu pousses pendant l'execution, un
+          # simple push echoue et les niveaux du jour sont perdus.
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash origin main && git push && exit 0
+            echo "collision, nouvelle tentative ($i)"
+            sleep $((i * 5))
+          done
+          echo "publication impossible apres 5 tentatives"; exit 1

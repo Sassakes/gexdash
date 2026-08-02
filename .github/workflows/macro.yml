@@ -38,5 +38,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add macro.json calendar.json
-          git diff --staged --quiet || git commit -m "macro + calendrier $(date -u +%FT%TZ)"
-          git push
+          git diff --staged --quiet && echo "rien a publier" && exit 0
+          git commit -m "macro + calendrier $(date -u +%FT%TZ)"
+          # Le depot peut avoir avance pendant l'execution (un push de ta part) :
+          # sans reprise, le job echoue et le fichier genere est PERDU. On
+          # rejoue donc le commit par-dessus les nouveautes, avec plusieurs
+          # tentatives, ce qui rend la publication insensible aux collisions.
+          for i in 1 2 3 4 5; do
+            git pull --rebase --autostash origin main && git push && exit 0
+            echo "collision, nouvelle tentative ($i)"
+            sleep $((i * 5))
+          done
+          echo "publication impossible apres 5 tentatives"; exit 1
