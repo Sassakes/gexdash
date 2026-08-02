@@ -101,10 +101,14 @@
   /* Le widget du calendrier a une largeur naturelle d'environ 340px : lui en
      donner 32% de l'écran laissait une large bande vide. On le fixe à sa
      taille utile et on redistribue l'espace aux colonnes qui en profitent. */
-  .col.feed{flex:1 1 26%}
-  .col.news{flex:1 1 30%}
-  .col.cal{flex:0 0 366px; max-width:366px}
-  .col.mag{flex:1 1 22%; min-width:230px}
+  /* Deux colonnes à largeur FIXE (calendrier et MAG7 : leur contenu a une
+     largeur utile connue), deux colonnes élastiques qui absorbent le reste.
+     Le MAG7 est une liste de noms courts et de pourcentages : lui donner 22%
+     d'un écran large créait un vide inutile. */
+  .col.feed{flex:1 1 auto; min-width:280px}
+  .col.news{flex:1 1 auto; min-width:280px}
+  .col.cal{flex:0 0 356px; max-width:356px}
+  .col.mag{flex:0 0 232px; max-width:232px}
   .chead{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); flex:none}
   .chead h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--text)}
   .chead .cnt{font-family:var(--mono); font-size:10px; color:var(--faint); margin-left:auto}
@@ -143,8 +147,13 @@
   .verdict.up .vval{color:var(--teal)}
   .verdict.dn .vval{color:var(--red)}
   .verdict.mid .vval{color:var(--muted)}
-  .vwhy{padding:0 13px 11px; font-size:10.5px; color:var(--faint);
-    font-family:var(--mono); border-bottom:1px solid var(--line)}
+  .reads{padding:2px 13px 11px; border-bottom:1px solid var(--line)}
+  .rd{display:flex; align-items:flex-start; gap:7px; font-size:10.5px;
+    line-height:1.5; color:var(--muted); padding:2.5px 0}
+  .rd i{width:4px; height:4px; border-radius:50%; flex:none; margin-top:6px;
+    background:var(--faint)}
+  .rd.ok i{background:var(--teal)}
+  .rd.warn i{background:var(--red)}
   /* En-têtes de liste : discrets, ils séparent sans peser. */
   .msep{padding:10px 13px 5px; font-size:9px; letter-spacing:.15em;
     text-transform:uppercase; color:var(--faint); background:transparent;
@@ -271,7 +280,7 @@
   </section>
   <section class="col news">
     <div class="chead"><h2 id="colNews">Actualités marché</h2><span class="cnt" id="newsCnt"></span></div>
-    <div class="cbody" id="newsBody"><div class="empty">…</div></div>
+    <div class="cbody nopad" id="newsBody"><div class="fjwrap" id="fjNews"></div></div>
   </section>
   <section class="col cal">
     <div class="chead"><h2 id="colCal">Calendrier éco.</h2><span class="cnt" id="calCnt"></span></div>
@@ -303,7 +312,18 @@ const T = {
     sc_recession:"Ralentissement / Récession", sc_reflation:"Reprise / Reflation",
     fc:"prév.", pv:"préc.", aggLbl:"MAG7 · équipondéré (comme un ETF)", day:"Jour", week:"Sem.", month:"Mois·MTD",
     mkts:"Panorama marché", bias:"Biais", breadth:"Largeur",
-    wUp:"en hausse", wAvg:"moy.",
+    nWide:  b => `Hausse LARGE — ${b}% du groupe participe`,
+    nNarrow:(b, up) => up ? `Mouvement ÉTROIT — seuls ${b}% suivent`
+                          : `Baisse LARGE — ${b}% seulement résistent`,
+    nMixed: b => `Participation mitigée — ${b}% en hausse`,
+    nSoxLead:v => `Semis en tête (${fmtPc(v)}) — cycle tech porteur`,
+    nSoxLag: v => `Semis à la traîne (${fmtPc(v)}) — moteur qui faiblit`,
+    nSoxFlat:v => `Semis alignés sur le groupe (${fmtPc(v)})`,
+    nIwmOk:  (v, up) => up ? `Small caps confirment (${fmtPc(v)}) — hausse saine`
+                          : `Small caps suivent (${fmtPc(v)}) — repli généralisé`,
+    nIwmDiv: v => `Small caps divergent (${fmtPc(v)}) — rotation vers les méga-caps`,
+    nIwmFlat:v => `Small caps neutres (${fmtPc(v)})`,
+    nSpread:(a,x,b,y) => `Dispersion : ${a} ${fmtPc(x)} vs ${b} ${fmtPc(y)}`,
     b_risk_on:"RISK-ON", b_lean_on:"Penché risque", b_neutral:"Neutre",
     b_lean_off:"Penché défensif", b_risk_off:"RISK-OFF",
     magHelp:"MAG7 — les sept plus grosses capitalisations technologiques, moteur "
@@ -324,7 +344,18 @@ const T = {
     sc_recession:"Slowdown / Recession", sc_reflation:"Recovery / Reflation",
     fc:"est.", pv:"prev", aggLbl:"MAG7 · equal-weight (ETF-style)", day:"Day", week:"Week", month:"Month·MTD",
     mkts:"Market snapshot", bias:"Bias", breadth:"Breadth",
-    wUp:"advancing", wAvg:"avg",
+    nWide:  b => `BROAD advance — ${b}% of the group participating`,
+    nNarrow:(b, up) => up ? `NARROW move — only ${b}% following`
+                          : `BROAD decline — only ${b}% holding up`,
+    nMixed: b => `Mixed participation — ${b}% advancing`,
+    nSoxLead:v => `Semis leading (${fmtPc(v)}) — tech cycle supportive`,
+    nSoxLag: v => `Semis lagging (${fmtPc(v)}) — engine losing steam`,
+    nSoxFlat:v => `Semis in line with the group (${fmtPc(v)})`,
+    nIwmOk:  (v, up) => up ? `Small caps confirm (${fmtPc(v)}) — healthy breadth`
+                          : `Small caps follow (${fmtPc(v)}) — broad decline`,
+    nIwmDiv: v => `Small caps diverge (${fmtPc(v)}) — rotation into mega-caps`,
+    nIwmFlat:v => `Small caps flat (${fmtPc(v)})`,
+    nSpread:(a,x,b,y) => `Dispersion: ${a} ${fmtPc(x)} vs ${b} ${fmtPc(y)}`,
     b_risk_on:"RISK-ON", b_lean_on:"Leaning risk", b_neutral:"Neutral",
     b_lean_off:"Leaning defensive", b_risk_off:"RISK-OFF",
     magHelp:"MAG7 — the seven largest technology names, the main driver of the "
@@ -506,6 +537,11 @@ function renderCal(){
 }
 
 /* ── mag7 ── */
+function fmtPc(v){
+  if (v == null) return "—";
+  return (v >= 0 ? "+" : "") + Number(v).toFixed(2) + "%";
+}
+
 function renderMag(){
   const box = $("#magBody");
   if (!MAG || !MAG.rows){ box.innerHTML = `<div class="empty">${t("unavail")}</div>`; return; }
@@ -520,21 +556,57 @@ function renderMag(){
   const a = MAG.agg || {};
   const cell = (k,v) => `<div class="acell"><div class="k">${t(k)}</div><div class="v ${pctCls(v)}">${pctTxt(v)}</div></div>`;
   $("#magAgg").hidden = false;
-  /* Hiérarchie : UN verdict en grand, UNE ligne de justification. Les détails
-     (jour/semaine/mois, SOX, volatilité) sont déjà lisibles dans les listes
-     en dessous — les répéter en tête créait deux grilles concurrentes et
-     rendait la colonne illisible. */
+  /* LECTURE DE MARCHÉ — la valeur n'est pas dans les chiffres bruts (déjà
+     listés en dessous) mais dans ce qu'ils disent ensemble. On teste donc
+     trois questions qu'un desk se pose :
+       1. la hausse est-elle LARGE ou portée par une poignée de titres ?
+       2. les semis CONFIRMENT-ils ? (ils mènent le cycle tech)
+       3. le reste du marché SUIT-il ? (small caps, volatilité)
+     Chaque réponse devient une ligne courte, colorée selon qu'elle conforte
+     ou contredit le mouvement. */
   const bias = a.bias || "neutral";
   const bcls = bias.includes("on") ? "up" : bias.includes("off") ? "dn" : "mid";
-  const why = [];
-  if (a.breadth != null) why.push(`${a.breadth}% ${t("wUp")}`);
-  if (a.day != null) why.push(`${t("wAvg")} ${pctTxt(a.day)}`);
+  const d = a.day || 0, up = d >= 0;
+  const notes = [];
+
+  if (a.breadth != null){
+    const wide = a.breadth >= 70, narrow = a.breadth <= 30;
+    notes.push({
+      tone: (wide && up) || (narrow && !up) ? "ok" : narrow ? "warn" : "mid",
+      txt: t(wide ? "nWide" : narrow ? "nNarrow" : "nMixed")(a.breadth, up),
+    });
+  }
+  if (a.sox != null){
+    const lead = a.sox - d;                      // semis vs moyenne du groupe
+    notes.push({
+      tone: lead > 0.3 ? "ok" : lead < -0.3 ? "warn" : "mid",
+      txt: t(lead > 0.3 ? "nSoxLead" : lead < -0.3 ? "nSoxLag" : "nSoxFlat")(a.sox),
+    });
+  }
+  if (a.iwm != null){
+    const conf = (up && a.iwm > 0.2) || (!up && a.iwm < -0.2);
+    const div = (up && a.iwm < -0.2) || (!up && a.iwm > 0.2);
+    notes.push({
+      tone: conf ? "ok" : div ? "warn" : "mid",
+      txt: t(conf ? "nIwmOk" : div ? "nIwmDiv" : "nIwmFlat")(a.iwm, up),
+    });
+  }
+
+  // meneur et retardataire : la dispersion interne du groupe
+  const rk = [...MAG.rows].filter(r => r.dp != null).sort((x, y) => y.dp - x.dp);
+  const lead2 = rk[0], lag = rk[rk.length - 1];
+
   $("#magAgg").innerHTML =
     `<div class="verdict ${bcls}">
        <div class="vlab">${t("bias")}</div>
        <div class="vval">${t("b_" + bias)}</div>
      </div>
-     <div class="vwhy">${why.join(" · ")}</div>`;
+     <div class="reads">` +
+    notes.map(n => `<div class="rd ${n.tone}"><i></i>${esc(n.txt)}</div>`).join("") +
+    (lead2 && lag && lead2.sym !== lag.sym
+      ? `<div class="rd mid"><i></i>${esc(t("nSpread")(lead2.sym, lead2.dp, lag.sym, lag.dp))}</div>`
+      : "") +
+    `</div>`;
 
   /* La colonne n'était remplie qu'au tiers par les 8 valeurs du MAG7. On la
      complète par un panorama de marché — indices, taux, dollar, or, pétrole,
@@ -572,7 +644,61 @@ async function loadFeed(){
   renderFeed();
 }
 
-async function loadNews(){ const d = await jget("/api/news"); NEWS = (d&&d.news)||[]; renderNews(); }
+/* Colonne Actus : fil FinancialJuice, plus rapide et plus orienté trading que
+   les dépêches génériques. Si le widget ne se charge pas (bloqueur, réseau),
+   on retombe sur le flux Finnhub — la colonne n'est jamais vide. */
+let NEWS_MODE = "fj";
+function buildNewsWidget(){
+  const host = $("#fjNews");
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+  const build = () => {
+    if (!window.FJWidgets) return fallbackNews();
+    requestAnimationFrame(() => {
+      const r = host.getBoundingClientRect();
+      try{
+        new window.FJWidgets.createWidget({
+          container: "fjNews", mode: "Dark",
+          width: Math.max(240, Math.round(r.width)) + "px",
+          height: MOBILE_Q.matches ? 1000 : Math.max(340, Math.round(r.height)) + "px",
+          backColor: "111114", fontColor: "8A8A94", widgetType: "NEWS",
+        });
+      }catch(e){ fallbackNews(); }
+    });
+  };
+  if (window.FJWidgets) return build();
+  const s = document.createElement("script");
+  s.id = "FJ-Widgets-news";
+  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+        + Math.floor(Math.random() * 10000);
+  s.onload = build;
+  s.onerror = fallbackNews;
+  document.head.appendChild(s);
+}
+function fallbackNews(){
+  NEWS_MODE = "finnhub";
+  const b = $("#newsBody");
+  if (b) b.classList.remove("nopad");
+  loadNewsFallback();
+}
+async function loadNewsFallback(){
+  const d = await jget("/api/news");
+  NEWS = (d && d.news) || [];
+  const box = $("#newsBody");
+  if (!box) return;
+  box.innerHTML = NEWS.length
+    ? NEWS.map(x => `<a class="feeditem${x.impact === "high" ? " hot" : ""}"
+        href="${esc(x.url)}" target="_blank" rel="noopener">
+        <div class="ftop"><span class="fsrc">${esc(x.source || "")}</span>
+        <span class="fago">${x.datetime ? ago(x.datetime) : ""}</span></div>
+        <div class="ftitle">${esc(x.headline || "")}</div></a>`).join("")
+    : `<div class="empty">${t("unavail")}</div>`;
+  $("#newsCnt").textContent = NEWS.length || "";
+}
+async function loadNews(){
+  if (NEWS_MODE === "fj") buildNewsWidget();
+  else loadNewsFallback();
+}
 async function loadCal(){ renderCal(); }   // le widget gère ses propres données
 async function loadMag(){ const d = await jget("/api/news?type=mag7"); MAG = (d&&d.mag7)||null; renderMag();
   $("#magUpd").textContent = new Date().toLocaleTimeString(loc(), {hour:"2-digit", minute:"2-digit"}); }
@@ -586,7 +712,8 @@ function applyLang(){
   $("#colFeed").textContent = t("colFeed");
   const hb = document.getElementById("magHelpBox");
   if (hb && !hb.hidden) hb.textContent = t("magHelp"); $("#colCal").textContent = t("colCal"); $("#colMag").textContent = t("colMag");
-  updateSession(); renderMacro(); renderFeed(); renderNews(); renderMag(); applyMTab();
+  updateSession(); renderMacro(); renderFeed(); renderMag(); applyMTab();
+  if (NEWS_MODE !== "fj") loadNewsFallback();
 }
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
