@@ -134,17 +134,23 @@
   .crow .cfv{font-size:10px; color:var(--muted); text-align:right; white-space:nowrap}
   .crow .cfv b{color:var(--text)}
 
-  .biasrow{display:flex; align-items:center; gap:9px; padding:8px 12px;
-    border-bottom:1px solid var(--line); font-size:11.5px}
-  .biasrow .bl{font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+  /* Verdict : le seul élément mis en avant de la colonne. */
+  .verdict{display:flex; align-items:baseline; gap:10px; padding:11px 13px 6px}
+  .verdict .vlab{font-size:9px; letter-spacing:.15em; text-transform:uppercase;
     color:var(--faint)}
-  .biasrow .bv{margin-left:auto; font-weight:600; font-family:var(--mono)}
-  .biasrow.up .bv{color:var(--teal)} .biasrow.dn .bv{color:var(--red)}
-  .biasrow.mid .bv{color:var(--muted)}
-  .brow{display:flex; gap:12px; flex-wrap:wrap; padding:7px 12px;
-    border-top:1px solid var(--line); font-family:var(--mono); font-size:10.5px}
-  .brow .bx{color:var(--faint)} .brow .bx b{color:var(--text); margin-left:3px}
-  .chelp{background:none; border:1px solid var(--line-strong); color:var(--faint);
+  .verdict .vval{margin-left:auto; font-family:var(--mono); font-size:14px;
+    font-weight:600; letter-spacing:.04em}
+  .verdict.up .vval{color:var(--teal)}
+  .verdict.dn .vval{color:var(--red)}
+  .verdict.mid .vval{color:var(--muted)}
+  .vwhy{padding:0 13px 11px; font-size:10.5px; color:var(--faint);
+    font-family:var(--mono); border-bottom:1px solid var(--line)}
+  /* En-têtes de liste : discrets, ils séparent sans peser. */
+  .msep{padding:10px 13px 5px; font-size:9px; letter-spacing:.15em;
+    text-transform:uppercase; color:var(--faint); background:transparent;
+    border-top:1px solid var(--line); margin-top:2px}
+  .msep.first{border-top:none; margin-top:0; padding-top:8px}
+    .chelp{background:none; border:1px solid var(--line-strong); color:var(--faint);
     font:inherit; font-size:10px; width:19px; height:19px; border-radius:50%;
     cursor:pointer; margin-left:7px; line-height:1; padding:0}
   .chelp:hover{color:var(--gold); border-color:var(--gold)}
@@ -154,9 +160,13 @@
   .msep{padding:9px 12px 6px; font-size:9px; letter-spacing:.14em;
     text-transform:uppercase; color:var(--faint); border-top:1px solid var(--line-strong);
     margin-top:6px; background:var(--surface2)}
-  .mrow{display:flex; align-items:center; gap:9px; padding:9px 14px; border-bottom:1px solid var(--line); font-family:var(--mono)}
+  .mrow{display:flex; align-items:center; gap:10px; padding:5px 13px;
+    font-family:var(--mono); font-size:11.5px; line-height:1.5}
+  .mrow:hover{background:rgba(255,255,255,.02)}
+  .msym{color:var(--text); flex:1 1 auto; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap}
+  .mdp{flex:0 0 auto; text-align:right; min-width:56px; font-weight:600}
   .mrow .msym{font-size:12.5px; font-weight:600; flex:1}
-  .mrow .mpx{font-size:12px; color:var(--text)}
   .mrow .mdp{font-size:12px; min-width:66px; text-align:right}
   .up{color:var(--teal)} .down{color:var(--red)}
   .magg{padding:12px 14px; border-top:2px solid var(--line-strong); background:var(--surface2)}
@@ -293,6 +303,7 @@ const T = {
     sc_recession:"Ralentissement / Récession", sc_reflation:"Reprise / Reflation",
     fc:"prév.", pv:"préc.", aggLbl:"MAG7 · équipondéré (comme un ETF)", day:"Jour", week:"Sem.", month:"Mois·MTD",
     mkts:"Panorama marché", bias:"Biais", breadth:"Largeur",
+    wUp:"en hausse", wAvg:"moy.",
     b_risk_on:"RISK-ON", b_lean_on:"Penché risque", b_neutral:"Neutre",
     b_lean_off:"Penché défensif", b_risk_off:"RISK-OFF",
     magHelp:"MAG7 — les sept plus grosses capitalisations technologiques, moteur "
@@ -313,6 +324,7 @@ const T = {
     sc_recession:"Slowdown / Recession", sc_reflation:"Recovery / Reflation",
     fc:"est.", pv:"prev", aggLbl:"MAG7 · equal-weight (ETF-style)", day:"Day", week:"Week", month:"Month·MTD",
     mkts:"Market snapshot", bias:"Bias", breadth:"Breadth",
+    wUp:"advancing", wAvg:"avg",
     b_risk_on:"RISK-ON", b_lean_on:"Leaning risk", b_neutral:"Neutral",
     b_lean_off:"Leaning defensive", b_risk_off:"RISK-OFF",
     magHelp:"MAG7 — the seven largest technology names, the main driver of the "
@@ -497,40 +509,40 @@ function renderCal(){
 function renderMag(){
   const box = $("#magBody");
   if (!MAG || !MAG.rows){ box.innerHTML = `<div class="empty">${t("unavail")}</div>`; return; }
-  box.innerHTML = MAG.rows.map(r => `<div class="mrow">
-      <span class="msym">${r.sym}</span>
-      <span class="mpx">${r.price != null ? r.price.toLocaleString(loc(), {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>
-      <span class="mdp ${pctCls(r.dp)}">${pctTxt(r.dp)}</span></div>`).join("");
+  const line = (label, price, dp, title) =>
+    `<div class="mrow"${title ? ` title="${esc(title)}"` : ""}>
+       <span class="msym">${esc(label)}</span>
+       <span class="mdp ${pctCls(dp)}">${pctTxt(dp)}</span></div>`;
+  // Le prix nominal d'un ETF n'apprend rien (QQQ à 512 $ ?) : seule la
+  // variation compte pour lire un régime. On le retire, la colonne respire.
+  box.innerHTML = `<div class="msep first">${t("colMag")}</div>`
+    + MAG.rows.map(r => line(r.sym, r.price, r.dp)).join("");
   const a = MAG.agg || {};
   const cell = (k,v) => `<div class="acell"><div class="k">${t(k)}</div><div class="v ${pctCls(v)}">${pctTxt(v)}</div></div>`;
   $("#magAgg").hidden = false;
-  /* Lecture de régime : la moyenne seule peut masquer une hausse portée par un
-     seul titre. On affiche donc aussi la LARGEUR (part des valeurs en hausse)
-     et un biais synthétique croisant semis, small caps et volatilité. */
+  /* Hiérarchie : UN verdict en grand, UNE ligne de justification. Les détails
+     (jour/semaine/mois, SOX, volatilité) sont déjà lisibles dans les listes
+     en dessous — les répéter en tête créait deux grilles concurrentes et
+     rendait la colonne illisible. */
   const bias = a.bias || "neutral";
   const bcls = bias.includes("on") ? "up" : bias.includes("off") ? "dn" : "mid";
-  const extra = [
-    a.breadth != null ? `<span class="bx">${t("breadth")} <b>${a.breadth}%</b></span>` : "",
-    a.sox != null ? `<span class="bx">SOX <b class="${pctCls(a.sox)}">${pctTxt(a.sox)}</b></span>` : "",
-    a.vix != null ? `<span class="bx">VOL <b class="${pctCls(-a.vix)}">${pctTxt(a.vix)}</b></span>` : "",
-  ].filter(Boolean).join("");
+  const why = [];
+  if (a.breadth != null) why.push(`${a.breadth}% ${t("wUp")}`);
+  if (a.day != null) why.push(`${t("wAvg")} ${pctTxt(a.day)}`);
   $("#magAgg").innerHTML =
-    `<div class="biasrow ${bcls}"><span class="bl">${t("bias")}</span>
-       <span class="bv">${t("b_" + bias)}</span></div>` +
-    `<div class="al">${t("aggLbl")}</div>` +
-    `<div class="arow">${cell("day",a.day)}${cell("week",a.week)}${cell("month",a.month)}</div>` +
-    (extra ? `<div class="brow">${extra}</div>` : "");
+    `<div class="verdict ${bcls}">
+       <div class="vlab">${t("bias")}</div>
+       <div class="vval">${t("b_" + bias)}</div>
+     </div>
+     <div class="vwhy">${why.join(" · ")}</div>`;
 
   /* La colonne n'était remplie qu'au tiers par les 8 valeurs du MAG7. On la
      complète par un panorama de marché — indices, taux, dollar, or, pétrole,
      volatilité — qui donne le contexte que la tech seule ne montre pas. */
   const mk = MAG.markets || [];
   if (mk.length){
-    box.innerHTML += `<div class="msep">${t("mkts")}</div>` + mk.map(r =>
-      `<div class="mrow">
-        <span class="msym" title="${esc(r.sym)}">${esc(r.name || r.sym)}</span>
-        <span class="mpx">${r.price != null ? r.price.toLocaleString(loc(), {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>
-        <span class="mdp ${pctCls(r.dp)}">${pctTxt(r.dp)}</span></div>`).join("");
+    box.innerHTML += `<div class="msep">${t("mkts")}</div>`
+      + mk.map(r => line(r.name || r.sym, r.price, r.dp, r.sym)).join("");
   }
 }
 
