@@ -641,19 +641,45 @@
     #authBtn{min-height:40px; font-size:13px}
     #authCard input{font-size:16px}   /* évite le zoom automatique iOS */
   }
-  /* Sélecteur d'échelle de l'or : le future GC cote au-dessus du comptant
-     (portage), donc les niveaux diffèrent de plusieurs dizaines de dollars.
-     On calcule les deux à la source plutôt que de laisser l'utilisateur
-     corriger à la main dans son indicateur. */
-  .subsel{display:inline-flex; margin-left:8px; border:1px solid var(--line-strong);
-    border-radius:3px; overflow:hidden; vertical-align:middle}
-  .subsel button{background:var(--surface2); border:none; color:var(--muted);
-    font:inherit; font-size:10.5px; letter-spacing:.06em; padding:5px 9px;
-    cursor:pointer; transition:color .12s, background .12s}
-  .subsel button + button{border-left:1px solid var(--line-strong)}
-  .subsel button:hover{color:var(--text)}
-  .subsel button.on{background:rgba(240,185,11,.16); color:var(--gold); font-weight:600}
-  @media(max-width:640px){ .subsel button{min-height:38px; padding:0 12px; font-size:12px} }
+  /* ── Sélecteur d'échelle de l'or ──
+     Le future GC cote au-dessus du comptant XAUUSD (portage) : les niveaux
+     diffèrent de plusieurs dizaines de dollars, d'où ce choix explicite.
+     Présenté comme un segment détaché sous les onglets, avec un libellé
+     secondaire sous chaque option pour lever toute ambiguïté. */
+  .goldsel{
+    display:inline-flex; align-items:stretch; gap:0; margin:-8px 0 16px;
+    border:1px solid var(--line-strong); background:var(--surface);
+    border-radius:4px; overflow:hidden; animation:gsIn .18s ease-out;
+  }
+  @keyframes gsIn{from{opacity:0; transform:translateY(-3px)} to{opacity:1; transform:none}}
+  .goldsel .gs-lab{
+    display:flex; align-items:center; padding:0 12px; font-size:9px;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--faint);
+    background:var(--surface2); border-right:1px solid var(--line-strong);
+  }
+  .goldsel button{
+    position:relative; background:transparent; border:none; cursor:pointer;
+    padding:7px 18px; display:flex; flex-direction:column; align-items:flex-start;
+    gap:1px; color:var(--muted); font-family:inherit;
+    transition:color .14s ease, background .14s ease;
+  }
+  .goldsel button + button{border-left:1px solid var(--line)}
+  .goldsel button b{font-size:12px; font-weight:600; letter-spacing:.03em}
+  .goldsel button i{font-size:9px; font-style:normal; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--faint); transition:color .14s ease}
+  .goldsel button:hover{color:var(--text); background:rgba(255,255,255,.02)}
+  .goldsel button.on{color:var(--gold); background:var(--gold-soft)}
+  .goldsel button.on i{color:rgba(240,185,11,.7)}
+  .goldsel button.on::after{
+    content:""; position:absolute; left:0; right:0; bottom:0; height:2px;
+    background:var(--gold);
+  }
+  .goldsel button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+  @media(max-width:640px){
+    .goldsel{margin-top:-4px}
+    .goldsel button{padding:8px 14px; min-height:44px; justify-content:center}
+    .goldsel .gs-lab{display:none}
+  }
 </style>
 <div id="authWrap" hidden>
   <div id="authCard">
@@ -736,10 +762,11 @@
     <button data-t="ES" role="tab">ES</button>
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
-    <span class="subsel" id="goldSel" hidden>
-      <button data-g="GC" type="button">GC</button>
-      <button data-g="XAU" type="button">XAUUSD</button>
-    </span>
+  </div>
+  <div class="goldsel" id="goldSel" hidden role="group" aria-label="Échelle de l'or">
+    <span class="gs-lab" id="gsLab">Échelle</span>
+    <button data-g="GC" type="button"><b>GC</b><i id="gsFut">future</i></button>
+    <button data-g="XAU" type="button"><b>XAUUSD</b><i id="gsSpot">comptant</i></button>
   </div>
   <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
@@ -852,7 +879,8 @@ const T = {
     pine:"String Pine", pineNote:"indicateur GEX Daily Levels", copy:"Copier la string Pine",
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
     tv:"TradingView", dash:"Mon dashboard", doc:"Doc", heat:"Heatmap",
-    news:"News", authIn:"Connexion", authReg:"Inscription", authInGo:"Se connecter",
+    news:"News", gsLab:"Échelle", gsFut:"future", gsSpot:"comptant",
+    authIn:"Connexion", authReg:"Inscription", authInGo:"Se connecter",
     authRegGo:"Créer mon compte", authInSub:"Accès réservé aux membres.",
     authRegSub:"Un code d'invitation est nécessaire.",
     authNoAcc:"Pas encore de compte ? S'inscrire",
@@ -895,7 +923,8 @@ const T = {
     pine:"Pine string", pineNote:"GEX Daily Levels indicator", copy:"Copy Pine string",
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
     tv:"TradingView", dash:"My dashboard", doc:"Docs", heat:"Heatmap",
-    news:"News", authIn:"Sign in", authReg:"Sign up", authInGo:"Sign in",
+    news:"News", gsLab:"Scale", gsFut:"futures", gsSpot:"spot",
+    authIn:"Sign in", authReg:"Sign up", authInGo:"Sign in",
     authRegGo:"Create account", authInSub:"Members only.",
     authRegSub:"An invitation code is required.",
     authNoAcc:"No account yet? Sign up",
@@ -1136,6 +1165,9 @@ async function authSubmit(){
     if (!r.ok) throw new Error(d.error || "Erreur");
     AUTH_USER = d.user;
     const nlb = $("newsLbl"); if (nlb) nlb.textContent = t("news");
+  for (const [id, k] of [["gsLab","gsLab"], ["gsFut","gsFut"], ["gsSpot","gsSpot"]]){
+    const e = $(id); if (e) e.textContent = t(k);
+  }
   authPaint();
     msg.className = "ok"; msg.textContent = t("authWelcome");
     setTimeout(() => {
