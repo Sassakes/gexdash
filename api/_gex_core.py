@@ -449,6 +449,29 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 # --------------------------------------------------------------------------- #
 # NQ basis (direct Yahoo HTTP, no yfinance dependency)                         #
 # --------------------------------------------------------------------------- #
+def _stooq_spot(sym):
+    """Prix comptant via Stooq (CSV public, sans cle). Sert de source de
+    secours quand Yahoo ne publie pas le symbole demande — c'est le cas de
+    certaines paires metaux selon les regions."""
+    try:
+        import requests
+        r = requests.get("https://stooq.com/q/l/",
+                         params={"s": sym.lower(), "f": "sd2t2ohlcv", "h": "", "e": "csv"},
+                         timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        lines = [l for l in r.text.strip().splitlines() if l]
+        if len(lines) < 2:
+            return None
+        cols = lines[0].split(",")
+        vals = lines[1].split(",")
+        row = dict(zip(cols, vals))
+        px = float(row.get("Close") or row.get("close") or 0)
+        return px if px > 0 else None
+    except Exception:
+        return None
+
+
 def yahoo_spot(sym):
     """Dernier prix Yahoo pour un symbole. Accepte plusieurs symboles separes
     par « | » et retourne le premier qui repond : les cotations de l'or
@@ -468,6 +491,15 @@ def yahoo_spot(sym):
                 return float(px)
         except Exception:
             continue
+    # Yahoo muet sur tous les codes : on tente Stooq, dont la nomenclature
+    # differe (xauusd au lieu de XAUUSD=X)
+    for s in str(sym).split("|"):
+        alt = s.strip().replace("=X", "").replace("=F", "").lower()
+        if not alt:
+            continue
+        px = _stooq_spot(alt)
+        if px:
+            return px
     return None
 
 

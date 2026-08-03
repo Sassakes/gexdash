@@ -34,7 +34,7 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -1467,9 +1467,15 @@ class handler(BaseHTTPRequestHandler):
                         continue
                     try:
                         px = yahoo_spot(s)
-                        per[s] = px if px else "muet"
+                        per["yahoo:" + s] = px if px else "muet"
                     except Exception as e:
-                        per[s] = type(e).__name__
+                        per["yahoo:" + s] = type(e).__name__
+                alt = ref.split("|")[0].replace("=X", "").replace("=F", "").lower()
+                try:
+                    px = _stooq_spot(alt)
+                    per["stooq:" + alt] = px if px else "muet"
+                except Exception as e:
+                    per["stooq:" + alt] = type(e).__name__
                 out[tgt] = per
             self._send(200, json.dumps(out, ensure_ascii=False).encode(),
                        "application/json")
@@ -2039,6 +2045,13 @@ class handler(BaseHTTPRequestHandler):
                 if q("notify") == "1" and ok:
                     payload["notified"] = bool(discord_notify([payload]))
                 self._send(200, json.dumps(payload).encode(), "application/json")
+            except ValueError as e:
+                # Donnee manquante ou chaine inexploitable : ce n'est PAS une
+                # panne du serveur. On repond 503 avec le motif, ce qui evite
+                # de declencher les alertes d'anomalie 5xx tout en affichant
+                # un message clair dans l'admin.
+                self._send(503, json.dumps({"error": str(e)}).encode(),
+                           "application/json")
             except Exception as e:
                 traceback.print_exc()
                 self._send(500, json.dumps({"error": str(e)}).encode(), "application/json")
