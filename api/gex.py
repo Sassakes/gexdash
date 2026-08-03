@@ -1048,6 +1048,29 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({"ok": True}).encode(), "application/json")
             return
 
+        if path == "/api/goldbasis":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            body = self._read_json()
+            v = body.get("basis")
+            if v in (None, ""):
+                kv_set("gex:goldbasis", "null")
+                self._send(200, json.dumps({"ok": True, "basis": None}).encode(),
+                           "application/json")
+                return
+            try:
+                v = float(str(v).replace(",", "."))
+            except Exception:
+                self._send(400, json.dumps({"error": "valeur invalide"}).encode(),
+                           "application/json")
+                return
+            kv_set("gex:goldbasis", json.dumps(v))
+            self._send(200, json.dumps({"ok": True, "basis": v}).encode(),
+                       "application/json")
+            return
+
         if path == "/api/feeds":
             if not self._auth_key():
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(),
@@ -1444,6 +1467,27 @@ class handler(BaseHTTPRequestHandler):
             u = self._current_user()
             self._send(200 if u else 401,
                        json.dumps({"user": u} if u else {"error": "anonyme"}).encode(),
+                       "application/json")
+            return
+
+        if path == "/api/goldbasis":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            try:
+                cur = json.loads(kv_get("gex:goldbasis") or "null")
+            except Exception:
+                cur = None
+            live = None
+            try:
+                gc = yahoo_spot("GC=F")
+                xau = yahoo_spot("XAUUSD=X|XAU=X|XAUUSD")
+                if gc and xau:
+                    live = round(gc - xau, 2)
+            except Exception:
+                pass
+            self._send(200, json.dumps({"basis": cur, "measured": live}).encode(),
                        "application/json")
             return
 

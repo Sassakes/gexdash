@@ -38,7 +38,8 @@ TARGETS = {
     # d'ou un ecart de plusieurs dizaines de dollars : calculer les deux
     # echelles a la source evite de le corriger a la main dans l'indicateur.
     "XAU": {"chain": "GLD", "future": None, "etf": None, "ychart": "XAUUSD=X",
-            "scale_to": "XAUUSD=X|XAU=X|XAUUSD", "bucket": 10.0, "min_oi": 100000},
+            "scale_to": "XAUUSD=X|XAU=X|XAUUSD", "derive_from": "GC=F",
+            "bucket": 10.0, "min_oi": 100000},
 }
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
 CONTRACT_MULT = 100
@@ -449,6 +450,34 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 # --------------------------------------------------------------------------- #
 # NQ basis (direct Yahoo HTTP, no yfinance dependency)                         #
 # --------------------------------------------------------------------------- #
+def _goldapi_spot(metal="XAU"):
+    """Prix comptant via gold-api.com : gratuit, sans cle, sans limite de
+    debit, CORS ouvert et bascule interne entre fournisseurs. C'est la source
+    la plus adaptee ici — Yahoo ne publie pas de facon fiable les paires
+    metaux depuis un datacenter."""
+    try:
+        import requests
+        r = requests.get(f"https://api.gold-api.com/price/{metal}", timeout=8,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; gexdash/1.0)"})
+        if r.status_code != 200:
+            return None
+        d = r.json()
+        # le champ de prix a varie selon les versions : on accepte les alias
+        for k in ("price", "Price", "value", "rate"):
+            v = d.get(k)
+            if v:
+                px = float(v)
+                # garde-fou : une once d'or vaut des milliers de dollars, pas
+                # des fractions (certaines API renvoient l'inverse du taux)
+                if 100 < px < 100000:
+                    return px
+                if 0 < px < 0.1:
+                    return 1.0 / px
+        return None
+    except Exception:
+        return None
+
+
 def _stooq_spot(sym):
     """Prix comptant via Stooq (CSV public, sans cle). Sert de source de
     secours quand Yahoo ne publie pas le symbole demande — c'est le cas de
@@ -477,6 +506,13 @@ def yahoo_spot(sym):
     par « | » et retourne le premier qui repond : les cotations de l'or
     comptant ne portent pas le meme code partout, et un symbole muet bloquait
     toute la publication du marche."""
+    # Or : source dediee EN PREMIER — gratuite, sans limite, et concue pour
+    # ca. Interroger Yahoo d'abord ne ferait qu'ajouter trois appels perdus.
+    if "XAU" in str(sym).upper():
+        px = _goldapi_spot("XAU")
+        if px:
+            return px
+
     for s in str(sym).split("|"):
         s = s.strip()
         if not s:
@@ -889,8 +925,23 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     # strikes sont ramenées, exactement comme pour le mélange QQQ/NDX.
     if cfg.get("scale_to"):
         tgt_spot = yahoo_spot(cfg["scale_to"])
+        # DERNIER RECOURS : deduire le comptant du future moins un ecart saisi
+        # dans l'admin. Les sources gratuites de prix or comptant sont peu
+        # fiables depuis un datacenter ; l'ecart de portage, lui, evolue
+        # lentement — une valeur revue de temps en temps suffit et ne depend
+        # de personne.
+        if (not tgt_spot or tgt_spot <= 0) and cfg.get("derive_from"):
+            base = yahoo_spot(cfg["derive_from"])
+            try:
+                off = float(json.loads(kv_get("gex:goldbasis") or "null"))
+            except Exception:
+                off = None
+            if base and off is not None:
+                tgt_spot = base - off
         if not tgt_spot or tgt_spot <= 0:
-            raise ValueError(f"prix {cfg['scale_to']} indisponible — publication refusée")
+            raise ValueError(
+                f"prix {cfg['scale_to']} indisponible — renseigne l'écart "
+                f"GC − XAUUSD dans l'admin pour publier quand même")
         sc = spot / tgt_spot
         for o in opts:
             o.scale = sc

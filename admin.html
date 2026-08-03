@@ -209,6 +209,23 @@
   <button id="saveLinksBtn">Enregistrer les liens</button>
 
   <section>
+    <h2>Or comptant <span class="note">XAUUSD — écart avec le future GC</span></h2>
+    <div class="note" style="margin-bottom:8px">
+      Les sources gratuites de prix or comptant sont peu fiables depuis un
+      serveur. Si elles ne répondent pas, le comptant est déduit du future :
+      <b>XAUUSD = GC − écart</b>. L'écart évolue lentement (portage), une
+      révision mensuelle suffit. Laisse vide pour n'utiliser que les sources
+      directes.
+    </div>
+    <div class="row" style="grid-template-columns:auto auto auto 1fr; align-items:center">
+      <span class="t" style="font-size:11px">Écart GC − XAUUSD ($)</span>
+      <input id="gbVal" placeholder="ex. 33.5" style="max-width:120px">
+      <button id="gbSave">Enregistrer</button>
+      <span class="status" id="gbMsg"></span>
+    </div>
+  </section>
+
+  <section>
     <h2>Accès membres <span class="note">page /news réservée aux comptes ci-dessous</span></h2>
     <div class="row" style="grid-template-columns:auto 1fr auto; align-items:center">
       <span class="t" style="font-size:11px">Nouvelle invitation</span>
@@ -301,6 +318,24 @@ async function loadFeeds(){
   }
 }
 
+/* Écart or : filet de sécurité quand aucune source de prix comptant ne
+   répond. La valeur mesurée est proposée quand les sources fonctionnent, ce
+   qui permet de la recopier une fois pour toutes. */
+async function loadGoldBasis(){
+  const el = document.getElementById("gbVal");
+  if (!el) return;
+  try{
+    const d = await api("/api/goldbasis");
+    if (d.basis != null) el.value = d.basis;
+    const m = document.getElementById("gbMsg");
+    m.textContent = d.measured != null
+      ? `Écart mesuré en direct : ${d.measured} $ — clique Enregistrer pour le figer.`
+      : "Sources directes muettes : renseigne l'écart pour publier XAUUSD.";
+  }catch(e){
+    document.getElementById("gbMsg").textContent = "Indisponible : " + e.message;
+  }
+}
+
 async function loadUsers(){
   const box = document.getElementById("usersBox");
   if (!box) return;
@@ -338,6 +373,7 @@ async function loadUsers(){
         body: JSON.stringify({op: "delete", user: b.dataset.del})});
       loadUsers();
   loadFeeds();
+  loadGoldBasis();
   const fs = document.getElementById("feedsSave");
   if (fs) fs.onclick = async () => {
     const ta = document.getElementById("feedsTa");
@@ -527,6 +563,21 @@ refreshLock(); }
   loadStatus();
   refreshLock();
   loadUsers();
+  const gb = document.getElementById("gbSave");
+  if (gb) gb.onclick = async () => {
+    gb.disabled = true;
+    try{
+      const v = document.getElementById("gbVal").value.trim();
+      const d = await api("/api/goldbasis", {method: "POST",
+        body: JSON.stringify({basis: v})});
+      document.getElementById("gbMsg").textContent = d.basis == null
+        ? "Écart effacé — seules les sources directes seront utilisées."
+        : `Écart enregistré : ${d.basis} $. Relance un refresh XAUUSD.`;
+    }catch(e){
+      document.getElementById("gbMsg").textContent = "Échec : " + e.message;
+    }finally{ gb.disabled = false; }
+  };
+
   const ib = document.getElementById("invBtn");
   if (ib) ib.onclick = async () => {
     ib.disabled = true;
