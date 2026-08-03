@@ -401,6 +401,85 @@ const MOBILE_Q = window.matchMedia("(max-width:700px)");
 // sans defilement interne (une iframe ne defile pas dans son conteneur), la
 // page prend alors le relais.
 const FJ_MOBILE_H = 1100;
+
+/* ═══ MONTAGE DES WIDGETS FINANCIALJUICE ═══════════════════════════════
+   Ces widgets se figent à la taille demandée au moment de leur création.
+   Deux pièges, qui expliquaient les rendus tantôt bons tantôt faux :
+
+   1. mesurer trop tôt — au premier rendu la colonne n'a pas encore sa
+      largeur définitive (mise en page flexible, polices en cours de
+      chargement) ; on obtenait 0 ou une valeur provisoire ;
+   2. reconstruire en double — l'observateur de taille se déclenche dès
+      qu'on l'installe, ce qui relançait une construction par-dessus celle
+      en cours, et c'est la course entre les deux qui rendait le résultat
+      imprévisible.
+
+   La fabrique ci-dessous règle les deux : elle réessaie jusqu'à obtenir une
+   taille réelle, et mémorise la largeur utilisée pour ne reconstruire que
+   si elle a vraiment changé. */
+function mountFJ(hostId, options, onFail){
+  const host = document.getElementById(hostId);
+  if (!host || host._fj) return;
+  host._fj = {w: 0, timer: 0};
+
+  const attempt = () => {
+    if (!window.FJWidgets) return false;
+    const r = host.getBoundingClientRect();
+    const w = Math.round(r.width);
+    const h = MOBILE_Q.matches ? FJ_MOBILE_H : Math.round(r.height);
+    if (w < 120 || h < 120) return false;          // pas encore dimensionné
+    if (Math.abs(w - host._fj.w) < 24) return true; // déjà à la bonne taille
+    host._fj.w = w;
+    host.innerHTML = "";
+    try{
+      new window.FJWidgets.createWidget(Object.assign({}, options, {
+        container: hostId,
+        width: w + "px",
+        height: h + "px",
+        backColor: "111114",     // --surface
+        fontColor: "8A8A94",     // --muted
+      }));
+    }catch(e){
+      if (onFail) onFail();
+      return true;
+    }
+    return true;
+  };
+
+  // on insiste sur quelques frames tant que la colonne n'a pas sa taille
+  const settle = (n) => {
+    if (attempt() || n > 40) return;
+    requestAnimationFrame(() => settle(n + 1));
+  };
+
+  const start = () => {
+    settle(0);
+    // observateur installé APRÈS la première construction, et la largeur de
+    // référence est déjà mémorisée : plus de reconstruction parasite
+    if (!host._ro){
+      host._ro = new ResizeObserver(() => {
+        clearTimeout(host._fj.timer);
+        host._fj.timer = setTimeout(() => attempt(), 220);
+      });
+      host._ro.observe(host);
+    }
+  };
+
+  if (window.FJWidgets) return start();
+  let s = document.getElementById("FJ-Widgets");
+  if (s){                                   // script déjà en cours de chargement
+    s.addEventListener("load", start);
+    s.addEventListener("error", () => onFail && onFail());
+    return;
+  }
+  s = document.createElement("script");
+  s.id = "FJ-Widgets";
+  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+        + Math.floor(Math.random() * 10000);
+  s.onload = start;
+  s.onerror = () => onFail && onFail();
+  document.head.appendChild(s);
+}
 let MTAB = "feed";
 try{ MTAB = localStorage.getItem("newsTab") || "feed"; }catch(_){}
 
@@ -478,61 +557,10 @@ function renderMacro(){
    repli. Le script tiers n'est chargé qu'une fois ; on ne recrée le widget
    qu'au changement de langue. */
 function renderCal(){
-  const host = $("#fjCal");
-  if (!host || host.dataset.built) return;
-  // conteneur masqué (onglet non actif) : on attend qu'il soit visible
-  if (!host.offsetParent && MOBILE_Q.matches) return;
-  host.dataset.built = "1";
-  const build = () => {
-    if (!window.FJWidgets) return;
-    host.innerHTML = "";
-    // La mesure doit avoir lieu APRÈS que la colonne ait sa taille définitive :
-    // construire immédiatement donnait une largeur encore nulle ou provisoire,
-    // d'où un widget mal dimensionné. On attend donc une frame de rendu.
-    requestAnimationFrame(() => {
-    const r = host.getBoundingClientRect();
-    const w = Math.max(240, Math.round(r.width));
-    // Sur mobile on demande une hauteur généreuse : le widget affiche alors
-    // toute la semaine et c'est la page qui défile, au lieu d'un contenu
-    // tronqué dans une iframe qui refuse de bouger.
-    const h = MOBILE_Q.matches ? FJ_MOBILE_H : Math.max(340, Math.round(r.height));
-    try{
-      new window.FJWidgets.createWidget({
-        container: "fjCal",
-        mode: "standard",
-        width: w + "px",
-        height: h + "px",
-        backColor: "111114",      // --surface
-        fontColor: "8A8A94",      // --muted
-        widgetType: "ECOCAL",
-      });
-    }catch(e){
-      host.innerHTML = `<div class="empty">${t("unavail")}</div>`;
-    }
-    });
-  };
-  // Le widget est figé à sa taille de construction : on le reconstruit quand
-  // la colonne change de dimensions (rotation, redimensionnement de fenêtre).
-  if (!host._ro){
-    let last = 0;
-    host._ro = new ResizeObserver(() => {
-      const w = host.clientWidth;
-      if (!w || Math.abs(w - last) < 30) return;
-      last = w;
-      clearTimeout(host._rt);
-      host._rt = setTimeout(() => { host.dataset.built = ""; renderCal(); }, 250);
-    });
-    host._ro.observe(host);
-  }
-  if (window.FJWidgets) return build();
-  const s = document.createElement("script");
-  s.type = "text/javascript";
-  s.id = "FJ-Widgets";
-  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
-        + Math.floor(Math.random() * 10000);
-  s.onload = build;
-  s.onerror = () => { host.innerHTML = `<div class="empty">${t("unavail")}</div>`; };
-  document.head.appendChild(s);
+  mountFJ("fjCal", {mode: "standard", widgetType: "ECOCAL"}, () => {
+    const h = $("#fjCal");
+    if (h) h.innerHTML = `<div class="empty">${t("unavail")}</div>`;
+  });
   const c = $("#calCnt");
   if (c) c.textContent = "";
 }
@@ -658,56 +686,9 @@ let NEWS_SRC = "";        // "" = widget, "fallback" = liste maison
 
 async function loadNews(){
   if (NEWS_SRC === "fallback") return loadNewsList();
-  const host = $("#fjNews");
-  if (!host || host.dataset.built) return;
-  host.dataset.built = "1";
-
-  const build = () => {
-    if (!window.FJWidgets) return newsFallback();
-    requestAnimationFrame(() => {
-      const r = host.getBoundingClientRect();
-      try{
-        new window.FJWidgets.createWidget({
-          container: "fjNews",
-          mode: "Dark",
-          width: Math.max(240, Math.round(r.width)) + "px",
-          height: (MOBILE_Q.matches ? FJ_MOBILE_H
-                                   : Math.max(340, Math.round(r.height))) + "px",
-          backColor: "111114",     // --surface, pour limiter la rupture visuelle
-          fontColor: "8A8A94",     // --muted
-          widgetType: "NEWS",
-        });
-        $("#newsCnt").textContent = "FinancialJuice";
-      }catch(e){ newsFallback(); }
-    });
-  };
-
-  // Le widget est fige a sa taille de construction : sans cela, elargir ou
-  // reduire la fenetre laisse une bande vide ou un debordement.
-  if (!host._ro){
-    let last = 0;
-    host._ro = new ResizeObserver(() => {
-      const w = host.clientWidth;
-      if (!w || Math.abs(w - last) < 30) return;
-      last = w;
-      clearTimeout(host._rt);
-      host._rt = setTimeout(() => {
-        host.dataset.built = "";
-        host.innerHTML = "";
-        loadNews();
-      }, 250);
-    });
-    host._ro.observe(host);
-  }
-
-  if (window.FJWidgets) return build();
-  const s = document.createElement("script");
-  s.id = "FJ-Widgets-news";
-  s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
-        + Math.floor(Math.random() * 10000);
-  s.onload = build;
-  s.onerror = newsFallback;
-  document.head.appendChild(s);
+  mountFJ("fjNews", {mode: "Dark", widgetType: "NEWS"}, newsFallback);
+  const c = $("#newsCnt");
+  if (c && NEWS_SRC !== "fallback") c.textContent = "FinancialJuice";
 }
 
 function newsFallback(){
