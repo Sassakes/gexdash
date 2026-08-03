@@ -40,48 +40,30 @@ f_master(string k) =>
         "opd"   => mOPEN
         => true
 
-string market = input.string("Auto", "Market", options = ["Auto", "NQ", "ES", "SPX", "GOLD"], tooltip = "Auto picks the right levels string from the chart symbol (NQ/MNQ/NDX -> NQ, ES/MES -> ES, SPX/SP500 -> SPX, GC/MGC/XAUUSD -> GOLD). Force a market if needed.")
-string srcNQ  = input.text_area(defval = "", title = "NQ — levels string",  tooltip = TIP)
-string srcES  = input.text_area(defval = "", title = "ES — levels string",  tooltip = TIP)
-string srcSPX = input.text_area(defval = "", title = "SPX — levels string", tooltip = TIP)
-string srcGC  = input.text_area(defval = "", title = "GOLD — levels string", tooltip = TIP)
+string market = input.string("Auto", "Market", options = ["Auto", "NQ", "ES", "SPX", "GOLD GC", "GOLD XAUUSD"], tooltip = "Auto picks the right levels string from the chart symbol: NQ/MNQ/NDX -> NQ, ES/MES -> ES, SPX/SP500 -> SPX, GC/MGC futures -> GOLD GC, XAUUSD/spot gold -> GOLD XAUUSD. Force a market if needed.")
+string srcNQ  = input.string(defval = "", title = "NQ — levels string", tooltip = TIP)
+string srcES  = input.string(defval = "", title = "ES — levels string", tooltip = TIP)
+string srcSPX = input.string(defval = "", title = "SPX — levels string", tooltip = TIP)
+string srcGC  = input.string(defval = "", title = "GOLD GC — levels string", tooltip = TIP)
+string srcXAU = input.string(defval = "", title = "GOLD XAUUSD — levels string", tooltip = TIP)
 
-// ─────────── OR : conversion future -> spot ───────────
-// Les niveaux sont calcules a l'echelle du future GC. Sur un graphique d'or
-// SPOT (XAUUSD), le prix est plus bas : le future cote au-dessus du comptant
-// a cause du portage (taux + stockage), d'ou un ecart de plusieurs dizaines
-// de dollars qui varie avec l'echeance. Sans correction, TOUS les niveaux
-// seraient decales du meme montant.
-const string GOR = "OR — conversion future / spot"
-const string TIPGC = "Sur un graphique XAUUSD, les niveaux GC doivent etre abaisses de l'ecart future/comptant. Auto le mesure en direct si tu as les donnees COMEX ; sinon saisis-le a la main (compare le prix de GC1! et de XAUUSD au meme instant)."
-bool  gcAuto = input.bool(true, "OR — ajuster automatiquement sur spot (XAUUSD)", group = GOR, tooltip = TIPGC)
-float gcOff  = input.float(0.0, "OR — ecart manuel GC - spot ($)", step = 0.1, group = GOR, tooltip = TIPGC)
-string gcRef = input.symbol("COMEX:GC1!", "OR — future de reference", group = GOR)
+const string GOR = "Ajustement de prix"
+// ─────────── Décalage manuel ───────────
+// Utile si ton flux diffère de la référence (courtier CFD, contrat different).
+// Laisse a 0 dans le cas normal : les deux echelles de l'or sont deja
+// calculees a la source par gexdash, une correction ici les fausserait.
+float pxOff = input.float(0.0, "Décalage manuel des niveaux ($)", step = 0.1, group = GOR, tooltip = "0 = aucune correction. Les strings GC et XAUUSD sont deja a la bonne echelle : n'utilise ce champ que si ton flux de prix diverge de la reference.")
 
 f_market() =>
     string m = market
     if m == "Auto"
         string sym = str.upper(syminfo.root + " " + syminfo.ticker)
-        m := str.contains(sym, "XAU") or str.contains(sym, "GOLD") or str.contains(sym, "MGC") or str.contains(sym, "GC1") or syminfo.root == "GC" ? "GOLD" : str.contains(sym, "NQ") or str.contains(sym, "NDX") or str.contains(sym, "US100") or str.contains(sym, "USTEC") ? "NQ" : str.contains(sym, "SPX") or str.contains(sym, "SP500") ? "SPX" : str.contains(sym, "ES") or str.contains(sym, "US500") ? "ES" : "NQ"
+        bool isGoldFut = syminfo.type == "futures" and (str.contains(sym, "GC") or str.contains(sym, "MGC"))
+        m := isGoldFut ? "GOLD GC" : str.contains(sym, "XAU") or str.contains(sym, "GOLD") ? "GOLD XAUUSD" : str.contains(sym, "NQ") or str.contains(sym, "NDX") or str.contains(sym, "US100") or str.contains(sym, "USTEC") ? "NQ" : str.contains(sym, "SPX") or str.contains(sym, "SP500") ? "SPX" : str.contains(sym, "ES") or str.contains(sym, "US500") ? "ES" : "NQ"
     m
 
-string src = f_market() == "ES" ? srcES : f_market() == "SPX" ? srcSPX : f_market() == "GOLD" ? srcGC : srcNQ
+string src = f_market() == "ES" ? srcES : f_market() == "SPX" ? srcSPX : f_market() == "GOLD GC" ? srcGC : f_market() == "GOLD XAUUSD" ? srcXAU : srcNQ
 
-// Le graphique courant est-il deja un future or ? Dans ce cas aucun ecart.
-f_isGoldFut() =>
-    string s = str.upper(syminfo.root + " " + syminfo.ticker)
-    syminfo.type == "futures" and (str.contains(s, "GC") or str.contains(s, "MGC"))
-
-// Ecart mesure en direct : prix du future de reference moins prix du
-// graphique. Si les donnees COMEX ne sont pas accessibles, la requete
-// renvoie na et on retombe sur la valeur saisie a la main.
-float gcLive = f_market() == "GOLD" and gcAuto and not f_isGoldFut()
-     ? request.security(gcRef, timeframe.period, close, ignore_invalid_symbol = true) : na
-
-float f_offset() =>
-    float o = 0.0
-    if f_market() == "GOLD" and not f_isGoldFut()
-        o := gcAuto and not na(gcLive) and gcLive > 0 ? gcLive - close : gcOff
     o
 
 // ---- global ----------------------------------------------------------------
@@ -319,7 +301,7 @@ if barstate.islast
             array<string> f = str.split(r, ",")
             if array.size(f) == 3
                 float  p0   = str.tonumber(array.get(f, 0))
-                float  p    = na(p0) ? na : p0 - f_offset()
+                float  p    = na(p0) ? na : p0 - pxOff
                 string tag  = array.get(f, 1)
                 string kind = array.get(f, 2)
                 if not na(p) and f_show(kind)

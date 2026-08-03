@@ -38,7 +38,7 @@ TARGETS = {
     # d'ou un ecart de plusieurs dizaines de dollars : calculer les deux
     # echelles a la source evite de le corriger a la main dans l'indicateur.
     "XAU": {"chain": "GLD", "future": None, "etf": None, "ychart": "XAUUSD=X",
-            "scale_to": "XAUUSD=X", "bucket": 10.0, "min_oi": 100000},
+            "scale_to": "XAUUSD=X|XAU=X|XAUUSD", "bucket": 10.0, "min_oi": 100000},
 }
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
 CONTRACT_MULT = 100
@@ -450,15 +450,25 @@ def extract_levels(spot, strikes, net, flip, em=None, extras=None, top_n=4):
 # NQ basis (direct Yahoo HTTP, no yfinance dependency)                         #
 # --------------------------------------------------------------------------- #
 def yahoo_spot(sym):
-    """Dernier prix Yahoo pour un symbole. None si indisponible."""
-    try:
-        import requests
-        r = requests.get(YAHOO_URL.format(sym=sym), timeout=15,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        return float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
-    except Exception:
-        return None
+    """Dernier prix Yahoo pour un symbole. Accepte plusieurs symboles separes
+    par « | » et retourne le premier qui repond : les cotations de l'or
+    comptant ne portent pas le meme code partout, et un symbole muet bloquait
+    toute la publication du marche."""
+    for s in str(sym).split("|"):
+        s = s.strip()
+        if not s:
+            continue
+        try:
+            import requests
+            r = requests.get(YAHOO_URL.format(sym=s), timeout=15,
+                             headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            px = r.json()["chart"]["result"][0]["meta"].get("regularMarketPrice")
+            if px and float(px) > 0:
+                return float(px)
+        except Exception:
+            continue
+    return None
 
 
 def future_basis(index_spot, yahoo_future, override=None):

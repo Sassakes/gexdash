@@ -1447,6 +1447,34 @@ class handler(BaseHTTPRequestHandler):
                        "application/json")
             return
 
+        # ── diagnostic des prix de reference (admin) ──
+        # Un marche qui reste « en attente de refresh » vient presque toujours
+        # d'un symbole de reference muet : ce point d'entree dit lequel repond.
+        if path == "/api/symbols":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(),
+                           "application/json")
+                return
+            out = {}
+            for tgt, cfg in TARGETS.items():
+                ref = cfg.get("scale_to")
+                if not ref:
+                    continue
+                per = {}
+                for s in ref.split("|"):
+                    s = s.strip()
+                    if not s:
+                        continue
+                    try:
+                        px = yahoo_spot(s)
+                        per[s] = px if px else "muet"
+                    except Exception as e:
+                        per[s] = type(e).__name__
+                out[tgt] = per
+            self._send(200, json.dumps(out, ensure_ascii=False).encode(),
+                       "application/json")
+            return
+
         # ── sources du flux direct (admin) ──
         if path == "/api/feeds":
             if not self._auth_key():
