@@ -153,7 +153,7 @@
     <h2>Refresh des niveaux (publication silencieuse)</h2>
     <div class="row" style="grid-template-columns:auto 1fr auto auto auto">
       <select id="rfTarget" style="background:var(--panel2); border:1px solid var(--border); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
-        <option>NQ</option><option>ES</option><option>SPX</option><option value="GC">GOLD</option>
+        <option>NQ</option><option>ES</option><option>SPX</option><option value="GC">GOLD · GC</option><option value="XAU">GOLD · XAUUSD</option>
       </select>
       <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
       <input id="rfIv" inputmode="decimal" placeholder="IV % (calibration, ex: 22.04)" style="max-width:190px">
@@ -243,8 +243,8 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const ROWS = ["NQ", "ES", "SPX", "GC", "default", "news"];
-const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", GC:"GOLD", default:"Défaut", news:"News (annonces refresh)"};
+const ROWS = ["NQ", "ES", "SPX", "GC", "XAU", "default", "news"];
+const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", GC:"GOLD · GC", XAU:"GOLD · XAUUSD", default:"Défaut", news:"News (annonces refresh)"};
 let KEY = "";
 
 function getKey(){

@@ -61,6 +61,13 @@ namespace GexDashLevels
         [InputParameter("Marge etiquette (px depuis la droite)", 90, 0, 400, 5, 0)]
         public int LabelMargin = 70;
 
+        // OR : les niveaux sont calcules a l'echelle du future GC. Sur un
+        // graphique d'or SPOT (XAUUSD), le prix est plus bas — le future cote
+        // au-dessus du comptant a cause du portage. Sans ce decalage, tous les
+        // niveaux seraient trop hauts du meme montant.
+        [InputParameter("Decalage global des niveaux ($)", 95, -10000, 10000, 0.1, 2)]
+        public double PriceOffset = 0.0;
+
         [InputParameter("Couleur GEX", 100)]
         public Color GexColor = Color.FromArgb(240, 185, 11);      // or
 
@@ -266,7 +273,8 @@ namespace GexDashLevels
                         if (!IsVisible(lv.Kind))
                             continue;
 
-                        double yd = wnd.CoordinatesConverter.GetChartY(lv.Price);
+                        double price = lv.Price - this.PriceOffset;
+                        double yd = wnd.CoordinatesConverter.GetChartY(price);
                         if (double.IsNaN(yd) || double.IsInfinity(yd))
                             continue;
 
@@ -290,7 +298,7 @@ namespace GexDashLevels
                         // place, plutot que de superposer deux textes illisibles.
                         string text = this.ShowPrice
                             ? string.Format(CultureInfo.InvariantCulture, "{0}  {1:F1}",
-                                            lv.Label, lv.Price)
+                                            lv.Label, price)
                             : lv.Label;
 
                         float ty = y - font.Height - 1f;

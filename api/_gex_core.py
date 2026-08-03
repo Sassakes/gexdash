@@ -33,6 +33,12 @@ TARGETS = {
     # spot EST déjà celui du future.
     "GC":  {"chain": "GLD", "future": None, "etf": None, "ychart": "GC=F",
             "scale_to": "GC=F", "bucket": 10.0, "min_oi": 100000},
+    # OR COMPTANT — meme chaine d'options, mais ramenee a l'echelle du spot
+    # XAUUSD au lieu du future. Le future cote au-dessus du comptant (portage),
+    # d'ou un ecart de plusieurs dizaines de dollars : calculer les deux
+    # echelles a la source evite de le corriger a la main dans l'indicateur.
+    "XAU": {"chain": "GLD", "future": None, "etf": None, "ychart": "XAUUSD=X",
+            "scale_to": "XAUUSD=X", "bucket": 10.0, "min_oi": 100000},
 }
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1d&range=2mo"
 CONTRACT_MULT = 100

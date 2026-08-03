@@ -641,6 +641,19 @@
     #authBtn{min-height:40px; font-size:13px}
     #authCard input{font-size:16px}   /* évite le zoom automatique iOS */
   }
+  /* Sélecteur d'échelle de l'or : le future GC cote au-dessus du comptant
+     (portage), donc les niveaux diffèrent de plusieurs dizaines de dollars.
+     On calcule les deux à la source plutôt que de laisser l'utilisateur
+     corriger à la main dans son indicateur. */
+  .subsel{display:inline-flex; margin-left:8px; border:1px solid var(--line-strong);
+    border-radius:3px; overflow:hidden; vertical-align:middle}
+  .subsel button{background:var(--surface2); border:none; color:var(--muted);
+    font:inherit; font-size:10.5px; letter-spacing:.06em; padding:5px 9px;
+    cursor:pointer; transition:color .12s, background .12s}
+  .subsel button + button{border-left:1px solid var(--line-strong)}
+  .subsel button:hover{color:var(--text)}
+  .subsel button.on{background:rgba(240,185,11,.16); color:var(--gold); font-weight:600}
+  @media(max-width:640px){ .subsel button{min-height:38px; padding:0 12px; font-size:12px} }
 </style>
 <div id="authWrap" hidden>
   <div id="authCard">
@@ -723,6 +736,10 @@
     <button data-t="ES" role="tab">ES</button>
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
+    <span class="subsel" id="goldSel" hidden>
+      <button data-g="GC" type="button">GC</button>
+      <button data-g="XAU" type="button">XAUUSD</button>
+    </span>
   </div>
   <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
@@ -920,7 +937,7 @@ let LAST_DARK = null;
 
 let TARGET = "NQ";
 try{ TARGET = localStorage.getItem("gexTarget") || "NQ"; }catch(_){}
-if (!["NQ","ES","SPX"].includes(TARGET)) TARGET = "NQ";
+if (!["NQ","ES","SPX","GC","XAU"].includes(TARGET)) TARGET = "NQ";
 
 function el(tag, attrs, parent){
   const e = document.createElementNS(NS, tag);
@@ -929,12 +946,22 @@ function el(tag, attrs, parent){
   return e;
 }
 
+const IS_GOLD = t => t === "GC" || t === "XAU";
+
 function paintTabs(){
-  document.querySelectorAll("#tabs button").forEach(b => {
-    const on = b.dataset.t === TARGET;
+  document.querySelectorAll("#tabs button[data-t]").forEach(b => {
+    // l'onglet GOLD couvre les deux échelles : il reste allumé sur XAU
+    const on = b.dataset.t === TARGET
+            || (b.dataset.t === "GC" && IS_GOLD(TARGET));
     b.classList.toggle("on", on);
     b.setAttribute("aria-selected", on);
   });
+  const sel = $("goldSel");
+  if (sel){
+    sel.hidden = !IS_GOLD(TARGET);
+    sel.querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.g === TARGET));
+  }
 }
 
 async function loadDark(){
@@ -1205,11 +1232,25 @@ async function load(){
     applyLang();
   });
   applyLang();
-  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
-    TARGET = b.dataset.t;
+  const switchTarget = (t) => {
+    TARGET = t;
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
     loadTarget();
     loadDark();
+  };
+  // onglets de marché — l'onglet GOLD restaure la dernière échelle utilisée
+  document.querySelectorAll("#tabs button[data-t]").forEach(b => b.onclick = () => {
+    let t = b.dataset.t;
+    if (t === "GC"){
+      try{ t = localStorage.getItem("goldScale") || "GC"; }catch(_){}
+      if (!IS_GOLD(t)) t = "GC";
+    }
+    switchTarget(t);
+  });
+  // sélecteur d'échelle de l'or : future GC ou comptant XAUUSD
+  document.querySelectorAll("#goldSel button").forEach(b => b.onclick = () => {
+    try{ localStorage.setItem("goldScale", b.dataset.g); }catch(_){}
+    switchTarget(b.dataset.g);
   });
   bindChips();
   loadLinks();

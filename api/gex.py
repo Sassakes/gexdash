@@ -661,9 +661,10 @@ def _q_target(qs):
     return t if t in TARGETS else None
 
 
-YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F"}
+YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
+          "XAU": "XAUUSD=X"}
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
-YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD"}
+YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
 
 
