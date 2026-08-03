@@ -304,6 +304,7 @@ const $$ = s => document.querySelectorAll(s);
 
 const T = {
   fr: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
+    mtFeed:"Flux", mtNews:"Actus", mtCal:"Calendrier", mtMag:"MAG7",
     macroTitle:"Environnement macro actuel", colFeed:"Flux direct", colNews:"Actualités marché", colCal:"Calendrier éco.", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
     now:"à l'instant", unavail:"Indisponible", pinned:"ÉPINGLÉ",
@@ -337,6 +338,7 @@ const T = {
       + "contexte — indices, taux, dollar, matières premières et volatilité.",
     macroNa:"Synthèse indisponible — source macro à configurer" },
   en: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
+    mtFeed:"Feed", mtNews:"News", mtCal:"Calendar", mtMag:"MAG7",
     macroTitle:"Current Macro Environment", colFeed:"Live feed", colNews:"Market news", colCal:"Economic Calendar", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
     now:"just now", unavail:"Unavailable", pinned:"PINNED",
@@ -483,7 +485,18 @@ function mountFJ(hostId, options, onFail){
 let MTAB = "feed";
 try{ MTAB = localStorage.getItem("newsTab") || "feed"; }catch(_){}
 
+/* Les onglets mobiles doivent suivre la langue comme le reste : ils étaient
+   écrits en dur dans le HTML et restaient en français en mode anglais. */
+function paintMTabLabels(){
+  const short = {feed: "mtFeed", news: "mtNews", cal: "mtCal", mag: "mtMag"};
+  document.querySelectorAll("#mtabs button").forEach(b => {
+    const k = short[b.dataset.c];
+    if (k) b.textContent = t(k);
+  });
+}
+
 function applyMTab(){
+  paintMTabLabels();
   const on = MOBILE_Q.matches;
   document.querySelectorAll(".wrap .col").forEach(c => {
     const key = [...c.classList].find(x => ["feed","news","cal","mag"].includes(x));
