@@ -856,7 +856,12 @@ def refresh_daily_anchor(payload):
     options nouvelle pendant la nuit. Retourne True seulement si l'ancre a
     réellement bougé (Yahoo a créé la bougie de la nouvelle séance)."""
     cfg = TARGETS[payload["target"]]
-    d_open, atr14 = open_anchor(cfg, spot)
+    # Le prix de reference vient du payload : cette fonction tourne la nuit,
+    # sans recalcul de chaine, donc il n'y a pas de variable `spot` locale.
+    # (Regression introduite en branchant open_anchor ici — le nom existait
+    # dans build_payload, pas ici.)
+    ref_spot = payload.get("nq_price")
+    d_open, atr14 = open_anchor(cfg, ref_spot)
     if d_open is None:
         return False
     grid = open_grid(d_open, iv=payload.get("iv_atm"), atr=atr14)

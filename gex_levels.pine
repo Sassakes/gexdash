@@ -41,11 +41,11 @@ f_master(string k) =>
         => true
 
 string market = input.string("Auto", "Market", options = ["Auto", "NQ", "ES", "SPX", "GOLD GC", "GOLD XAUUSD"], tooltip = "Auto picks the right levels string from the chart symbol: NQ/MNQ/NDX -> NQ, ES/MES -> ES, SPX/SP500 -> SPX, GC/MGC futures -> GOLD GC, XAUUSD/spot gold -> GOLD XAUUSD. Force a market if needed.")
-string srcNQ  = input.string(defval = "", title = "NQ — levels string", tooltip = TIP)
-string srcES  = input.string(defval = "", title = "ES — levels string", tooltip = TIP)
-string srcSPX = input.string(defval = "", title = "SPX — levels string", tooltip = TIP)
-string srcGC  = input.string(defval = "", title = "GOLD GC — levels string", tooltip = TIP)
-string srcXAU = input.string(defval = "", title = "GOLD XAUUSD — levels string", tooltip = TIP)
+string srcNQ  = input.text_area(defval = "", title = "NQ — levels string", tooltip = TIP)
+string srcES  = input.text_area(defval = "", title = "ES — levels string", tooltip = TIP)
+string srcSPX = input.text_area(defval = "", title = "SPX — levels string", tooltip = TIP)
+string srcGC  = input.text_area(defval = "", title = "GOLD GC — levels string", tooltip = TIP)
+string srcXAU = input.text_area(defval = "", title = "GOLD XAUUSD — levels string", tooltip = TIP)
 
 const string GOR = "Ajustement de prix"
 // ─────────── Décalage manuel ───────────

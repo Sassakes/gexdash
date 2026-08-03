@@ -499,6 +499,51 @@ def _news_mag7():
                     "vix": mk.get("VIXY")}}
 
 
+INTRA_KEY = "gex:intra:{t}:{d}"
+INTRA_MAX = 40          # ~1 point/heure sur une seance, large marge
+
+
+def _track_intraday(payload):
+    """Ajoute un point a l'historique du jour : Net GEX, regime, put/call et
+    IV. Les NIVEAUX ne sont pas concernes — ils restent verrouilles — donc
+    la string Pine ne change pas et il n'y a rien a recoller cote
+    TradingView."""
+    tgt = payload.get("target")
+    if not tgt:
+        return
+    key = INTRA_KEY.format(t=tgt, d=et_today().isoformat())
+    try:
+        hist = json.loads(kv_get(key) or "[]")
+    except Exception:
+        hist = []
+    flip = next((l["price_nq"] for l in payload.get("levels", [])
+                 if l.get("kind") == "flip"), None)
+    point = {
+        "t": dt.datetime.now(dt.timezone.utc).strftime("%H:%M"),
+        "net": payload.get("net_gex_bn"),
+        "reg": payload.get("regime"),
+        "pc": payload.get("pc_oi"),
+        "iv": payload.get("iv_atm"),
+        "flip": flip,
+    }
+    # un seul point par minute : evite les doublons si deux crons se croisent
+    if hist and hist[-1].get("t") == point["t"]:
+        hist[-1] = point
+    else:
+        hist.append(point)
+    hist = hist[-INTRA_MAX:]
+    kv_set(key, json.dumps(hist), ex=2 * 86400)
+    payload["intraday"] = hist
+
+
+def _read_intraday(tgt):
+    try:
+        return json.loads(kv_get(INTRA_KEY.format(
+            t=tgt, d=et_today().isoformat())) or "[]")
+    except Exception:
+        return []
+
+
 def _finra_dp_day(ymd):
     """Volume off-exchange FINRA (fichier CNMS quotidien) pour QQQ et SPY.
     C'est le volume exécuté hors bourses (dark pools + internalisation),
@@ -1395,6 +1440,15 @@ class handler(BaseHTTPRequestHandler):
                     self._preserve_daily(payload, latest)
                 if (not canonical) and self._gex_locked() and latest:
                     self._freeze_levels(payload, latest)
+                # Trace intrajournaliere : l'open interest ne bouge pas en
+                # seance, donc les MURS sont figes — mais les gammas unitaires
+                # evoluent avec le spot, l'IV et la decroissance temporelle.
+                # Le flip et le Net GEX peuvent donc reellement migrer, et
+                # c'est cette evolution qu'on enregistre.
+                try:
+                    _track_intraday(payload)
+                except Exception:
+                    pass
                 ok, why = _upstash_set(payload)
                 results[target] = {"skipped": False, "published": ok,
                                    "locked": payload.get("levels_locked", False),
@@ -1490,6 +1544,10 @@ class handler(BaseHTTPRequestHandler):
                     {"error": "no levels yet - run the GitHub Action or a refresh"}).encode(),
                     "application/json")
             else:
+                # l'historique du jour vit dans sa propre cle : on l'attache a
+                # la lecture pour que le terminal affiche l'evolution sans
+                # requete supplementaire
+                payload["intraday"] = _read_intraday(target)
                 self._send(200, json.dumps(payload).encode(), "application/json")
             return
 
