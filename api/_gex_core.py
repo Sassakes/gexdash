@@ -37,7 +37,10 @@ TARGETS = {
     # XAUUSD au lieu du future. Le future cote au-dessus du comptant (portage),
     # d'ou un ecart de plusieurs dizaines de dollars : calculer les deux
     # echelles a la source evite de le corriger a la main dans l'indicateur.
-    "XAU": {"chain": "GLD", "future": None, "etf": None, "ychart": "XAUUSD=X",
+    # ychart = GC=F : Yahoo n'a pas de serie pour l'or comptant. L'ancre Open
+    # est donc celle du future ; l'API applique l'ecart de portage.
+    "XAU": {"chain": "GLD", "future": None, "etf": None, "ychart": "GC=F",
+            "open_shift": True,
             "scale_to": "XAUUSD=X|XAU=X|XAUUSD", "derive_from": "GC=F",
             "bucket": 10.0, "min_oi": 100000},
 }
@@ -727,6 +730,24 @@ def _discord_embed(payload, dashboard_url):
         }
 
 
+def open_anchor(cfg, spot):
+    """Ouverture du jour a l'echelle du produit affiche.
+
+    Certains produits n'ont pas de serie propre chez Yahoo (l'or comptant
+    renvoie 404) : on lit alors celle du future et on retire l'ecart de
+    portage. Sans ce recalage, la grille Open et l'Expected Move seraient
+    decales de plusieurs dizaines de dollars."""
+    d_open, atr = daily_bars(cfg["ychart"])
+    if cfg.get("open_shift") and d_open and spot:
+        ref = yahoo_spot(cfg["ychart"])
+        if ref and ref > 0:
+            off = ref - spot
+            d_open = d_open - off
+            if atr:
+                atr = atr            # l'amplitude ne depend pas du niveau
+    return d_open, atr
+
+
 def daily_bars(yahoo_sym):
     """(today_open, atr14) on the TARGET scale. The futures daily bar starts
     18:00 ET the prior evening, so the open is fixed well before a pre-open
@@ -835,7 +856,7 @@ def refresh_daily_anchor(payload):
     options nouvelle pendant la nuit. Retourne True seulement si l'ancre a
     réellement bougé (Yahoo a créé la bougie de la nouvelle séance)."""
     cfg = TARGETS[payload["target"]]
-    d_open, atr14 = daily_bars(cfg["ychart"])
+    d_open, atr14 = open_anchor(cfg, spot)
     if d_open is None:
         return False
     grid = open_grid(d_open, iv=payload.get("iv_atm"), atr=atr14)
@@ -996,7 +1017,7 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
                 pass
     elif basis_source in ("yahoo", "manual"):
         kv_set(f"gex:basis:{target}", str(round(basis, 2)), ex=7 * 86400)
-    d_open, atr14 = daily_bars(cfg["ychart"])
+    d_open, atr14 = open_anchor(cfg, spot)
 
     # EM DAILY : straddle théorique plein-jour = 0.8 x sigma implicite,
     # ancré au Daily Open — stable toute la séance (le straddle de marché,

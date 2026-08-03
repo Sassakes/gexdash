@@ -34,11 +34,41 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
 _BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
+_GOLD_OFF = {"v": None, "at": 0.0}
+
+
+def _gold_offset():
+    """Ecart GC - XAUUSD, mesure en direct et memorise 60 s.
+
+    Yahoo ne publie AUCUNE bougie pour l'or comptant : XAUUSD=X renvoie 404.
+    On construit donc la chart du comptant a partir de celle du future,
+    decalee de cet ecart — exactement le mecanisme deja utilise pour convertir
+    les bougies ETF a l'echelle d'un future. L'ecart de portage bouge tres peu
+    en seance, l'approximation est sans consequence visible."""
+    now = time.time()
+    if _GOLD_OFF["v"] is not None and now - _GOLD_OFF["at"] < 60:
+        return _GOLD_OFF["v"]
+    off = None
+    try:
+        gc = yahoo_spot("GC=F")
+        xau = _goldapi_spot("XAU")
+        if gc and xau:
+            off = round(gc - xau, 2)
+    except Exception:
+        off = None
+    if off is None:                      # repli : valeur saisie dans l'admin
+        try:
+            off = float(json.loads(kv_get("gex:goldbasis") or "null"))
+        except Exception:
+            off = None
+    if off is not None:
+        _GOLD_OFF.update({"v": off, "at": now})
+    return off
 _MEM_FH = {}             # cache mémoire des cotes Finnhub : sym -> (prix, ts, at)
 _MEM_FH_ERR = {}         # dernier échec par symbole (anti-martèlement)
 _MEM_CTX = {}            # cache mémoire du contexte quote : target -> (ctx, at)
@@ -661,8 +691,10 @@ def _q_target(qs):
     return t if t in TARGETS else None
 
 
+# XAU : Yahoo ne publie pas de serie pour l'or comptant (XAUUSD=X -> 404).
+# On part donc du future et on decale (voir _gold_offset).
 YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
-          "XAU": "XAUUSD=X"}
+          "XAU": "GC=F"}
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
 YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
@@ -1816,11 +1848,30 @@ class handler(BaseHTTPRequestHandler):
                 # de télécharger 5 jours de bougies 5m (~1150 chandelles) à
                 # chaque poll. Une seule bougie journalière porte le même meta
                 # pour une fraction du coût de parsing.
+                # L'or comptant n'a pas de serie chez Yahoo : on prend celle du
+                # future et on la decale. Sans cela, la chart tombait en erreur
+                # puis se rabattait silencieusement sur les prix du future.
+                _sym = YCHART[target]
+                _shift = 0.0
+                if target == "XAU":
+                    _o = _gold_offset()
+                    if _o is not None:
+                        _sym, _shift = "GC=F", _o
                 if path == "/api/quote":
-                    res = _yahoo_chart(YCHART[target], "1d", "1d")
+                    res = _yahoo_chart(_sym, "1d", "1d")
                 else:
-                    res = _yahoo_chart(YCHART[target], interval, CHART_INTERVALS[interval])
+                    res = _yahoo_chart(_sym, interval, CHART_INTERVALS[interval])
                 meta = res.get("meta", {})
+                if _shift:
+                    m = meta.get("regularMarketPrice")
+                    if m:
+                        meta["regularMarketPrice"] = round(float(m) - _shift, 2)
+                    q0 = (res.get("indicators", {}).get("quote") or [{}])[0]
+                    for _k in ("open", "high", "low", "close"):
+                        arr = q0.get(_k)
+                        if arr:
+                            q0[_k] = [None if v is None else round(float(v) - _shift, 2)
+                                      for v in arr]
                 if path == "/api/quote":
                     price = meta.get("regularMarketPrice")
                     ptime = meta.get("regularMarketTime") or 0
