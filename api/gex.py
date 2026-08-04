@@ -580,7 +580,58 @@ def _build_vol_profile(target):
     return {str(b): round(v / tot, 6) for b, v in sorted(var.items())}
 
 
+# Profil par defaut, calibre sur la forme classique d'une seance indices US :
+# nuit Globex tres calme, reveil europeen, pic a l'ouverture cash, creux de
+# midi, remontee en cloture. Sert tant que la calibration reelle n'a pas
+# tourne — et evite tout appel reseau sur le chemin utilisateur.
+def _default_vol_profile():
+    shape = []
+    for b in range(0, 1440, 30):
+        h = b / 60.0
+        if 9.5 <= h < 10.5:      w = 9.0      # ouverture cash
+        elif 10.5 <= h < 11.5:   w = 6.0
+        elif 11.5 <= h < 14.0:   w = 3.5      # creux de midi
+        elif 14.0 <= h < 15.5:   w = 5.5
+        elif 15.5 <= h < 16.0:   w = 7.0      # cloture
+        elif 8.0 <= h < 9.5:     w = 3.0      # pre-marche US
+        elif 3.0 <= h < 8.0:     w = 1.8      # seance europeenne
+        else:                    w = 0.5      # nuit Globex
+        shape.append((str(b), w))
+    tot = sum(w for _, w in shape)
+    return {k: round(w / tot, 6) for k, w in shape}
+
+
 def _vol_profile(target):
+    """LECTURE SEULE. La calibration est faite par le cron (voir
+    _refresh_vol_profile) : telecharger un mois de bougies 5 min sur le chemin
+    utilisateur depassait le delai d'execution, l'endpoint echouait et la
+    carte restait vide."""
+    try:
+        cached = json.loads(kv_get(VOLPROF_KEY.format(t=target)) or "null")
+        if cached and cached.get("p"):
+            return cached["p"], bool(cached.get("cal"))
+    except Exception:
+        pass
+    return _default_vol_profile(), False
+
+
+def _refresh_vol_profile(target):
+    """Calibration reelle, appelee par le cron uniquement."""
+    try:
+        prof = _build_vol_profile(target)
+    except Exception:
+        prof = None
+    if prof:
+        try:
+            kv_set(VOLPROF_KEY.format(t=target),
+                   json.dumps({"d": et_today().isoformat(), "p": prof, "cal": True}),
+                   ex=30 * 86400)
+        except Exception:
+            pass
+    return bool(prof)
+
+
+def _vol_profile_unused(target):
     key = VOLPROF_KEY.format(t=target)
     try:
         cached = json.loads(kv_get(key) or "null")
@@ -601,24 +652,51 @@ def _vol_profile(target):
     return prof
 
 
+SESSION_START_ET = 18 * 60      # ouverture Globex la veille
+
+
+def _session_progress(now_min):
+    """Minutes ecoulees depuis l'ouverture Globex et duree totale de seance.
+    La seance chevauche minuit : sans ce recalage, tout calcul retombait a
+    zero des la cloture cash et la carte n'affichait plus rien."""
+    end = SESSION_END_ET[0] * 60 + SESSION_END_ET[1]      # 16:00 ET
+    total = (1440 - SESSION_START_ET) + end               # 22 h
+    if now_min >= SESSION_START_ET:
+        elapsed = now_min - SESSION_START_ET
+    elif now_min <= end:
+        elapsed = (1440 - SESSION_START_ET) + now_min
+    else:
+        return None, total                                # 16h-18h : hors seance
+    return elapsed, total
+
+
 def _variance_remaining(prof, now_min):
     """Part de la variance du jour encore devant nous, selon l'horloge
     ponderee. Sans profil, on retombe sur le temps calendaire."""
-    end = SESSION_END_ET[0] * 60 + SESSION_END_ET[1]
+    elapsed, total = _session_progress(now_min)
+    if elapsed is None:
+        return None                            # hors seance : rien a projeter
     if not prof:
-        span = end - now_min
-        total = end - (18 * 60 - 24 * 60)     # session Globex ~22h
-        return max(0.0, min(1.0, span / total)) if total > 0 else 0.0
+        return max(0.0, min(1.0, 1.0 - elapsed / total))
     tot = sum(prof.values())
     if tot <= 0:
         return 0.0
+    # rang de chaque tranche DANS la seance (18h ET = rang 0), pour que la
+    # somme du restant traverse minuit correctement
+    def rank(b):
+        return b - SESSION_START_ET if b >= SESSION_START_ET else \
+               (1440 - SESSION_START_ET) + b
+    now_rank = rank(now_min)
     rest = 0.0
     for k, w in prof.items():
         b = int(k)
-        if b >= now_min:
+        r = rank(b)
+        if r > total:                        # tranche 16h-18h : hors seance
+            continue
+        if r >= now_rank:
             rest += w
-        elif b + 30 > now_min:               # tranche en cours, au prorata
-            rest += w * (b + 30 - now_min) / 30.0
+        elif r + 30 > now_rank:              # tranche en cours, au prorata
+            rest += w * (r + 30 - now_rank) / 30.0
     return max(0.0, min(1.0, rest / tot))
 
 
@@ -1577,6 +1655,12 @@ class handler(BaseHTTPRequestHandler):
                     _track_intraday(payload)
                 except Exception:
                     pass
+                try:                       # calibration de l'horloge, 1x/jour
+                    vk = json.loads(kv_get(VOLPROF_KEY.format(t=target)) or "null")
+                    if not vk or vk.get("d") != et_today().isoformat():
+                        _refresh_vol_profile(target)
+                except Exception:
+                    pass
                 ok, why = _upstash_set(payload)
                 results[target] = {"skipped": False, "published": ok,
                                    "locked": payload.get("levels_locked", False),
@@ -1731,9 +1815,15 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps({"ready": False}).encode(),
                            "application/json")
                 return
-            prof = _vol_profile(target)
+            prof, calibrated = _vol_profile(target)
             nowm = _et_now_minutes()
             frac = _variance_remaining(prof, nowm)
+            if frac is None:                       # entre 16h et 18h ET
+                self._send(200, json.dumps({
+                    "ready": True, "closed": True, "target": target,
+                    "em_day": round(em, 2), "anchor": anchor,
+                    "price": round(px, 2)}).encode(), "application/json")
+                return
             rem = em * math.sqrt(frac)
             travel = abs(px - anchor) if anchor else None
             out = {
@@ -1747,7 +1837,7 @@ class handler(BaseHTTPRequestHandler):
                 "band_low": round(anchor - em, 2) if anchor else None,
                 "travelled": round(travel, 2) if travel is not None else None,
                 "used_pct": round(100.0 * travel / em, 1) if travel is not None else None,
-                "calibrated": bool(prof),
+                "calibrated": calibrated, "closed": False,
                 "et_minutes": nowm,
             }
             self.send_response(200)

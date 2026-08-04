@@ -897,6 +897,9 @@ const T = {
     emUsed:"Parcouru", emFrom:"depuis",
     emCal:"horloge calibrée", emRaw:"horloge calendaire",
     emVar:p => `${p} % de la variance du jour est consommée.`,
+    emWait:"En attente de la publication des niveaux du jour.",
+    emErr:"Calcul indisponible — réessaie dans un instant.",
+    emClosed:"Hors séance (16h–18h ET). Le cône reprendra à l'ouverture Globex.",
     emOver:"le cône dépasse la bande — extension encore possible",
     sinceOpen:"depuis la publication de 15h25",
     regFlip:"le régime a changé depuis la publication",
@@ -948,6 +951,9 @@ const T = {
     emUsed:"Travelled", emFrom:"from",
     emCal:"calibrated clock", emRaw:"calendar clock",
     emVar:p => `${p}% of today's variance is used up.`,
+    emWait:"Waiting for today's levels to be published.",
+    emErr:"Calculation unavailable — try again shortly.",
+    emClosed:"Outside session (16:00–18:00 ET). The cone resumes at the Globex open.",
     emOver:"cone extends beyond the band — further extension possible",
     sinceOpen:"since the 15:25 publication",
     regFlip:"regime changed since publication",
@@ -1243,11 +1249,28 @@ async function authSubmit(){
 async function loadEM(){
   const card = $("emCard");
   if (!card) return;
-  let d = null;
-  try{ d = await (await fetch(`/api/emlive?target=${TARGET}`)).json(); }
-  catch(_){ }
-  if (!d || !d.ready){ card.hidden = true; return; }
+  let d = null, err = null;
+  try{
+    const r = await fetch(`/api/emlive?target=${TARGET}`);
+    d = await r.json();
+    if (!r.ok) err = d.error || ("HTTP " + r.status);
+  }catch(e){ err = e.message; }
+
+  // Une carte vide sans explication est pire que pas de carte : on affiche
+  // toujours la raison.
+  if (err || !d || !d.ready){
+    card.hidden = false;
+    $("emClock").textContent = "";
+    $("emBody").innerHTML = `<div class="emnote">${err ? t("emErr") : t("emWait")}</div>`;
+    return;
+  }
   card.hidden = false;
+
+  if (d.closed){          // entre 16h et 18h ET : aucune séance en cours
+    $("emClock").textContent = "";
+    $("emBody").innerHTML = `<div class="emnote">${t("emClosed")}</div>`;
+    return;
+  }
 
   const f = (v, dec = 0) => v == null ? "—"
     : Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US",
