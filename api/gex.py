@@ -21,6 +21,7 @@ path lands here. We therefore route explicitly:
 import hmac
 import datetime as dt
 import json
+import math
 import base64
 import secrets
 import hashlib
@@ -497,6 +498,128 @@ def _news_mag7():
                     "breadth": breadth, "score": score, "bias": bias,
                     "sox": mk.get("SOXX"), "iwm": mk.get("IWM"),
                     "vix": mk.get("VIXY")}}
+
+
+# ═══════════════════ EM RESTANT (cône intrajournalier) ═══════════════════
+#
+# Deux objets DISTINCTS, souvent confondus :
+#   · la BANDE du jour, posee a l'open, centree sur l'ouverture — combien le
+#     marche est cense parcourir sur la seance ;
+#   · le CONE restant, centre sur le prix COURANT — ce qu'il reste
+#     techniquement possible d'ici la cloture.
+# Un NQ deja a +0.8 sigma peut encore avoir 0.5 sigma de cone : la projection
+# depasse alors la bande du jour. Les confondre fait rater les tendances.
+#
+# La decroissance suit la RACINE du temps, pas une droite : a midi il ne reste
+# pas 50% de l'EM mais ~71%. Et le temps CALENDAIRE ment — la nuit Globex ne
+# consomme presque pas de variance, 15h30-17h en brule une grosse part. On
+# calibre donc une horloge ponderee sur les donnees reelles du produit.
+
+VOLPROF_KEY = "gex:volprof:{t}"
+SESSION_END_ET = (16, 0)      # cloture cash US
+
+
+def _et_minutes(ts):
+    """Minutes ecoulees depuis minuit ET pour un horodatage epoch."""
+    from zoneinfo import ZoneInfo
+    d = dt.datetime.fromtimestamp(ts, ZoneInfo("America/New_York"))
+    return d.hour * 60 + d.minute
+
+
+def _et_now_minutes():
+    from zoneinfo import ZoneInfo
+    d = dt.datetime.now(ZoneInfo("America/New_York"))
+    return d.hour * 60 + d.minute
+
+
+def _quote_price(target):
+    """Dernier prix connu du produit, a son echelle d'affichage."""
+    sym = YCHART.get(target)
+    if not sym:
+        return None
+    px = yahoo_spot(sym)
+    if px and target == "XAU":
+        # la serie est celle du future : on retire l'ecart de portage
+        try:
+            off = _gold_offset()
+            if off:
+                px -= off
+        except Exception:
+            pass
+    return px
+
+
+def _build_vol_profile(target):
+    """Part de variance par tranche de 30 min, calibree sur ~1 mois de bougies
+    5 min du produit lui-meme. Retourne un dict {minute_debut: poids} dont la
+    somme vaut 1 sur la journee."""
+    sym = YCHART.get(target, "NQ=F")
+    res = _yahoo_chart(sym, "5m", "1mo")
+    ts = res.get("timestamp") or []
+    q = (res.get("indicators", {}).get("quote") or [{}])[0]
+    closes = q.get("close") or []
+    buckets = {}
+    prev = None
+    for i, t in enumerate(ts):
+        c = closes[i] if i < len(closes) else None
+        if c is None or c <= 0:
+            prev = None
+            continue
+        if prev:
+            r = math.log(c / prev)
+            b = (_et_minutes(t) // 30) * 30
+            buckets.setdefault(b, []).append(r * r)
+        prev = c
+    if not buckets:
+        return None
+    # variance moyenne par tranche, puis normalisation
+    var = {b: (sum(v) / len(v)) for b, v in buckets.items() if len(v) >= 5}
+    tot = sum(var.values())
+    if tot <= 0:
+        return None
+    return {str(b): round(v / tot, 6) for b, v in sorted(var.items())}
+
+
+def _vol_profile(target):
+    key = VOLPROF_KEY.format(t=target)
+    try:
+        cached = json.loads(kv_get(key) or "null")
+        if cached and cached.get("d") == et_today().isoformat():
+            return cached["p"]
+    except Exception:
+        pass
+    try:
+        prof = _build_vol_profile(target)
+    except Exception:
+        prof = None
+    if prof:
+        try:
+            kv_set(key, json.dumps({"d": et_today().isoformat(), "p": prof}),
+                   ex=7 * 86400)
+        except Exception:
+            pass
+    return prof
+
+
+def _variance_remaining(prof, now_min):
+    """Part de la variance du jour encore devant nous, selon l'horloge
+    ponderee. Sans profil, on retombe sur le temps calendaire."""
+    end = SESSION_END_ET[0] * 60 + SESSION_END_ET[1]
+    if not prof:
+        span = end - now_min
+        total = end - (18 * 60 - 24 * 60)     # session Globex ~22h
+        return max(0.0, min(1.0, span / total)) if total > 0 else 0.0
+    tot = sum(prof.values())
+    if tot <= 0:
+        return 0.0
+    rest = 0.0
+    for k, w in prof.items():
+        b = int(k)
+        if b >= now_min:
+            rest += w
+        elif b + 30 > now_min:               # tranche en cours, au prorata
+            rest += w * (b + 30 - now_min) / 30.0
+    return max(0.0, min(1.0, rest / tot))
 
 
 INTRA_KEY = "gex:intra:{t}:{d}"
@@ -1433,8 +1556,13 @@ class handler(BaseHTTPRequestHandler):
                 # son créneau 15h20-18h00 — les deux doivent pouvoir publier
                 # des niveaux FRAIS même verrouillé, sinon une panne QStash
                 # figerait les niveaux de la veille.
-                canonical = ("notify" in qs) or (ok_vercel
-                                                 and "1520" <= now_p <= "1800")
+                # Un tir INTRAJOURNALIER n'est jamais canonique : il tombe
+                # parfois dans la fenetre de secours du 15h25, et sans cette
+                # exclusion il republierait les niveaux — donc la string Pine
+                # changerait en pleine seance, ce qu'on veut precisement eviter.
+                canonical = ("notify" in qs) or (
+                    ok_vercel and "1520" <= now_p <= "1800"
+                    and "intraday" not in qs)
                 # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
                 if latest:
                     self._preserve_daily(payload, latest)
@@ -1579,6 +1707,55 @@ class handler(BaseHTTPRequestHandler):
                 pass
             self._send(200, json.dumps({"basis": cur, "measured": live}).encode(),
                        "application/json")
+            return
+
+        # ── EM restant : ce qu'il reste a parcourir d'ici la cloture ──
+        if path == "/api/emlive":
+            qs = parse_qs(parsed.query)
+            target = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if target not in TARGETS:
+                self._send(400, json.dumps({"error": "target inconnu"}).encode(),
+                           "application/json")
+                return
+            pay = _latest_payload(target) or {}
+            em = (pay.get("expected_move") or {}).get("straddle")
+            anchor = (pay.get("open_grid") or {}).get("anchor")
+            px = pay.get("nq_price")
+            try:                                  # prix courant si disponible
+                live = _quote_price(target)
+                if live:
+                    px = live
+            except Exception:
+                pass
+            if not em or not px:
+                self._send(200, json.dumps({"ready": False}).encode(),
+                           "application/json")
+                return
+            prof = _vol_profile(target)
+            nowm = _et_now_minutes()
+            frac = _variance_remaining(prof, nowm)
+            rem = em * math.sqrt(frac)
+            travel = abs(px - anchor) if anchor else None
+            out = {
+                "ready": True, "target": target, "price": round(px, 2),
+                "em_day": round(em, 2), "anchor": anchor,
+                "var_remaining": round(frac, 4),
+                "em_remaining": round(rem, 2),
+                "cone_high": round(px + rem, 2),
+                "cone_low": round(px - rem, 2),
+                "band_high": round(anchor + em, 2) if anchor else None,
+                "band_low": round(anchor - em, 2) if anchor else None,
+                "travelled": round(travel, 2) if travel is not None else None,
+                "used_pct": round(100.0 * travel / em, 1) if travel is not None else None,
+                "calibrated": bool(prof),
+                "et_minutes": nowm,
+            }
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=30, "
+                                              "stale-while-revalidate=30")
+            self.end_headers()
+            self.wfile.write(json.dumps(out).encode())
             return
 
         # ── diagnostic des prix de reference (admin) ──

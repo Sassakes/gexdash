@@ -86,6 +86,7 @@
   "em_low": 7487.2,
   "net_gex_bn": -14.74,
   "basis": 14.8
+<<<<<<< HEAD
  },
  {
   "date": "2026-08-03",
@@ -108,5 +109,7 @@
   "em_low": 7580.9,
   "net_gex_bn": 106.45,
   "basis": 46.75
+=======
+>>>>>>> b6820f2 (module EM restant - cone intrajournalier sur horloge de volatilite calibree)
  }
 ]

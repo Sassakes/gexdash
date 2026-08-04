@@ -739,12 +739,28 @@ def open_anchor(cfg, spot):
     decales de plusieurs dizaines de dollars."""
     d_open, atr = daily_bars(cfg["ychart"])
     if cfg.get("open_shift") and d_open and spot:
-        ref = yahoo_spot(cfg["ychart"])
-        if ref and ref > 0:
-            off = ref - spot
+        # L'ecart de portage est MEMORISE pour la seance. Le recalculer a
+        # chaque passage faisait deriver l'ancre du comptant d'un tir a
+        # l'autre (GC et XAU bougent chacun de leur cote) : une ouverture est
+        # un point FIXE, elle ne doit pas osciller au fil de la nuit.
+        day = et_today().isoformat()
+        key = f"gex:goldoff:{day}"
+        off = None
+        try:
+            v = kv_get(key)
+            off = float(v) if v is not None else None
+        except Exception:
+            off = None
+        if off is None:
+            ref = yahoo_spot(cfg["ychart"])
+            if ref and ref > 0:
+                off = ref - spot
+                try:
+                    kv_set(key, str(round(off, 3)), ex=3 * 86400)
+                except Exception:
+                    pass
+        if off is not None:
             d_open = d_open - off
-            if atr:
-                atr = atr            # l'amplitude ne depend pas du niveau
     return d_open, atr
 
 
