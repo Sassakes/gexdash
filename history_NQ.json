@@ -86,30 +86,5 @@
   "em_low": 28973.4,
   "net_gex_bn": -1.22,
   "basis": -41.18
-<<<<<<< HEAD
- },
- {
-  "date": "2026-08-03",
-  "nq_price": 28447.75,
-  "call_wall": 28723.6,
-  "put_wall": 28173.6,
-  "gamma_flip": 28442.4,
-  "em_high": 28806.4,
-  "em_low": 28323.6,
-  "net_gex_bn": -0.69,
-  "basis": 173.55
- },
- {
-  "date": "2026-08-04",
-  "nq_price": 29161.5,
-  "call_wall": 28934.7,
-  "put_wall": 28384.7,
-  "gamma_flip": 28840.4,
-  "em_high": 29238.1,
-  "em_low": 28621.9,
-  "net_gex_bn": 3.32,
-  "basis": 384.7
-=======
->>>>>>> b6820f2 (module EM restant - cone intrajournalier sur horloge de volatilite calibree)
  }
 ]
