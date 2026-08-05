@@ -517,6 +517,7 @@ def _news_mag7():
 
 VOLPROF_KEY = "gex:volprof:{t}"
 SESSION_END_ET = (16, 0)      # cloture cash US
+OPTIONS_OPEN_ET_MIN = 9 * 60 + 30      # 9h30 ET : ouverture des cotations d'options
 
 
 def _et_minutes(ts):
@@ -1583,6 +1584,7 @@ class handler(BaseHTTPRequestHandler):
                         payload = build_payload(target=target, mode="snapshot",
                                                 chain_cache=cache)
                         payload["iv_ref"] = payload.get("iv_atm")
+                        payload["iv_source"] = "session"
                         ok, why = _upstash_set(payload)
                         results[target] = {"daily_only": True, "bootstrap": True,
                                            "published": ok}
@@ -1645,8 +1647,21 @@ class handler(BaseHTTPRequestHandler):
                 if fresh and not force:
                     results[target] = {"skipped": True}
                     continue
+                # Pre-ouverture (< 9h30 ET) : la publication canonique de
+                # 15h25 Paris tombe 5 minutes AVANT l'ouverture des cotations
+                # d'options. A cet instant, CBOE ne renvoie que des cotations
+                # pre-ouverture aux fourchettes bid/ask tres larges -> IV
+                # bruitee (mesure : 30.96% vs VXN 24.18, +28% sur l'EM). Le
+                # run nocturne (00h11 UTC, marche ferme depuis 16h15 ET) a
+                # deja mesure une IV de CLOTURE propre et fiable pour cette
+                # meme journee : on la reprend telle quelle plutot que de
+                # l'ecraser par une valeur pre-ouverture degradee.
+                pre_open_iv = None
+                if _et_now_minutes() < OPTIONS_OPEN_ET_MIN and latest and latest.get("iv_atm"):
+                    pre_open_iv = latest["iv_atm"]
                 payload = build_payload(target=target, mode="snapshot",
-                                        chain_cache=cache)
+                                        chain_cache=cache, iv_override=pre_open_iv)
+                payload["iv_source"] = "close" if pre_open_iv else "session"
                 # verrou GEX : hors chemin CANONIQUE, les niveaux publiés
                 # restent ceux d'avant tant que c'est verrouillé. Canonique =
                 # ?notify=1 (QStash 15h25) OU le cron de secours Vercel dans
@@ -1859,6 +1874,7 @@ class handler(BaseHTTPRequestHandler):
                     "em_day": round(em, 2), "anchor": anchor,
                     "price": round(px, 2),
                     "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
+                    "iv_source": pay.get("iv_source"),
                     "prof": prof, "calibrated": calibrated}).encode(), "application/json")
                 return
             rem = em * iv_ratio * math.sqrt(frac)
@@ -1877,6 +1893,7 @@ class handler(BaseHTTPRequestHandler):
                 "calibrated": calibrated, "closed": False,
                 "et_minutes": nowm,
                 "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
+                "iv_source": pay.get("iv_source"),
                 "prof": prof,
             }
             self.send_response(200)
@@ -2491,6 +2508,7 @@ class handler(BaseHTTPRequestHandler):
                     target=target, n_expiries=n, basis_override=basis, mode="live",
                     em_bands=bands, iv_override=iv_ov
                 )
+                payload["iv_source"] = "override" if iv_ov else "session"
                 prev = _latest_payload(target)
                 if prev:
                     self._preserve_daily(payload, prev)

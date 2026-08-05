@@ -82,12 +82,15 @@ def bs_gamma(S, K, T, sigma, r=RISK_FREE):
 
 
 class Opt:
-    __slots__ = ("K", "is_call", "OI", "gamma", "iv", "dte", "vol", "scale")
+    __slots__ = ("K", "is_call", "OI", "gamma", "iv", "dte", "vol", "scale",
+                 "bid", "ask")
 
-    def __init__(self, K, is_call, OI, gamma, iv, dte, vol=0.0, scale=1.0):
+    def __init__(self, K, is_call, OI, gamma, iv, dte, vol=0.0, scale=1.0,
+                 bid=0.0, ask=0.0):
         self.K, self.is_call, self.OI = K, is_call, OI
         self.gamma, self.iv, self.dte = gamma, iv, dte
         self.vol, self.scale = vol, scale
+        self.bid, self.ask = bid, ask
         # scale = spot_du_produit / spot_indice (1.0 pour la chaîne indice).
         # K/scale ramène la strike à l'échelle indice ; le dollar-gamma de
         # chaque option reste calculé avec SON spot (spot_indice * scale).
@@ -148,8 +151,11 @@ def parse_chain(data, n_expiries, today=None):
         gamma = _finite_float(o.get("gamma"))
         iv = _finite_float(o.get("iv"))
         vol = _finite_float(o.get("volume"))
+        bid = _finite_float(o.get("bid"))
+        ask = _finite_float(o.get("ask"))
         dte = max((exp - today).days, 0)
-        opts.append(Opt(K, m.group(3) == "C", oi, gamma, iv, dte, vol=vol))
+        opts.append(Opt(K, m.group(3) == "C", oi, gamma, iv, dte, vol=vol,
+                        bid=bid, ask=ask))
     return spot, opts, keep
 
 
@@ -341,14 +347,37 @@ def max_pain(opts):
     return float(ks[int(np.argmin(pay))])
 
 
+MAX_QUOTE_SPREAD_PCT = 0.35   # fourchette bid/ask au-dela de laquelle une
+                              # cotation est jugee peu fiable (pre-ouverture,
+                              # illiquide) et ecartee du calcul d'IV ATM
+
+
+def _quote_reliable(o):
+    """Fourchette bid/ask raisonnable par rapport au mid. Sans cotation
+    exploitable (marché fermé, champs absents), on ne filtre PAS — mieux
+    vaut une IV moins filtrée qu'aucune IV du tout."""
+    if o.bid <= 0 or o.ask <= 0 or o.ask < o.bid:
+        return True
+    mid = (o.bid + o.ask) / 2.0
+    if mid <= 0:
+        return True
+    return (o.ask - o.bid) / mid <= MAX_QUOTE_SPREAD_PCT
+
+
 def _expiry_iv(spot, opts, dte):
     """Median IV of the ~8 strikes closest to spot on one expiry (noise-proof).
     La distance est mesurée à l'ÉCHELLE DU PRODUIT (K / scale) : sans cela, une
     chaîne ETF ramenée à une autre échelle — GLD vers l'once d'or — verrait
     tous ses strikes à égale distance du spot, et le tri retiendrait les plus
-    éloignés au lieu des ATM, faussant l'IV puis toute la grille sigma."""
-    sub = sorted((o for o in opts if o.dte == dte and o.iv > 0),
-                 key=lambda o: abs(o.K / (o.scale or 1.0) - spot))
+    éloignés au lieu des ATM, faussant l'IV puis toute la grille sigma.
+    Les cotations à fourchette bid/ask anormalement large (pré-ouverture,
+    illiquide) sont écartées en priorité — sauf si ça viderait le pool
+    entièrement, auquel cas on retombe sur l'ensemble non filtré plutôt que
+    de perdre l'IV."""
+    cand = [o for o in opts if o.dte == dte and o.iv > 0]
+    reliable = [o for o in cand if _quote_reliable(o)]
+    pool = reliable if reliable else cand
+    sub = sorted(pool, key=lambda o: abs(o.K / (o.scale or 1.0) - spot))
     ivs = sorted(o.iv for o in sub[:8])
     if not ivs:
         return None
