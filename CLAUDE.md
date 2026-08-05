@@ -41,6 +41,23 @@ Définie une seule fois dans `gex_by_strike` (`api/_gex_core.py`). **La
 réutiliser, ne jamais en introduire une seconde.** Une convention concurrente
 produit des signes inversés invisibles à la relecture.
 
+### Base temporelle : 252 vs 365, ne pas les confondre
+Deux conventions coexistent volontairement dans `api/_gex_core.py`, chacune
+répond à une question différente :
+
+- **`math.sqrt(252)`** (jours de bourse) dimensionne le module EM — convertit
+  une IV annuelle en écart-type d'**un jour** (`open_grid`, `expected_move`).
+  N'a de sens que pour ce dimensionnement-là.
+- **`dte / 365.0`** (jours calendaires) est le `T` d'une grecque Black-Scholes
+  recalculée à partir d'une option CBOE brute (`zero_gamma_flip`,
+  `flow_gamma_matrix`). C'est la **seule** convention de `T` déjà validée
+  contre `gex_by_strike` en production.
+
+Tout nouveau calcul de grecque (vanna, charm, …) doit reprendre **365**,
+jamais 252 — c'est ce qui rend un contrôle de justesse contre `gex_by_strike`
+possible. Confondre les deux ne casse rien bruyamment : ça décale
+silencieusement toutes les grecques recalculées.
+
 ### Échelle des chaînes ETF
 NQ utilise la chaîne NDX, GOLD utilise GLD, etc. Le facteur de conversion est
 dans `sources[].scale`. **L'appliquer, ne jamais le recalculer.** Bugs déjà
