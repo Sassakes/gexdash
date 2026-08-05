@@ -1903,6 +1903,10 @@ async function pollQuote(){
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
     updateEmCone();          // le cône se resserre au même rythme que le prix
+    // Repère de prix + synthèse du Flux suivent CE tick (aucun appel serveur) :
+    // la matrice elle-même ne bouge qu'au recalcul intrajournalier, seule la
+    // position du prix dedans doit vivre à chaque tick.
+    if (FLUX_ON){ renderFluxSynth(); drawFlux(); }
   }catch(e){ liveBadge("live: ERREUR " + (e && e.message || e), false); }
 }
 
@@ -2284,7 +2288,10 @@ const FLUX_NEUTRAL_FRAC = 0.15;
 // nette avec le gamma affiche DIVERGENCE plutot que d'etre lissee.
 function computeFluxSynthesis(d){
   if (!d || !d.gamma || !d.vanna || !d.charm || !d.price_grid || !d.price_grid.length) return null;
-  const spot = (LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot;
+  // Prix live (même source que le cône EM, cf. updateEmCone) : suit pollQuote()
+  // tick par tick, pas seulement le dernier payload /api/gex publié.
+  const spot = CHART.lastBar ? CHART.lastBar.close
+             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
   const pi = fluxNearestIdx(d.price_grid, spot);
   if (pi < 0 || !d.gamma[0] || !d.vanna[0] || !d.charm[0]) return null;
   const g = d.gamma[0][pi], v = d.vanna[0][pi], c = d.charm[0][pi];
@@ -2438,7 +2445,11 @@ function drawFlux(){
   });
 
   // ---- repères existants : prix courant + Call Wall / Put Wall / Flip ----
-  const spot = (LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot;
+  // Prix live (même source que le cône EM, cf. updateEmCone), pas le dernier
+  // payload /api/gex : la matrice reste valable entre deux recalculs, seule
+  // la position du prix dedans bouge, à chaque tick de pollQuote().
+  const spot = CHART.lastBar ? CHART.lastBar.close
+             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
   if (spot != null && spot >= priceMin && spot <= priceMax){
     const y = yFor(spot);
     ctx.setLineDash([4, 3]); ctx.strokeStyle = C.text; ctx.lineWidth = 1;
