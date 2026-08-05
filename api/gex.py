@@ -1818,11 +1818,16 @@ class handler(BaseHTTPRequestHandler):
             prof, calibrated = _vol_profile(target)
             nowm = _et_now_minutes()
             frac = _variance_remaining(prof, nowm)
+            # "prof" (poids par tranche de 30 min) ne change qu'1x/jour, via
+            # le cron de calibration : le client le met en cache et recalcule
+            # ensuite var_remaining localement, sans re-solliciter cet
+            # endpoint à chaque tick (voir emVarianceRemaining côté JS).
             if frac is None:                       # entre 16h et 18h ET
                 self._send(200, json.dumps({
                     "ready": True, "closed": True, "target": target,
                     "em_day": round(em, 2), "anchor": anchor,
-                    "price": round(px, 2)}).encode(), "application/json")
+                    "price": round(px, 2),
+                    "prof": prof, "calibrated": calibrated}).encode(), "application/json")
                 return
             rem = em * math.sqrt(frac)
             travel = abs(px - anchor) if anchor else None
@@ -1839,6 +1844,7 @@ class handler(BaseHTTPRequestHandler):
                 "used_pct": round(100.0 * travel / em, 1) if travel is not None else None,
                 "calibrated": calibrated, "closed": False,
                 "et_minutes": nowm,
+                "prof": prof,
             }
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
