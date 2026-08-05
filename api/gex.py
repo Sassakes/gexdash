@@ -35,7 +35,8 @@ from urllib.parse import parse_qs, urlparse
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
-                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot)
+                           refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
+                           flow_gamma_matrix)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -749,6 +750,88 @@ def _read_intraday(tgt):
             t=tgt, d=et_today().isoformat())) or "[]")
     except Exception:
         return []
+
+
+# ═══════════════════ FLUX — projection prix x temps (ETAPE 1 : gamma) ═══════
+# Voir docs/BRIEF-flux.md. Calcul fait UNIQUEMENT dans le cron intrajournalier
+# (?intraday=1, 3x/jour) sur la chaine DEJA recuperee pour le payload — pas de
+# second fetch. Cache dedie (jamais dans le payload publie : gex_by_strike/
+# levels/open_grid/expected_move/pine restent seuls maitres du verrou GEX).
+# Endpoint /api/flow en lecture seule sur ce cache.
+FLOW_KEY = "gex:flow:{t}:{d}"
+FLOW_CHECK_TOL_PCT = 20.0   # ecart au-dela duquel on journalise une alerte
+
+
+def _flow_grids(payload):
+    """Grille prix (echelle produit), CENTREE SUR LE PRIX COURANT — pas sur
+    l'ouverture du jour — pour que la colonne du controle de justesse
+    (recalcul a T=maintenant) tombe exactement sur une colonne de la grille,
+    sans interpolation. Pas = 0.5 sigma, meme unite que l'open_grid deja
+    publie (reprise telle quelle, jamais recalculee) : le module Flux se lit
+    avec le meme repere sigma que la grille d'Open deja affichee sur le
+    chart plutot que d'inventer une troisieme echelle.
+    Grille temps : heures pleines de maintenant jusqu'a la cloture cash
+    (16h ET), plus le point exact de cloture si ce n'est pas deja un entier —
+    l'heure de fin reprend SESSION_END_ET, le meme repere que
+    _session_progress/_variance_remaining (module EM), pas un calcul
+    independant."""
+    spot_prod = payload.get("nq_price")
+    unit = (payload.get("open_grid") or {}).get("unit")
+    if not spot_prod or not unit:
+        return None, None
+    price_grid = [round(spot_prod + i * 0.5 * unit, 2) for i in range(-6, 7)]
+    now_h = _et_now_minutes() / 60.0
+    close_h = SESSION_END_ET[0] + SESSION_END_ET[1] / 60.0
+    remaining = close_h - now_h
+    if remaining <= 0:                     # hors seance : rien a projeter
+        return price_grid, None
+    hours = [float(h) for h in range(0, int(remaining) + 1)]
+    if not hours or hours[-1] < remaining:
+        hours.append(round(remaining, 2))
+    return price_grid, hours
+
+
+def _refresh_flow(target, payload, capture):
+    """capture = {'opts','spot','basis','net_total_bn'} rempli par
+    build_payload(capture=...) : memes options (deja blend ETF + scale) que
+    celles agregees dans gex_by_strike. Retourne le dict de controle de
+    justesse (ou None si non calculable), pour que l'appelant decide de
+    journaliser."""
+    price_grid, hours = _flow_grids(payload)
+    if not price_grid or not hours:
+        return None
+    basis = capture.get("basis") or 0.0
+    price_grid_idx = [p - basis for p in price_grid]
+    matrix = flow_gamma_matrix(capture.get("opts") or [], price_grid_idx, hours)
+    if not matrix:
+        return None
+    out = {
+        "target": target, "date": et_today().isoformat(),
+        "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "spot": payload.get("nq_price"), "basis": round(basis, 2),
+        "unit": (payload.get("open_grid") or {}).get("unit"),
+        "price_grid": price_grid, "hours": hours,
+        "gamma": matrix,
+    }
+    # Controle de justesse (obligatoire, brief etape 1) : a T=maintenant
+    # (rang 0) et sur la colonne du spot courant (grille centree dessus,
+    # indice du milieu), le total recalcule en BS doit rester proche du
+    # net_gex_bn publie -- MEMES options, seul le gamma differe (recalcule
+    # BS ici, fourni par CBOE dans per_strike_gex). Un ecart important
+    # signale une erreur de convention/echelle/formule, pas une divergence
+    # de marche normale.
+    check = None
+    net_total_bn = capture.get("net_total_bn")
+    if net_total_bn is not None:
+        flow_spot_bn = matrix[0][len(price_grid) // 2] / 1e9
+        denom = abs(net_total_bn) if abs(net_total_bn) > 1e-6 else 1e-6
+        dev_pct = round(100.0 * abs(flow_spot_bn - net_total_bn) / denom, 1)
+        check = {"gex_by_strike_bn": round(net_total_bn, 3),
+                 "flow_spot_now_bn": round(flow_spot_bn, 3),
+                 "deviation_pct": dev_pct}
+    out["check"] = check
+    kv_set(FLOW_KEY.format(t=target, d=out["date"]), json.dumps(out), ex=2 * 86400)
+    return check
 
 
 def _finra_dp_day(ymd):
@@ -1659,8 +1742,13 @@ class handler(BaseHTTPRequestHandler):
                 pre_open_iv = None
                 if _et_now_minutes() < OPTIONS_OPEN_ET_MIN and latest and latest.get("iv_atm"):
                     pre_open_iv = latest["iv_atm"]
+                # capture : rempli par build_payload uniquement sur un tir
+                # intrajournalier (le module Flux en a besoin, cf. plus bas) —
+                # None sur les autres chemins, cout nul.
+                flow_capture = {} if "intraday" in qs else None
                 payload = build_payload(target=target, mode="snapshot",
-                                        chain_cache=cache, iv_override=pre_open_iv)
+                                        chain_cache=cache, iv_override=pre_open_iv,
+                                        capture=flow_capture)
                 payload["iv_source"] = "close" if pre_open_iv else "session"
                 # verrou GEX : hors chemin CANONIQUE, les niveaux publiés
                 # restent ceux d'avant tant que c'est verrouillé. Canonique =
@@ -1681,6 +1769,16 @@ class handler(BaseHTTPRequestHandler):
                 if (not canonical) and self._gex_locked() and latest:
                     self._freeze_levels(payload, latest)
                 self._stamp_iv_ref(payload, latest, canonical)
+                if flow_capture:
+                    try:
+                        chk = _refresh_flow(target, payload, flow_capture)
+                        if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
+                            journal(f"flow {target} controle de justesse KO : "
+                                    f"gex_by_strike={chk['gex_by_strike_bn']}Bn vs "
+                                    f"flow={chk['flow_spot_now_bn']}Bn "
+                                    f"(ecart {chk['deviation_pct']}%)")
+                    except Exception as e:
+                        journal(f"flow {target} KO: {e}")
                 # Trace intrajournaliere : l'open interest ne bouge pas en
                 # seance, donc les MURS sont figes — mais les gammas unitaires
                 # evoluent avec le spot, l'IV et la decroissance temporelle.
@@ -1902,6 +2000,36 @@ class handler(BaseHTTPRequestHandler):
                                               "stale-while-revalidate=30")
             self.end_headers()
             self.wfile.write(json.dumps(out).encode())
+            return
+
+        # ── FLUX : matrice gamma prix x temps (ETAPE 1, cf. docs/BRIEF-flux.md) ──
+        # Lecture seule : le calcul vit dans le cron intrajournalier
+        # (_refresh_flow), jamais sur ce chemin. Meme convention que
+        # /api/emlive pour l'absence de donnee : 200 {"ready": false}, pas
+        # une 503 -- l'absence (avant le premier tir intraday du jour, hors
+        # seance) est un etat normal, pas une panne de source.
+        if path == "/api/flow":
+            qs = parse_qs(parsed.query)
+            target = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if target not in TARGETS:
+                self._send(400, json.dumps({"error": "target inconnu"}).encode(),
+                           "application/json")
+                return
+            try:
+                cached = json.loads(kv_get(
+                    FLOW_KEY.format(t=target, d=et_today().isoformat())) or "null")
+            except Exception:
+                cached = None
+            if not cached:
+                self._send(200, json.dumps({"ready": False}).encode(),
+                           "application/json")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=60, "
+                                              "stale-while-revalidate=60")
+            self.end_headers()
+            self.wfile.write(json.dumps(dict(cached, ready=True)).encode())
             return
 
         # ── diagnostic des prix de reference (admin) ──

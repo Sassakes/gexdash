@@ -297,6 +297,51 @@ def zero_gamma_flip(opts, lo, hi, n=300):
     return float(x0 - y0 * (x1 - x0) / (y1 - y0))
 
 
+# ═══════════════════ FLUX — projection prix x temps (ETAPE 1 : gamma) ═══════
+#
+# Meme recalcul Black-Scholes que zero_gamma_flip ci-dessus (deja valide en
+# production) : c'est ce qui rend le controle de justesse possible. On y
+# reprend a l'identique la convention de signe de per_strike_gex (+1 call /
+# -1 put) et le T = dte/365 (calendaire) de zero_gamma_flip -- PAS le
+# sqrt(252) du module EM, qui sert a une chose differente (convertir une IV
+# annuelle en sigma 1 jour pour le dimensionnement de l'EM, sans rapport avec
+# le T d'une formule BS). sigma = IV par option, sticky strike : chaque
+# strike garde l'IV que CBOE lui a mesuree, inchangee sur toute la grille.
+def flow_gamma_matrix(opts, price_grid_idx, hours_grid):
+    """Matrice gamma dealer $, agregee sur toute la chaine, pour chaque
+    couple (heures depuis maintenant, prix candidat en echelle INDICE --
+    meme convention que zero_gamma_flip/per_strike_gex : S_own = S * o.scale
+    pour les options ramenees d'une autre chaine, ex. le blend ETF).
+
+    Retourne une liste de lignes (une par element de hours_grid), chaque
+    ligne etant une liste de valeurs $ (une par element de price_grid_idx).
+    Liste vide si la chaine ne contient aucune option a IV exploitable."""
+    valid = [o for o in opts if o.iv > 0]
+    if not valid or not price_grid_idx or not hours_grid:
+        return []
+    K = np.array([o.K for o in valid])
+    dte = np.array([o.dte for o in valid], dtype=float)
+    iv = np.array([o.iv for o in valid])
+    OI = np.array([o.OI for o in valid])
+    sign = np.array([1.0 if o.is_call else -1.0 for o in valid])
+    scale = np.array([o.scale for o in valid])
+
+    rows = []
+    for h in hours_grid:
+        # jours calendaires ecoules entre maintenant et ce point de grille :
+        # une option 0DTE arrivant a echeance EXACTEMENT a la cloture, sa
+        # colonne de cloture retombe sur le meme T~0 que zero_gamma_flip
+        # traite deja pour "maintenant" -- limitation connue, pas nouvelle.
+        T = (dte - h / 24.0) / 365.0
+        col = []
+        for S in price_grid_idx:
+            S_own = S * scale
+            g = bs_gamma(S_own, K, T, iv)
+            col.append(float(np.sum(sign * g * OI * CONTRACT_MULT * S_own * S_own * 0.01)))
+        rows.append(col)
+    return rows
+
+
 def zero_dte_walls(spot, opts, bucket=None):
     """Call/Put walls on the nearest expiry only, weighted by max(OI, volume):
     OI is yesterday's settled positioning, volume captures today's 0DTE flow.
@@ -967,11 +1012,17 @@ def refresh_daily_anchor(payload):
 
 def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
                   mode="snapshot", em_bands=(0.5, 1.5), chain_cache=None,
-                  iv_override=None):
+                  iv_override=None, capture=None):
     """Full pipeline: fetch -> compute -> JSON-ready payload dict.
     Raises on fetch/parse failure; caller handles errors.
     n_expiries=10 by default: wide enough that main walls approach the
-    aggregate (MenthorQ-style) view while 0DTE walls give the intraday one."""
+    aggregate (MenthorQ-style) view while 0DTE walls give the intraday one.
+
+    capture: dict optionnel, rempli en sortie avec les objets internes
+    (opts post-blend/scale, spot, basis, net_total_bn) dont le module Flux a
+    besoin pour recalculer les grecques sur la MEME chaine sans refaire le
+    fetch+blend ETF ni en dupliquer la logique ailleurs. No-op si None :
+    n'affecte aucun appelant existant."""
     if target not in TARGETS:
         raise ValueError(f"target must be one of {sorted(TARGETS)}")
     cfg = TARGETS[target]
@@ -1139,6 +1190,12 @@ def build_payload(target="NQ", n_expiries=10, top_n=4, basis_override=None,
     grid = open_grid(d_open, iv=iv, atr=atr14)
 
     pine = build_pine([(p + basis, l, k) for p, l, k in levels], grid)
+
+    if capture is not None:
+        capture["opts"] = opts
+        capture["spot"] = spot
+        capture["basis"] = basis
+        capture["net_total_bn"] = net_total_bn
 
     return {
         "date": today.isoformat(),
