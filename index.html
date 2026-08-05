@@ -164,6 +164,29 @@
     content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--gold);
   }
 
+  /* ============ bouton FLUX : détaché des onglets marchés — il ne
+     sélectionne pas un marché, il bascule le panneau central ============ */
+  .fluxToggle{
+    position:relative; display:inline-flex; align-items:center; margin:0 0 16px 14px;
+    background:var(--surface2); color:var(--muted); border:1px solid var(--line-strong);
+    padding:8px 22px; font-size:12.5px; font-weight:600; letter-spacing:.08em;
+    cursor:pointer; transition:color .22s ease, background .22s ease, border-color .22s ease;
+  }
+  .fluxToggle::before{
+    content:""; position:absolute; left:-14px; top:22%; bottom:22%; width:1px; background:var(--line);
+  }
+  .fluxToggle:hover{color:var(--text); border-color:rgba(240,185,11,.35)}
+  .fluxToggle.on{color:var(--gold); background:var(--gold-soft); border-color:rgba(240,185,11,.5)}
+  .fluxToggle:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+  /* bascule au clic : 220ms, sobre — un aller-retour d'échelle/opacité, pas
+     un effet appuyé */
+  .fluxToggle.swap{animation:fluxSwap .22s ease-out}
+  @keyframes fluxSwap{
+    0%{opacity:.4; transform:scale(.93)}
+    100%{opacity:1; transform:none}
+  }
+  @media(prefers-reduced-motion:reduce){ .fluxToggle.swap{animation:none} }
+
   /* ============ pine top + hint ============ */
   #pineTopBtn:hover{background:rgba(240,185,11,.24)}
   #pineTopBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
@@ -222,6 +245,7 @@
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 16px; border-bottom:1px solid var(--line); flex:none;
   }
+  .fluxleft{display:inline-flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0}
   .fluxlegend{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono);
     font-size:10.5px; color:var(--muted); white-space:nowrap}
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
@@ -403,8 +427,10 @@
   @media(max-width:640px){
     main{padding:16px 12px 40px}
     /* cibles tactiles confortables + pas de zoom auto iOS sur les champs */
-    .chips button, .ivs button, .tabs button, #tzTop{min-height:40px}
+    .chips button, .ivs button, .tabs button, .fluxToggle, #tzTop{min-height:40px}
     .chips button{padding:8px 13px; font-size:11.5px}
+    .fluxToggle{width:100%; margin:2px 0 16px; justify-content:center}
+    .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
     /* le sélecteur de fuseau et la langue passent à la ligne proprement */
     .topnav{flex-wrap:wrap; row-gap:6px}
@@ -455,6 +481,10 @@
   .tabs button.on{
     box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 18px -10px var(--gold-glow);
   }
+  .fluxToggle{min-height:38px}
+  .fluxToggle.on{
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 18px -10px var(--gold-glow);
+  }
   #statusPill{min-height:32px; font-variant-numeric:tabular-nums}
   #pineTopBtn{min-height:32px}
 
@@ -479,7 +509,8 @@
 
   .cbar{background:linear-gradient(180deg, rgba(255,255,255,.012), transparent)}
   .ivs button, .chips button{min-height:32px}
-  .ivs button:active, .chips button:active, #pineTopBtn:active, .tabs button:active{
+  .ivs button:active, .chips button:active, #pineTopBtn:active, .tabs button:active,
+  .fluxToggle:active{
     transform:translateY(1px);
   }
 
@@ -773,8 +804,9 @@
     <button data-t="ES" role="tab">ES</button>
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
-    <button id="fluxBtn" type="button" title="Flux gamma dealer · projection prix × temps">FLUX</button>
   </div>
+  <button id="fluxBtn" type="button" class="fluxToggle"
+          title="Flux gamma dealer · projection prix × temps">FLUX</button>
   <div class="goldsel" id="goldSel" hidden role="group" aria-label="Échelle de l'or">
     <button data-g="GC" type="button">GC</button>
     <button data-g="XAU" type="button">XAUUSD</button>
@@ -808,7 +840,14 @@
     <div class="chartbox" id="chartBox"></div>
     <div class="fluxbox" id="fluxBox" hidden>
       <div class="fluxbar">
-        <span class="note" id="fluxNote"></span>
+        <span class="fluxleft">
+          <span class="note" id="fluxNote"></span>
+          <span class="chips" id="fluxModeChips" role="group">
+            <button data-m="gamma" type="button" class="on">Gamma</button>
+            <button data-m="vanna" type="button">Vanna</button>
+            <button data-m="charm" type="button">Charm</button>
+          </span>
+        </span>
         <span class="fluxlegend">
           <i class="fluxsw fluxsw-neg"></i><span id="fluxNegLbl"></span>
           <i class="fluxsw fluxsw-pos"></i><span id="fluxPosLbl"></span>
@@ -840,7 +879,7 @@
     </div>
   </section>
 
-  <div class="duo">
+  <div class="duo" id="duoCards">
     <section class="panel">
       <h2><span id="emTitle">Expected move</span> <span class="note" id="emNote"></span></h2>
       <div class="pad" id="emCard"></div>
@@ -855,18 +894,22 @@
   </div>
 
   <!-- Liste complète des niveaux : reléguée en bas et repliée par défaut.
-       Tout est déjà lisible sur la chart ; ce tableau ne sert qu'en appoint. -->
-  <div class="gtog" id="lvToggle" style="margin:18px 0 0">
-    <span class="gline"></span>
-    <button id="lvBtn" type="button"><span id="levelsTitle">Niveaux du jour</span><span class="arw">▾</span></button>
-    <span class="gline"></span>
+       Tout est déjà lisible sur la chart ; ce tableau ne sert qu'en appoint.
+       Enveloppe dédiée : masquée en bloc dans la vue Flux, sans toucher à
+       l'état plié/déplié propre à lvPanel (préservé au retour). -->
+  <div id="lvWrap">
+    <div class="gtog" id="lvToggle" style="margin:18px 0 0">
+      <span class="gline"></span>
+      <button id="lvBtn" type="button"><span id="levelsTitle">Niveaux du jour</span><span class="arw">▾</span></button>
+      <span class="gline"></span>
+    </div>
+    <section class="panel" id="lvPanel" hidden style="margin-top:10px">
+      <table>
+        <thead><tr><th id="th1">Niveau</th><th id="th2">Prix</th><th id="th3">Distance</th></tr></thead>
+        <tbody id="levelsBody"></tbody>
+      </table>
+    </section>
   </div>
-  <section class="panel" id="lvPanel" hidden style="margin-top:10px">
-    <table>
-      <thead><tr><th id="th1">Niveau</th><th id="th2">Prix</th><th id="th3">Distance</th></tr></thead>
-      <tbody id="levelsBody"></tbody>
-    </table>
-  </section>
 </div>
 
 <footer>
@@ -898,7 +941,7 @@ const T = {
     fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
     fluxWait:"En attente du prochain calcul intrajournalier",
     fluxReady:h=>"Étape 1 · gamma seul · calculé "+h+" UTC",
-    fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"Gamma −", fluxPos:"Gamma +",
+    fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -949,7 +992,7 @@ const T = {
     fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
     fluxWait:"Waiting for the next intraday computation",
     fluxReady:h=>"Step 1 · gamma only · computed "+h+" UTC",
-    fluxNow:"now", fluxClose:"close", fluxNeg:"Gamma −", fluxPos:"Gamma +",
+    fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1268,9 +1311,11 @@ function applyLang(){
   document.querySelectorAll("#langSel button").forEach(b =>
     b.classList.toggle("on", b.dataset.l === LANG));
   $("chartTitle").textContent = FLUX_ON ? t("fluxTitle") : t("chart");
-  const fb = $("fluxBtn"); if (fb) fb.title = t("fluxTip");
-  const fnl = $("fluxNegLbl"); if (fnl) fnl.textContent = t("fluxNeg");
-  const fpl = $("fluxPosLbl"); if (fpl) fpl.textContent = t("fluxPos");
+  // libellé du bouton FLUX : annonce toujours la DESTINATION du clic, pas
+  // la vue courante — "FLUX" sur le chart, "CHART" une fois dans le flux
+  const fb = $("fluxBtn");
+  if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
+  renderFluxLegend();
   if (FLUX_ON){ renderFluxNote(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
@@ -1326,7 +1371,9 @@ async function load(){
   // FLUX ne sélectionne pas un marché : il bascule le panneau central
   // (chart de prix <-> gamma projeté), le marché courant reste actif
   const fluxBtn = $("fluxBtn");
-  if (fluxBtn) fluxBtn.onclick = () => setFluxView(!FLUX_ON);
+  if (fluxBtn) fluxBtn.onclick = () => { pulseFluxBtn(); setFluxView(!FLUX_ON); };
+  // sélecteur gamma / vanna / charm — gamma par défaut, cf. bindFluxMode()
+  bindFluxMode();
   bindChips();
   loadLinks();
   await loadTarget();
@@ -2117,6 +2164,41 @@ try{ FLUX_ON = localStorage.getItem("gexFluxOn") === "1"; }catch(_){}
 let FLUX_DATA = null;      // dernière matrice reçue (ou null si pas encore prête)
 let FLUX_POLL = null;
 let FLUX_RESIZE_WIRED = false;
+// Étape 2 : gamma / vanna / charm, affichés SÉPARÉMENT (jamais fondus en un
+// agrégat unique — unités et interprétations diffèrent, cf. BRIEF-flux.md).
+// Gamma par défaut à chaque chargement de page, pas persisté.
+let FLUX_MODE = "gamma";
+const FLUX_MODE_LABEL = {gamma:"Gamma", vanna:"Vanna", charm:"Charm"};
+
+function bindFluxMode(){
+  document.querySelectorAll("#fluxModeChips button[data-m]").forEach(b => b.onclick = () => {
+    if (b.dataset.m === FLUX_MODE) return;
+    FLUX_MODE = b.dataset.m;
+    document.querySelectorAll("#fluxModeChips button[data-m]").forEach(x =>
+      x.classList.toggle("on", x.dataset.m === FLUX_MODE));
+    renderFluxLegend();
+    drawFlux();
+  });
+}
+
+// Animation de bascule du bouton FLUX/CHART au clic : rejouée à chaque
+// pression en réappliquant la classe (le navigateur ignore un ré-ajout sans
+// reflow entre-temps, d'où le forced reflow).
+function pulseFluxBtn(){
+  const btn = $("fluxBtn");
+  if (!btn) return;
+  btn.classList.remove("swap");
+  void btn.offsetWidth;
+  btn.classList.add("swap");
+}
+
+// Légende +/− : le mot (Gamma/Vanna/Charm) suit le sélecteur, le signe est
+// bilingue via t() comme le reste des libellés.
+function renderFluxLegend(){
+  const lbl = FLUX_MODE_LABEL[FLUX_MODE] || "Gamma";
+  const nl = $("fluxNegLbl"); if (nl) nl.textContent = lbl + " " + t("fluxNeg");
+  const pl = $("fluxPosLbl"); if (pl) pl.textContent = lbl + " " + t("fluxPos");
+}
 
 function fluxPercentile(sortedAsc, p){
   if (!sortedAsc.length) return 0;
@@ -2153,7 +2235,8 @@ function drawFlux(){
   const padL = 46, padR = 40, padT = 8, padB = 20;
   const gw = Math.max(1, w - padL - padR), gh = Math.max(1, h - padT - padB);
 
-  if (!d || !d.gamma || !d.gamma.length || !d.price_grid || !d.price_grid.length){
+  const mat = d && d[FLUX_MODE];
+  if (!mat || !mat.length || !d.price_grid || !d.price_grid.length){
     ctx.fillStyle = C.faint;
     ctx.font = "11px IBM Plex Mono, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -2161,7 +2244,7 @@ function drawFlux(){
     return;
   }
 
-  const rows = d.gamma;                 // rows[heureIdx][prixIdx]
+  const rows = mat;                     // rows[heureIdx][prixIdx], matrice du mode sélectionné
   const nH = rows.length, nP = d.price_grid.length;
   const priceMin = d.price_grid[0], priceMax = d.price_grid[nP - 1];
   const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
@@ -2291,13 +2374,25 @@ function setFluxView(on){
   FLUX_ON = on;
   try{ localStorage.setItem("gexFluxOn", on ? "1" : "0"); }catch(_){}
   const btn = $("fluxBtn");
-  if (btn) btn.classList.toggle("on", on);
+  if (btn){
+    btn.classList.toggle("on", on);
+    // libellé = destination du prochain clic, pas la vue courante
+    btn.textContent = on ? "CHART" : "FLUX";
+    btn.title = on ? t("chart") : t("fluxTip");
+  }
   $("chartCbar").hidden = on;
   $("chartBox").hidden = on;
   $("fluxBox").hidden = !on;
+  // la vue Flux n'a rien à faire du contexte dark pool ni des cartes du bas
+  // (EM/Pine, niveaux) : seuls le bandeau de métriques et le sélecteur de
+  // marché restent affichés. hidden, jamais display: sur ces ids.
+  $("dpPanel").hidden = on;
+  $("duoCards").hidden = on;
+  $("lvWrap").hidden = on;
   if (on){
     $("chartNote").textContent = "";       // statut Flux affiché dans #fluxNote
     $("chartTitle").textContent = t("fluxTitle");
+    renderFluxLegend();
     if (!FLUX_RESIZE_WIRED){
       FLUX_RESIZE_WIRED = true;
       new ResizeObserver(() => drawFlux()).observe($("fluxBox"));
