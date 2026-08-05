@@ -215,6 +215,19 @@
 
   /* ============ chart ============ */
   .chartbox{height:400px; position:relative}
+
+  /* ============ flux (gamma dealer, projection prix x temps) ============ */
+  .fluxbox{height:400px; display:flex; flex-direction:column}
+  .fluxbar{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 16px; border-bottom:1px solid var(--line); flex:none;
+  }
+  .fluxlegend{display:inline-flex; align-items:center; gap:6px; font-family:var(--mono);
+    font-size:10.5px; color:var(--muted); white-space:nowrap}
+  .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
+  .fluxsw:first-child{margin-left:0}
+  .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
+  #fluxCanvas{flex:1; width:100%; display:block; min-height:0}
   .dp{display:flex; gap:22px; align-items:center; flex-wrap:wrap}
   .dp-big{font-family:var(--mono); font-size:30px; color:var(--text); line-height:1}
   .dp-sub{font-size:11px; color:var(--muted); margin-top:5px}
@@ -410,6 +423,8 @@
     .cell{padding:10px 12px}
     .cell.price .val{font-size:22px}
     .chartbox{height:300px}
+    .fluxbox{height:300px}
+    .fluxbar{padding:8px 10px; flex-wrap:wrap; row-gap:4px}
     .cbar{padding:8px 10px}
     .ivs button{padding:8px 12px; min-height:36px}
     thead th, td{padding-left:12px; padding-right:12px}
@@ -758,6 +773,7 @@
     <button data-t="ES" role="tab">ES</button>
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
+    <button id="fluxBtn" type="button" title="Flux gamma dealer · projection prix × temps">FLUX</button>
   </div>
   <div class="goldsel" id="goldSel" hidden role="group" aria-label="Échelle de l'or">
     <button data-g="GC" type="button">GC</button>
@@ -773,7 +789,7 @@
   <section class="panel" id="chartPanel">
     <h2><span id="chartTitle">Chart · niveaux GEX superposés</span>
       <span class="note" id="chartNote"></span></h2>
-    <div class="cbar">
+    <div class="cbar" id="chartCbar">
       <span class="chips" id="lvChips">
         <button data-g="gex"><i class="led"></i>GEX</button>
         <button data-g="em"><i class="led"></i>EM · 1D</button>
@@ -790,6 +806,16 @@
       </span>
     </div>
     <div class="chartbox" id="chartBox"></div>
+    <div class="fluxbox" id="fluxBox" hidden>
+      <div class="fluxbar">
+        <span class="note" id="fluxNote"></span>
+        <span class="fluxlegend">
+          <i class="fluxsw fluxsw-neg"></i><span id="fluxNegLbl"></span>
+          <i class="fluxsw fluxsw-pos"></i><span id="fluxPosLbl"></span>
+        </span>
+      </div>
+      <canvas id="fluxCanvas"></canvas>
+    </div>
   </section>
 
   <div class="stats" id="badges"></div>
@@ -869,6 +895,10 @@ const T = {
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Régime", stPC:"P/C OI", stIV:"IV ATM",
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
+    fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
+    fluxWait:"En attente du prochain calcul intrajournalier",
+    fluxReady:h=>"Étape 1 · gamma seul · calculé "+h+" UTC",
+    fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"Gamma −", fluxPos:"Gamma +",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -916,6 +946,10 @@ const T = {
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Regime", stPC:"P/C OI", stIV:"ATM IV",
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
+    fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
+    fluxWait:"Waiting for the next intraday computation",
+    fluxReady:h=>"Step 1 · gamma only · computed "+h+" UTC",
+    fluxNow:"now", fluxClose:"close", fluxNeg:"Gamma −", fluxPos:"Gamma +",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1233,7 +1267,11 @@ async function authSubmit(){
 function applyLang(){
   document.querySelectorAll("#langSel button").forEach(b =>
     b.classList.toggle("on", b.dataset.l === LANG));
-  $("chartTitle").textContent = t("chart");
+  $("chartTitle").textContent = FLUX_ON ? t("fluxTitle") : t("chart");
+  const fb = $("fluxBtn"); if (fb) fb.title = t("fluxTip");
+  const fnl = $("fluxNegLbl"); if (fnl) fnl.textContent = t("fluxNeg");
+  const fpl = $("fluxPosLbl"); if (fpl) fpl.textContent = t("fluxPos");
+  if (FLUX_ON){ renderFluxNote(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
   $("pineNote").textContent = t("pineNote");
@@ -1269,6 +1307,7 @@ async function load(){
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
     loadTarget();
     loadDark();
+    if (FLUX_ON) loadFlux();       // la matrice est spécifique au marché
   };
   // onglets de marché — l'onglet GOLD restaure la dernière échelle utilisée
   document.querySelectorAll("#tabs button[data-t]").forEach(b => b.onclick = () => {
@@ -1284,10 +1323,15 @@ async function load(){
     try{ localStorage.setItem("goldScale", b.dataset.g); }catch(_){}
     switchTarget(b.dataset.g);
   });
+  // FLUX ne sélectionne pas un marché : il bascule le panneau central
+  // (chart de prix <-> gamma projeté), le marché courant reste actif
+  const fluxBtn = $("fluxBtn");
+  if (fluxBtn) fluxBtn.onclick = () => setFluxView(!FLUX_ON);
   bindChips();
   loadLinks();
   await loadTarget();
   loadDark();
+  if (FLUX_ON) setFluxView(true);      // restaure la vue Flux mémorisée
 }
 
 /* ---- filtres de familles de niveaux (persistés) ---- */
@@ -1316,6 +1360,14 @@ const CHART = {chart:null, series:null, lineGroups:{}, groupMeta:{}, iv:"5m", la
 /* Le moteur de chart affiche les timestamps en UTC brut ; on décale chaque
    barre vers Europe/Paris (DST géré par Intl, pas d'offset codé en dur). */
 
+
+// Note du panneau chart : partagée avec le mode Flux (même <h2>), donc
+// ignorée pendant que Flux l'affiche — sinon un chargement de bougies
+// résolu en retard écrase le statut Flux après coup (setFluxView met
+// FLUX_ON à jour avant que cette garde ne soit relue).
+function setChartNote(text){
+  if (!FLUX_ON) $("chartNote").textContent = text;
+}
 
 function ensureChart(){
   if (CHART.chart || typeof LightweightCharts === "undefined"){
@@ -1520,7 +1572,7 @@ async function loadBars(){
     } else {
       CHART.chart.timeScale().fitContent();
     }
-    $("chartNote").textContent = TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz);
+    setChartNote(TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz));
     applyLevelLines();
     clearInterval(CHART.poll);
     // REPRISE AU RETOUR SUR L'ONGLET : en arrière-plan le navigateur gèle
@@ -1563,7 +1615,7 @@ async function loadBars(){
       if (marketPollMs() !== CHART._pollMs) armPoll(true);
     }, 60000);
   }catch(e){
-    $("chartNote").textContent = t("chartFail")(e.message);
+    setChartNote(t("chartFail")(e.message));
   }
 }
 
@@ -1995,6 +2047,10 @@ function show(d){
   renderEM(d);
   renderPine(d);
   $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T", " ").slice(0, 16));
+  // repères "prix courant / CW / PW / Flip" superposés au flux : redessiner
+  // à chaque payload frais plutôt que d'attendre le prochain calcul serveur
+  // (qui ne tourne que 3x/jour, cf. docs/BRIEF-flux.md)
+  if (FLUX_ON) drawFlux();
 }
 
 function renderLevels(d){
@@ -2047,6 +2103,211 @@ function renderPine(d){
   $("pineStr").textContent = d.pine;
   $("copyBtn").onclick = () => copyPine(d, $("copyBtn"), "copy");
   $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "pineTop");
+}
+
+/* ═══ FLUX — gamma dealer projeté, prix × temps (ÉTAPE 1, cf.
+   docs/BRIEF-flux.md) ═══════════════════════════════════════════════════
+   Panneau dédié plutôt qu'une couche sur le chart de prix : axes et lecture
+   sont différents (même raison que les deux boutons EM). Le calcul vit
+   entièrement côté serveur (cron intrajournalier, 3x/jour) ; ce module ne
+   fait que lire /api/flow et dessiner sur un canvas 2D — aucune dépendance
+   à lightweight-charts. */
+let FLUX_ON = false;
+try{ FLUX_ON = localStorage.getItem("gexFluxOn") === "1"; }catch(_){}
+let FLUX_DATA = null;      // dernière matrice reçue (ou null si pas encore prête)
+let FLUX_POLL = null;
+let FLUX_RESIZE_WIRED = false;
+
+function fluxPercentile(sortedAsc, p){
+  if (!sortedAsc.length) return 0;
+  const idx = Math.min(sortedAsc.length - 1, Math.max(0, Math.round(p * (sortedAsc.length - 1))));
+  return sortedAsc[idx];
+}
+
+// Call Wall / Put Wall / Gamma Flip déjà calculés côté serveur — mêmes
+// niveaux que ceux tracés sur le chart de prix, mêmes couleurs (KIND_COLOR).
+function fluxLevelMarkers(){
+  const d = LAST_D;
+  if (!d || !d.levels) return [];
+  const kinds = {res:"CW", sup:"PW", flip:"Flip"};
+  return Object.keys(kinds).map(k => d.levels.find(L => L.kind === k))
+    .filter(Boolean)
+    .map(L => ({price: L.price_nq, label: kinds[L.kind], color: KIND_COLOR[L.kind]}));
+}
+
+function drawFlux(){
+  const cv = $("fluxCanvas");
+  if (!cv || cv.hidden || cv.offsetParent === null) return;
+  const box = cv.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  const w = box.clientWidth, h = box.clientHeight;
+  if (!w || !h) return;
+  cv.width = Math.max(1, Math.round(w * dpr));
+  cv.height = Math.max(1, Math.round(h * dpr));
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const d = FLUX_DATA;
+  const padL = 46, padR = 40, padT = 8, padB = 20;
+  const gw = Math.max(1, w - padL - padR), gh = Math.max(1, h - padT - padB);
+
+  if (!d || !d.gamma || !d.gamma.length || !d.price_grid || !d.price_grid.length){
+    ctx.fillStyle = C.faint;
+    ctx.font = "11px IBM Plex Mono, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText($("fluxNote").textContent || "", w / 2, h / 2);
+    return;
+  }
+
+  const rows = d.gamma;                 // rows[heureIdx][prixIdx]
+  const nH = rows.length, nP = d.price_grid.length;
+  const priceMin = d.price_grid[0], priceMax = d.price_grid[nP - 1];
+  const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
+  const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
+
+  // ---- normalisation par PERCENTILE (pas min/max) : une valeur extrême
+  // isolée ne doit pas écraser tout le reste du dégradé ----
+  const absVals = [];
+  for (const row of rows) for (const v of row) absVals.push(Math.abs(v));
+  absVals.sort((a, b) => a - b);
+  const ref = fluxPercentile(absVals, 0.95) || 1;
+
+  // ---- grille rendue à résolution native (nH x nP) puis étirée avec lissage
+  // du navigateur : dégradé continu sans réimplémenter une interpolation ----
+  const off = document.createElement("canvas");
+  off.width = nH; off.height = nP;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(nH, nP);
+  for (let pi = 0; pi < nP; pi++){
+    const rowY = nP - 1 - pi;            // prix haut en haut de l'image
+    for (let hi = 0; hi < nH; hi++){
+      const v = rows[hi][pi];
+      const inten = Math.max(0, Math.min(1, Math.abs(v) / ref));
+      const rgb = v >= 0 ? [38, 166, 154] : [239, 83, 80];   // C.teal / C.red
+      const idx = (rowY * nH + hi) * 4;
+      img.data[idx] = rgb[0]; img.data[idx + 1] = rgb[1]; img.data[idx + 2] = rgb[2];
+      // plancher d'opacité : la structure de la grille reste lisible même
+      // près de zéro, au lieu de disparaître dans le fond du panneau
+      img.data[idx + 3] = Math.round(255 * (0.10 + 0.90 * inten));
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(off, padL, padT, gw, gh);
+
+  // ---- axes : prix en unités sigma (même pas que la grille, 0.5σ), temps
+  // en heures jusqu'à la clôture ----
+  ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
+  ctx.font = "10px IBM Plex Mono, monospace";
+  ctx.fillStyle = C.faint;
+  for (let i = 0; i < nP; i += 2){
+    const mult = Math.round((i - (nP - 1) / 2) * 0.5 * 2) / 2;
+    const y = yFor(d.price_grid[i]);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText((mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ", padL - 6, y);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  d.hours.forEach((hVal, hi) => {
+    const x = xFor(hi);
+    const isLast = hi === d.hours.length - 1;
+    const label = hVal === 0 ? t("fluxNow")
+                : (isLast && hVal % 1 !== 0) ? t("fluxClose")
+                : "+" + Math.round(hVal) + "h";
+    ctx.fillText(label, x, padT + gh + 4);
+  });
+
+  // ---- repères existants : prix courant + Call Wall / Put Wall / Flip ----
+  const spot = (LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot;
+  if (spot != null && spot >= priceMin && spot <= priceMax){
+    const y = yFor(spot);
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = C.text; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = C.text; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(fmt(spot, 0), padL + gw + 5, y);
+  }
+  fluxLevelMarkers().forEach(m => {
+    if (m.price == null || m.price < priceMin || m.price > priceMax) return;
+    const y = yFor(m.price);
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = m.color; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = m.color; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(m.label, padL + gw + 5, y);
+  });
+}
+
+// Statut affiché dans #fluxNote, gardé à part du texte lui-même : un
+// changement de langue seul (sans refetch) doit pouvoir le retraduire, cf.
+// renderFluxNote() appelée aussi depuis applyLang().
+let FLUX_STATUS = null;    // {kind:"loading"|"wait"|"ready"|"error", ts, msg}
+
+function renderFluxNote(){
+  const el = $("fluxNote");
+  if (!el || !FLUX_STATUS) return;
+  const s = FLUX_STATUS;
+  el.textContent = s.kind === "ready" ? t("fluxReady")(s.ts)
+                  : s.kind === "wait" ? t("fluxWait")
+                  : s.kind === "error" ? t("chartFail")(s.msg)
+                  : t("loading");
+}
+
+async function loadFlux(){
+  if (!FLUX_ON) return;
+  const tgt = TARGET;
+  FLUX_STATUS = {kind: "loading"};
+  renderFluxNote();
+  try{
+    const r = await fetch(`/api/flow?target=${tgt}`);
+    const d = await r.json();
+    if (tgt !== TARGET || !FLUX_ON) return;    // la cible/vue a changé pendant l'attente
+    if (!d.ready){
+      FLUX_DATA = null;
+      FLUX_STATUS = {kind: "wait"};
+    } else {
+      FLUX_DATA = d;
+      FLUX_STATUS = {kind: "ready", ts: d.generated_utc.slice(11, 16)};
+    }
+  }catch(e){
+    FLUX_DATA = null;
+    FLUX_STATUS = {kind: "error", msg: e.message};
+  }
+  renderFluxNote();
+  drawFlux();
+}
+
+function armFluxPoll(){
+  clearInterval(FLUX_POLL);
+  // le calcul serveur ne tourne que 3x/jour (cron intrajournalier) : pas
+  // besoin d'un rythme de marché ici, 5 min suffit largement
+  if (FLUX_ON) FLUX_POLL = setInterval(loadFlux, 5 * 60 * 1000);
+}
+
+function setFluxView(on){
+  FLUX_ON = on;
+  try{ localStorage.setItem("gexFluxOn", on ? "1" : "0"); }catch(_){}
+  const btn = $("fluxBtn");
+  if (btn) btn.classList.toggle("on", on);
+  $("chartCbar").hidden = on;
+  $("chartBox").hidden = on;
+  $("fluxBox").hidden = !on;
+  if (on){
+    $("chartNote").textContent = "";       // statut Flux affiché dans #fluxNote
+    $("chartTitle").textContent = t("fluxTitle");
+    if (!FLUX_RESIZE_WIRED){
+      FLUX_RESIZE_WIRED = true;
+      new ResizeObserver(() => drawFlux()).observe($("fluxBox"));
+    }
+    loadFlux();
+  } else {
+    $("chartTitle").textContent = t("chart");
+    setChartNote(TARGET + " · " + (TZ_CITY[PREFS.tz] || PREFS.tz));
+  }
+  armFluxPoll();
 }
 
 async function loadLinks(){
