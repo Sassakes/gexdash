@@ -252,6 +252,26 @@
   .fluxsw:first-child{margin-left:0}
   .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
   #fluxCanvas{flex:1; width:100%; display:block; min-height:0}
+
+  /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
+     (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
+     news.html (.verdict/.reads) ---- */
+  .fluxsynth{padding:10px 16px 12px; border-bottom:1px solid var(--line); flex:none}
+  .fluxsynth .verdict{display:flex; align-items:baseline; gap:10px; margin-bottom:9px}
+  .fluxsynth .vlab{font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--faint)}
+  .fluxsynth .vval{font-family:var(--mono); font-size:15px; font-weight:700; letter-spacing:.04em}
+  .fluxsynth .verdict.cmp .vval{color:var(--teal)}
+  .fluxsynth .verdict.acc .vval{color:var(--red)}
+  .fluxsynth .verdict.drf .vval{color:var(--gold)}
+  .fluxsynth .verdict.dvg .vval{color:var(--muted)}
+  .fluxsynth .fsrows{display:flex; gap:20px; flex-wrap:wrap}
+  .fluxsynth .fsrow{display:flex; align-items:baseline; gap:7px; font-family:var(--mono); font-size:11px}
+  .fluxsynth .fsk{color:var(--faint); letter-spacing:.06em; text-transform:uppercase; font-size:9.5px}
+  .fluxsynth .fsval{font-weight:600}
+  .fluxsynth .fsrow.pos .fsval{color:var(--teal)}
+  .fluxsynth .fsrow.neg .fsval{color:var(--red)}
+  .fluxsynth .fsrow.flat .fsval{color:var(--muted)}
+  .fluxsynth .fssens{color:var(--muted); font-size:10px}
   .dp{display:flex; gap:22px; align-items:center; flex-wrap:wrap}
   .dp-big{font-family:var(--mono); font-size:30px; color:var(--text); line-height:1}
   .dp-sub{font-size:11px; color:var(--muted); margin-top:5px}
@@ -449,7 +469,9 @@
     .cell{padding:10px 12px}
     .cell.price .val{font-size:22px}
     .chartbox{height:300px}
-    .fluxbox{height:300px}
+    .fluxbox{height:340px}
+    .fluxsynth{padding:8px 10px 10px}
+    .fluxsynth .fsrows{flex-direction:column; gap:5px}
     .fluxbar{padding:8px 10px; flex-wrap:wrap; row-gap:4px}
     .cbar{padding:8px 10px}
     .ivs button{padding:8px 12px; min-height:36px}
@@ -839,6 +861,7 @@
     </div>
     <div class="chartbox" id="chartBox"></div>
     <div class="fluxbox" id="fluxBox" hidden>
+      <div class="fluxsynth" id="fluxSynth" hidden></div>
       <div class="fluxbar">
         <span class="fluxleft">
           <span class="note" id="fluxNote"></span>
@@ -942,6 +965,13 @@ const T = {
     fluxWait:"En attente du prochain calcul intrajournalier",
     fluxReady:h=>"Étape 1 · gamma seul · calculé "+h+" UTC",
     fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
+    fsVerdict:"Synthèse flux", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCÉLÉRATION",
+    fsV_derive:"DÉRIVE", fsV_divergence:"DIVERGENCE",
+    fs_gamma:"Gamma", fs_vanna:"Vanna", fs_charm:"Charm",
+    fs_gamma_pos:"amortit", fs_gamma_neg:"amplifie", fs_gamma_flat:"neutre",
+    fs_vanna_pos:"soutien si IV ↑", fs_vanna_neg:"fragilise si IV ↑", fs_vanna_flat:"neutre",
+    fs_charm_pos:"dérive haussière", fs_charm_neg:"dérive baissière", fs_charm_flat:"neutre",
+    fs_unitGamma:"/1%", fs_unitVanna:"/pt IV", fs_unitCharm:"/jour",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -993,6 +1023,13 @@ const T = {
     fluxWait:"Waiting for the next intraday computation",
     fluxReady:h=>"Step 1 · gamma only · computed "+h+" UTC",
     fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
+    fsVerdict:"Flux synthesis", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCELERATION",
+    fsV_derive:"DRIFT", fsV_divergence:"DIVERGENCE",
+    fs_gamma:"Gamma", fs_vanna:"Vanna", fs_charm:"Charm",
+    fs_gamma_pos:"dampens", fs_gamma_neg:"amplifies", fs_gamma_flat:"flat",
+    fs_vanna_pos:"supports if IV ↑", fs_vanna_neg:"destabilizes if IV ↑", fs_vanna_flat:"flat",
+    fs_charm_pos:"bullish drift", fs_charm_neg:"bearish drift", fs_charm_flat:"flat",
+    fs_unitGamma:"/1%", fs_unitVanna:"/pt IV", fs_unitCharm:"/day",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1316,7 +1353,7 @@ function applyLang(){
   const fb = $("fluxBtn");
   if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
   renderFluxLegend();
-  if (FLUX_ON){ renderFluxNote(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
+  if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
   $("pineNote").textContent = t("pineNote");
@@ -2206,6 +2243,103 @@ function fluxPercentile(sortedAsc, p){
   return sortedAsc[idx];
 }
 
+// $ bruts, jamais moyennes entre grecques (unites differentes, cf. BRIEF-flux.md) :
+// simple mise a l'echelle M/Md pour la lisibilite, le signe reprend la convention
+// dealer de gex_by_strike (deja appliquee dans flow_gamma_matrix cote serveur).
+function fmtFluxUsd(v){
+  if (v == null) return "—";
+  const av = Math.abs(v), sign = v < 0 ? "−" : "+";
+  if (av >= 1e9) return sign + fmt(av / 1e9, 2) + " $Bn";
+  if (av >= 1e6) return sign + fmt(av / 1e6, 1) + " $M";
+  if (av >= 1e3) return sign + fmt(av / 1e3, 1) + " $K";
+  return sign + fmt(av, 0) + " $";
+}
+
+function fluxNearestIdx(grid, val){
+  if (!grid || !grid.length || val == null) return -1;
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < grid.length; i++){
+    const dd = Math.abs(grid[i] - val);
+    if (dd < bd){ bd = dd; bi = i; }
+  }
+  return bi;
+}
+
+function fluxRef95(mat){
+  const vals = [];
+  for (const row of mat) for (const v of row) vals.push(Math.abs(v));
+  vals.sort((a, b) => a - b);
+  return fluxPercentile(vals, 0.95) || 0;
+}
+
+// En-dessous de 15% du 95e percentile de sa propre matrice : lu comme plat,
+// pas comme un signal directionnel (evite qu'un bruit residuel bascule le
+// verdict).
+const FLUX_NEUTRAL_FRAC = 0.15;
+
+// Synthese au point (maintenant, prix courant) : verdict unique + une lecture
+// par grecque, jamais fondues (unites differentes). Gamma est l'axe primaire
+// -- seule grecque validee contre gex_by_strike (cf. BRIEF-flux.md) -- vanna
+// et charm ne font que confirmer ou contredire ensuite. Une contradiction
+// nette avec le gamma affiche DIVERGENCE plutot que d'etre lissee.
+function computeFluxSynthesis(d){
+  if (!d || !d.gamma || !d.vanna || !d.charm || !d.price_grid || !d.price_grid.length) return null;
+  const spot = (LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot;
+  const pi = fluxNearestIdx(d.price_grid, spot);
+  if (pi < 0 || !d.gamma[0] || !d.vanna[0] || !d.charm[0]) return null;
+  const g = d.gamma[0][pi], v = d.vanna[0][pi], c = d.charm[0][pi];
+  const refG = fluxRef95(d.gamma), refV = fluxRef95(d.vanna), refC = fluxRef95(d.charm);
+  const dirOf = (val, ref) => ref <= 0 ? 0 : (Math.abs(val) < FLUX_NEUTRAL_FRAC * ref ? 0 : Math.sign(val));
+  const gDir = dirOf(g, refG), vDir = dirOf(v, refV), cDir = dirOf(c, refC);
+
+  let verdict;
+  if (gDir > 0){
+    verdict = ((cDir < 0 && Math.abs(c) > 0.5 * refC) || (vDir < 0 && Math.abs(v) > 0.5 * refV))
+      ? "divergence" : "compression";
+  } else if (gDir < 0){
+    verdict = ((cDir > 0 && Math.abs(c) > 0.5 * refC) || (vDir > 0 && Math.abs(v) > 0.5 * refV))
+      ? "divergence" : "acceleration";
+  } else {
+    verdict = (cDir !== 0 || vDir !== 0) ? "derive" : "compression";
+  }
+
+  return {
+    verdict,
+    gamma: {val: g, dir: gDir},
+    vanna: {val: v, dir: vDir},
+    charm: {val: c, dir: cDir},
+  };
+}
+
+const FLUX_VERDICT_CLASS = {compression:"cmp", acceleration:"acc", derive:"drf", divergence:"dvg"};
+
+function renderFluxSynth(){
+  const box = $("fluxSynth");
+  if (!box) return;
+  const s = FLUX_DATA ? computeFluxSynthesis(FLUX_DATA) : null;
+  if (!s){ box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  const row = (key, item, unit) => {
+    const tone = item.dir > 0 ? "pos" : item.dir < 0 ? "neg" : "flat";
+    const sensKey = "fs_" + key + "_" + (item.dir > 0 ? "pos" : item.dir < 0 ? "neg" : "flat");
+    return `<div class="fsrow ${tone}">
+      <span class="fsk">${t("fs_" + key)}</span>
+      <span class="fsval">${fmtFluxUsd(item.val)} ${t(unit)}</span>
+      <span class="fssens">${t(sensKey)}</span>
+    </div>`;
+  };
+  box.innerHTML =
+    `<div class="verdict ${FLUX_VERDICT_CLASS[s.verdict]}">
+       <div class="vlab">${t("fsVerdict")}</div>
+       <div class="vval">${t("fsV_" + s.verdict)}</div>
+     </div>
+     <div class="fsrows">` +
+     row("gamma", s.gamma, "fs_unitGamma") +
+     row("vanna", s.vanna, "fs_unitVanna") +
+     row("charm", s.charm, "fs_unitCharm") +
+    `</div>`;
+}
+
 // Call Wall / Put Wall / Gamma Flip déjà calculés côté serveur — mêmes
 // niveaux que ceux tracés sur le chart de prix, mêmes couleurs (KIND_COLOR).
 function fluxLevelMarkers(){
@@ -2360,6 +2494,7 @@ async function loadFlux(){
     FLUX_STATUS = {kind: "error", msg: e.message};
   }
   renderFluxNote();
+  renderFluxSynth();
   drawFlux();
 }
 
