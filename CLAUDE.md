@@ -148,5 +148,19 @@ Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
 de secours, `0 15` / `0 17` / `0 19` intrajournaliers (`?intraday=1`).
 QStash : 00h11 daily, 15h25 publication. GitHub Actions : niveaux et macro.
 
+**Garde de fraîcheur `/api/cron`.** Une cible dont le payload publié date
+d'aujourd'hui et a été généré après `11:30:00` UTC est `{"skipped": true}` —
+sinon chaque tir intrajournalier referait un `build_payload` (fetch CBOE)
+inutile. `?force=1` republie tout (niveaux + Pine compris) en ignorant cette
+garde.
+
+`?intraday=1&flowforce=1&key=...` contourne la même garde **uniquement** pour
+recalculer le flux (module `docs/BRIEF-flux.md`) — utile pour vérifier
+l'affichage ou lire l'écart contre `net_gex_bn` sans attendre le prochain tir
+programmé. Réservé admin (même clé que le reste de `/api/cron`). Ne passe
+jamais par `_upstash_set` : le payload construit pour ce recalcul est
+transitoire, jamais publié — niveaux et Pine ne peuvent pas bouger, quel que
+soit l'état du verrou GEX.
+
 Utilisateur sous Git Bash / Windows : fournir des chemins Unix et des commandes
 git **une par bloc**.

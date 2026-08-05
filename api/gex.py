@@ -1722,6 +1722,14 @@ class handler(BaseHTTPRequestHandler):
                 }).encode(), "application/json")
                 return
             force = "force" in qs
+            # ?flowforce=1 (+ ?intraday=1) : contourne UNIQUEMENT le "skipped"
+            # ci-dessous pour recalculer le flux hors de son cron habituel
+            # (ex. verifier l'ecart contre net_gex_bn en fin de journee, sans
+            # attendre le prochain tir programme). Protege par la meme cle
+            # admin que le reste de /api/cron (verifiee plus haut). Contrai-
+            # rement a ?force=1, ne repasse JAMAIS par build_payload+_upstash_
+            # set : rien n'est publie, les niveaux/Pine ne peuvent pas bouger.
+            flow_force = "flowforce" in qs and "intraday" in qs
             for target in TARGETS:
                 latest = _latest_payload(target)
                 fresh = (latest is not None
@@ -1729,6 +1737,30 @@ class handler(BaseHTTPRequestHandler):
                          and latest.get("generated_utc", "") >= f"{today}T11:30:00")
                 if fresh and not force:
                     results[target] = {"skipped": True}
+                    if flow_force:
+                        try:
+                            fc = {}
+                            # payload transitoire, jamais publie : sert
+                            # uniquement a fournir a _refresh_flow les opts
+                            # (blend ETF + scale deja appliques) et l'open_grid
+                            # courants, sans toucher au "latest" stocke.
+                            fp = build_payload(target=target, mode="snapshot",
+                                               chain_cache=cache, capture=fc)
+                            if latest:
+                                self._preserve_daily(fp, latest)  # lecture seule
+                            chk = _refresh_flow(target, fp, fc)
+                            results[target]["flow_forced"] = True
+                            results[target]["flow_check"] = chk
+                            if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
+                                journal(f"flow {target} (force) controle de "
+                                        f"justesse KO : gex_by_strike="
+                                        f"{chk['gex_by_strike_bn']}Bn vs flow="
+                                        f"{chk['flow_spot_now_bn']}Bn "
+                                        f"(ecart {chk['deviation_pct']}%)")
+                        except Exception as e:
+                            results[target]["flow_forced"] = False
+                            results[target]["flow_error"] = str(e)
+                            journal(f"flow {target} (force) KO: {e}")
                     continue
                 # Pre-ouverture (< 9h30 ET) : la publication canonique de
                 # 15h25 Paris tombe 5 minutes AVANT l'ouverture des cotations
