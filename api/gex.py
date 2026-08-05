@@ -794,18 +794,26 @@ def _flow_grids(payload):
 def _refresh_flow(target, payload, capture):
     """capture = {'opts','spot','basis','net_total_bn'} rempli par
     build_payload(capture=...) : memes options (deja blend ETF + scale) que
-    celles agregees dans gex_by_strike. Retourne le dict de controle de
-    justesse (ou None si non calculable), pour que l'appelant decide de
-    journaliser."""
+    celles agregees dans gex_by_strike.
+
+    Retourne (check, reason) : check est le dict de controle de justesse (ou
+    None si non calculable), reason est None en cas de succes ou une chaine
+    courte quand check est None -- distingue un saut legitime (hors seance,
+    payload incomplet) d'un echec reel (chaine sans IV exploitable) d'un
+    controle simplement non calculable alors que la matrice, elle, a bien ete
+    ecrite en KV. Un `None` nu ne permettait pas de faire cette difference a
+    l'appelant (cf. flowforce)."""
     price_grid, hours, hours_left = _flow_grids(payload)
-    if not price_grid or not hours:
-        return None
+    if not price_grid:
+        return None, "payload incomplet (nq_price/open_grid manquant)"
+    if not hours:
+        return None, "hors seance : rien a projeter"
     basis = capture.get("basis") or 0.0
     price_grid_idx = [p - basis for p in price_grid]
     opts = capture.get("opts") or []
     mats = flow_gamma_matrix(opts, price_grid_idx, hours, hours_left)
     if not mats:
-        return None
+        return None, "chaine sans option a IV exploitable"
     # iv_now/iv_ref : deja calcules et persistes par le module EM (cf.
     # _stamp_iv_ref) -- exposes ici tels quels pour que le panneau Flux
     # puisse situer la vanna (delta/point d'IV) par rapport au deplacement
@@ -841,14 +849,19 @@ def _refresh_flow(target, payload, capture):
     # legitime -- le comparer serait mesurer la mauvaise reference, pas une
     # erreur de notre cote.
     check = None
+    check_reason = None
     net_total_bn = capture.get("net_total_bn")
-    if net_total_bn is not None:
+    if net_total_bn is None:
+        check_reason = "net_total_bn absent de la capture"
+    else:
         non0dte = [o for o in opts if o.dte > 0]
         _, net_non0 = per_strike_gex(capture.get("spot"), non0dte, bucket=None)
         cboe_ref_bn = float(net_non0.sum()) / 1e9
         flow_non0 = flow_gamma_matrix(non0dte, [capture.get("spot")], [0.0], hours_left)
         flow_ref_bn = (flow_non0["gamma"][0][0] / 1e9) if flow_non0 else None
-        if flow_ref_bn is not None:
+        if flow_ref_bn is None:
+            check_reason = "non-0DTE sans IV exploitable pour le controle"
+        else:
             denom = abs(cboe_ref_bn) if abs(cboe_ref_bn) > 1e-6 else 1e-6
             dev_pct = round(100.0 * abs(flow_ref_bn - cboe_ref_bn) / denom, 1)
             check = {"gex_by_strike_bn": round(cboe_ref_bn, 3),
@@ -856,7 +869,10 @@ def _refresh_flow(target, payload, capture):
                      "deviation_pct": dev_pct, "excl_0dte": True}
     out["check"] = check
     kv_set(FLOW_KEY.format(t=target, d=out["date"]), json.dumps(out), ex=2 * 86400)
-    return check
+    # matrice + check ecrits en KV meme si check est None (check_reason
+    # explique pourquoi) : seule la matrice compte pour le panneau Flux, le
+    # check n'est qu'un controle de justesse secondaire.
+    return check, check_reason
 
 
 def _finra_dp_day(ymd):
@@ -1773,9 +1789,11 @@ class handler(BaseHTTPRequestHandler):
                                                chain_cache=cache, capture=fc)
                             if latest:
                                 self._preserve_daily(fp, latest)  # lecture seule
-                            chk = _refresh_flow(target, fp, fc)
+                            chk, reason = _refresh_flow(target, fp, fc)
                             results[target]["flow_forced"] = True
                             results[target]["flow_check"] = chk
+                            if reason:
+                                results[target]["flow_skip_reason"] = reason
                             if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
                                 journal(f"flow {target} (force) controle de "
                                         f"justesse KO : gex_by_strike="
@@ -1828,8 +1846,14 @@ class handler(BaseHTTPRequestHandler):
                 self._stamp_iv_ref(payload, latest, canonical)
                 if flow_capture:
                     try:
-                        chk = _refresh_flow(target, payload, flow_capture)
-                        if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
+                        chk, reason = _refresh_flow(target, payload, flow_capture)
+                        # tir intrajournalier = toujours cense tomber en
+                        # seance ; "hors seance" ici signale un probleme de
+                        # planification cron, pas un etat normal -- on le
+                        # journalise comme le reste.
+                        if reason:
+                            journal(f"flow {target} : rien calcule ({reason})")
+                        elif chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
                             journal(f"flow {target} controle de justesse KO : "
                                     f"gex_by_strike={chk['gex_by_strike_bn']}Bn vs "
                                     f"flow={chk['flow_spot_now_bn']}Bn "
