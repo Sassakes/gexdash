@@ -183,23 +183,6 @@
     text-transform:uppercase; color:var(--faint); white-space:nowrap;
   }
   /* Delta intrajournalier : discret, il complète la valeur sans la concurrencer */
-  /* EM restant : la barre montre la part de variance DÉJÀ consommée, donc
-     ce qu'il reste de potentiel — pas une simple progression temporelle. */
-  #emCard .chead{display:flex; align-items:baseline; gap:10px}
-  #emCard .sub{margin-left:auto; font-size:10px; color:var(--faint);
-    font-family:var(--mono)}
-  .emrow{display:flex; align-items:baseline; gap:8px; padding:7px 0;
-    border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12px}
-  .emrow:last-child{border-bottom:none}
-  .emrow .k{font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--faint); min-width:96px; font-family:var(--sans, inherit)}
-  .emrow .v{color:var(--text); font-weight:600}
-  .emrow .x{margin-left:auto; color:var(--muted); font-size:11px}
-  .embar{height:4px; background:var(--surface2); margin:9px 0 3px; position:relative}
-  .embar i{position:absolute; left:0; top:0; bottom:0; background:var(--gold);
-    transition:width .4s ease}
-  .embar.hot i{background:var(--red)}
-  .emnote{font-size:10.5px; color:var(--faint); line-height:1.5; margin-top:8px}
   .dlt{font-size:9.5px; font-weight:600; margin-left:3px; opacity:.85;
     font-family:var(--mono)}
   .dlt.pos{color:var(--teal)} .dlt.neg{color:var(--red)}
@@ -823,14 +806,6 @@
     </div>
   </section>
 
-  <section class="card" id="emCard" hidden>
-    <div class="chead">
-      <h2 id="emTitle">EM restant</h2>
-      <span class="sub" id="emClock"></span>
-    </div>
-    <div id="emBody"></div>
-  </section>
-
   <div class="duo">
     <section class="panel">
       <h2><span id="emTitle">Expected move</span> <span class="note" id="emNote"></span></h2>
@@ -893,14 +868,6 @@ const T = {
     copied:t0=>"Copiée ✓ — zone "+t0, copyMan:"Copie manuelle requise", pineTop:"⧉ String Pine",
     tv:"TradingView", dash:"Mon dashboard", doc:"Doc", heat:"Heatmap",
     news:"News",
-    emTitle:"EM restant", emBand:"Bande du jour", emLeft:"Cône restant",
-    emUsed:"Parcouru", emFrom:"depuis",
-    emCal:"horloge calibrée", emRaw:"horloge calendaire",
-    emVar:p => `${p} % de la variance du jour est consommée.`,
-    emWait:"En attente de la publication des niveaux du jour.",
-    emErr:"Calcul indisponible — réessaie dans un instant.",
-    emClosed:"Hors séance (16h–18h ET). Le cône reprendra à l'ouverture Globex.",
-    emOver:"le cône dépasse la bande — extension encore possible",
     sinceOpen:"depuis la publication de 15h25",
     regFlip:"le régime a changé depuis la publication",
     authIn:"Connexion", authReg:"Inscription", authInGo:"Se connecter",
@@ -917,6 +884,7 @@ const T = {
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — outil éducatif, pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
+    tipCone:"Cône EM restant : prix courant ± EM restant, se resserre en séance",
     dpNote:"FINRA off-exchange · publié J-1",
     dpBuild:"historique en construction — première donnée au prochain jour ouvré",
     dpUnavail:"indisponible", dpAvg:"moy. 20j",
@@ -947,14 +915,6 @@ const T = {
     copied:t0=>"Copied ✓ — "+t0+" zone", copyMan:"Manual copy required", pineTop:"⧉ Pine string",
     tv:"TradingView", dash:"My dashboard", doc:"Docs", heat:"Heatmap",
     news:"News",
-    emTitle:"Remaining EM", emBand:"Day band", emLeft:"Remaining cone",
-    emUsed:"Travelled", emFrom:"from",
-    emCal:"calibrated clock", emRaw:"calendar clock",
-    emVar:p => `${p}% of today's variance is used up.`,
-    emWait:"Waiting for today's levels to be published.",
-    emErr:"Calculation unavailable — try again shortly.",
-    emClosed:"Outside session (16:00–18:00 ET). The cone resumes at the Globex open.",
-    emOver:"cone extends beyond the band — further extension possible",
     sinceOpen:"since the 15:25 publication",
     regFlip:"regime changed since publication",
     authIn:"Sign in", authReg:"Sign up", authInGo:"Sign in",
@@ -971,6 +931,7 @@ const T = {
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — educational tool, not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
+    tipCone:"Remaining EM cone: current price ± remaining EM, narrows through the session",
     dpNote:"FINRA off-exchange · published T-1",
     dpBuild:"history building — first data next trading day",
     dpUnavail:"unavailable", dpAvg:"20d avg",
@@ -1198,9 +1159,7 @@ async function authSubmit(){
     if (!r.ok) throw new Error(d.error || "Erreur");
     AUTH_USER = d.user;
     const nlb = $("newsLbl"); if (nlb) nlb.textContent = t("news");
-  const et = $("emTitle"); if (et) et.textContent = t("emTitle");
-  loadEM();
-  authPaint();
+    authPaint();
     msg.className = "ok"; msg.textContent = t("authWelcome");
     setTimeout(() => {
       $("authWrap").hidden = true;
@@ -1238,71 +1197,6 @@ async function authSubmit(){
     if (!AUTH_USER && new URL(location.href).searchParams.get("login")) authOpen("login");
   }).catch(() => authPaint());
 })();
-
-/* ═══ EM RESTANT ══════════════════════════════════════════════════════
-   Deux objets distincts, souvent confondus :
-     · la BANDE du jour, posée à l'open, centrée sur l'ouverture ;
-     · le CÔNE restant, centré sur le PRIX COURANT.
-   Un marché déjà à +0.8σ peut encore avoir 0.5σ de cône : la projection
-   dépasse alors la bande du jour. C'est précisément ce que cette carte
-   rend visible. */
-async function loadEM(){
-  const card = $("emCard");
-  if (!card) return;
-  let d = null, err = null;
-  try{
-    const r = await fetch(`/api/emlive?target=${TARGET}`);
-    d = await r.json();
-    if (!r.ok) err = d.error || ("HTTP " + r.status);
-  }catch(e){ err = e.message; }
-
-  // Une carte vide sans explication est pire que pas de carte : on affiche
-  // toujours la raison.
-  if (err || !d || !d.ready){
-    card.hidden = false;
-    $("emClock").textContent = "";
-    $("emBody").innerHTML = `<div class="emnote">${err ? t("emErr") : t("emWait")}</div>`;
-    return;
-  }
-  card.hidden = false;
-
-  if (d.closed){          // entre 16h et 18h ET : aucune séance en cours
-    $("emClock").textContent = "";
-    $("emBody").innerHTML = `<div class="emnote">${t("emClosed")}</div>`;
-    return;
-  }
-
-  const f = (v, dec = 0) => v == null ? "—"
-    : Number(v).toLocaleString(LANG === "fr" ? "fr-FR" : "en-US",
-        {minimumFractionDigits: dec, maximumFractionDigits: dec});
-  const dec = d.em_day < 100 ? 1 : 0;
-  const used = d.used_pct;
-  const consumedVar = Math.round((1 - d.var_remaining) * 100);
-  // la projection du cône dépasse-t-elle la bande du jour ?
-  const over = d.band_high != null &&
-               (d.cone_high > d.band_high || d.cone_low < d.band_low);
-
-  $("emClock").textContent = d.calibrated ? t("emCal") : t("emRaw");
-  $("emBody").innerHTML =
-    `<div class="emrow"><span class="k">${t("emBand")}</span>
-       <span class="v">±${f(d.em_day, dec)}</span>
-       <span class="x">${f(d.band_low, dec)} — ${f(d.band_high, dec)}</span></div>
-     <div class="emrow"><span class="k">${t("emLeft")}</span>
-       <span class="v">±${f(d.em_remaining, dec)}</span>
-       <span class="x">${f(d.cone_low, dec)} — ${f(d.cone_high, dec)}</span></div>
-     <div class="emrow"><span class="k">${t("emUsed")}</span>
-       <span class="v">${used == null ? "—" : used + " %"}</span>
-       <span class="x">${t("emFrom")} ${f(d.anchor, dec)}</span></div>
-     <div class="embar${consumedVar >= 80 ? " hot" : ""}">
-       <i style="width:${Math.min(100, consumedVar)}%"></i></div>
-     <div class="emnote">${t("emVar")(consumedVar)}${over ? " · " + t("emOver") : ""}</div>`;
-}
-
-/* Le cône se resserre en continu : on le rafraîchit toutes les 2 minutes en
-   séance, jamais le week-end ni onglet caché. */
-setInterval(() => {
-  if (!document.hidden && marketPollMs()) loadEM();
-}, 120000);
 
 (function wireLevelsToggle(){
   const btn = document.getElementById("lvBtn");
@@ -1366,7 +1260,6 @@ async function load(){
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
     loadTarget();
     loadDark();
-    loadEM();
   };
   // onglets de marché — l'onglet GOLD restaure la dernière échelle utilisée
   document.querySelectorAll("#tabs button[data-t]").forEach(b => b.onclick = () => {
