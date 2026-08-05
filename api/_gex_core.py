@@ -70,15 +70,44 @@ def _finite_float(value, default=0.0):
 # --------------------------------------------------------------------------- #
 # Black-Scholes gamma                                                          #
 # --------------------------------------------------------------------------- #
-def bs_gamma(S, K, T, sigma, r=RISK_FREE):
-    """Vectorized BS gamma. S may be a scalar or array; K,T,sigma are arrays."""
-    S = np.asarray(S, dtype=float)
+def _bs_d1_d2(S, K, T, sigma, r=RISK_FREE):
+    """d1/d2 partages par bs_gamma/bs_vanna/bs_charm ci-dessous -- meme
+    troncature (T, sigma planchers a 1e-6, garde anti-division) que la
+    bs_gamma d'origine, deja validee en production. Retourne (d1, d2, T,
+    sigma) avec T/sigma DEJA tronques : les appelants les reutilisent tels
+    quels plutot que de retronquer une seconde fois."""
     K = np.asarray(K, dtype=float)
     T = np.maximum(np.asarray(T, dtype=float), 1e-6)
     sigma = np.maximum(np.asarray(sigma, dtype=float), 1e-6)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    sqrtT = np.sqrt(T)
+    d1 = (np.log(np.asarray(S, dtype=float) / K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrtT)
+    d2 = d1 - sigma * sqrtT
+    return d1, d2, T, sigma
+
+
+def bs_gamma(S, K, T, sigma, r=RISK_FREE):
+    """Vectorized BS gamma. S may be a scalar or array; K,T,sigma are arrays."""
+    S = np.asarray(S, dtype=float)
+    d1, d2, T, sigma = _bs_d1_d2(S, K, T, sigma, r)
     pdf = np.exp(-0.5 * d1**2) / math.sqrt(2 * math.pi)
     return pdf / (S * sigma * np.sqrt(T))
+
+
+def bs_vanna(S, K, T, sigma, r=RISK_FREE):
+    """Vanna = -e^(-qT) * phi(d1) * d2 / sigma. q=0 (aucun rendement modelise
+    ici, comme bs_gamma ci-dessus -- e^(-qT) vaut donc 1)."""
+    d1, d2, T, sigma = _bs_d1_d2(S, K, T, sigma, r)
+    pdf = np.exp(-0.5 * d1**2) / math.sqrt(2 * math.pi)
+    return -pdf * d2 / sigma
+
+
+def bs_charm(S, K, T, sigma, r=RISK_FREE):
+    """Charm = -e^(-qT) * phi(d1) * [2(r-q)T - d2*sigma*sqrt(T)] / (2*T*sigma*sqrt(T)).
+    q=0, meme convention que bs_vanna ci-dessus."""
+    d1, d2, T, sigma = _bs_d1_d2(S, K, T, sigma, r)
+    pdf = np.exp(-0.5 * d1**2) / math.sqrt(2 * math.pi)
+    sqrtT = np.sqrt(T)
+    return -pdf * (2 * r * T - d2 * sigma * sqrtT) / (2 * T * sigma * sqrtT)
 
 
 class Opt:
@@ -307,39 +336,77 @@ def zero_gamma_flip(opts, lo, hi, n=300):
 # annuelle en sigma 1 jour pour le dimensionnement de l'EM, sans rapport avec
 # le T d'une formule BS). sigma = IV par option, sticky strike : chaque
 # strike garde l'IV que CBOE lui a mesuree, inchangee sur toute la grille.
-def flow_gamma_matrix(opts, price_grid_idx, hours_grid):
-    """Matrice gamma dealer $, agregee sur toute la chaine, pour chaque
-    couple (heures depuis maintenant, prix candidat en echelle INDICE --
-    meme convention que zero_gamma_flip/per_strike_gex : S_own = S * o.scale
-    pour les options ramenees d'une autre chaine, ex. le blend ETF).
+#
+# 0DTE : dte=0 donne T=0, que bs_gamma plafonne a son plancher anti-division
+# interne (1e-6 an, ~31s) -- une garde numerique, jamais pensee comme une
+# heure de marche. Mesure sur chaine reelle (NQ, ~4h avant cloture) : gamma
+# recalcule ~18x le gamma CBOE sur le strike ATM avec ce plancher, contre
+# ~1.04x avec le nombre d'heures REELLEMENT restantes avant 16h ET. Les
+# options 0DTE recoivent donc un T derive de today_hours_left (fourni par
+# l'appelant, cf. _et_now_minutes/SESSION_END_ET dans api/gex.py) plutot que
+# du plancher de bs_gamma -- avec son propre plancher (quelques minutes) pour
+# la toute fin de seance, sinon le gamma repart vers l'infini a 15h59.
+ZERO_DTE_T_FLOOR_MIN = 5.0   # plancher mini, en minutes, pour un 0DTE tres proche de la cloture
 
-    Retourne une liste de lignes (une par element de hours_grid), chaque
-    ligne etant une liste de valeurs $ (une par element de price_grid_idx).
-    Liste vide si la chaine ne contient aucune option a IV exploitable."""
+
+def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
+    """Matrices dealer $ (gamma, vanna, charm), agregees sur toute la chaine,
+    pour chaque couple (heures depuis maintenant, prix candidat en echelle
+    INDICE -- meme convention que zero_gamma_flip/per_strike_gex : S_own =
+    S * o.scale pour les options ramenees d'une autre chaine, ex. le blend
+    ETF). Meme signe dealer (+1 call / -1 put), meme T = dte/365 calendaire,
+    meme sticky-strike sigma que le gamma deja valide ci-dessus.
+
+    today_hours_left : heures reelles restantes avant la cloture cash (16h
+    ET) au moment du calcul. Sert de base de temps aux options 0DTE
+    UNIQUEMENT (dte>=1 reste sur dte/365, inchange) ; reduite ensuite par h
+    a mesure que la grille avance dans la journee.
+
+    Unites -- volontairement distinctes, jamais fondues en un agregat :
+      GAMMA$ = OI * mult * Gamma * S^2 * 0.01 * sign   (deja en place)
+      VANNA$ = OI * mult * Vanna * S    * 0.01 * sign  (delta / point d'IV)
+      CHARM$ = OI * mult * Charm * S           * sign  (delta / jour ecoule)
+
+    Retourne {"gamma": rows, "vanna": rows, "charm": rows}, chaque `rows`
+    etant une liste de lignes (une par element de hours_grid) de valeurs $
+    (une par element de price_grid_idx). Dict vide si la chaine ne contient
+    aucune option a IV exploitable."""
     valid = [o for o in opts if o.iv > 0]
     if not valid or not price_grid_idx or not hours_grid:
-        return []
+        return {}
     K = np.array([o.K for o in valid])
     dte = np.array([o.dte for o in valid], dtype=float)
     iv = np.array([o.iv for o in valid])
     OI = np.array([o.OI for o in valid])
     sign = np.array([1.0 if o.is_call else -1.0 for o in valid])
     scale = np.array([o.scale for o in valid])
+    base = sign * OI * CONTRACT_MULT
 
-    rows = []
+    floor_days = ZERO_DTE_T_FLOOR_MIN / 60.0 / 24.0
+    is_0dte = dte == 0
+    base_days = np.where(is_0dte, max(float(today_hours_left), 0.0) / 24.0, dte)
+
+    rows_gamma, rows_vanna, rows_charm = [], [], []
     for h in hours_grid:
-        # jours calendaires ecoules entre maintenant et ce point de grille :
-        # une option 0DTE arrivant a echeance EXACTEMENT a la cloture, sa
-        # colonne de cloture retombe sur le meme T~0 que zero_gamma_flip
-        # traite deja pour "maintenant" -- limitation connue, pas nouvelle.
-        T = (dte - h / 24.0) / 365.0
-        col = []
+        # jours calendaires ecoules entre maintenant et ce point de grille ;
+        # pour un 0DTE, base_days part des heures REELLES restantes (pas de
+        # dte=0) donc la decroissance vers la cloture reste realiste tout du
+        # long, plancher applique en tout dernier recours.
+        days_left = np.maximum(base_days - h / 24.0, floor_days)
+        T = days_left / 365.0
+        col_g, col_v, col_c = [], [], []
         for S in price_grid_idx:
             S_own = S * scale
             g = bs_gamma(S_own, K, T, iv)
-            col.append(float(np.sum(sign * g * OI * CONTRACT_MULT * S_own * S_own * 0.01)))
-        rows.append(col)
-    return rows
+            v = bs_vanna(S_own, K, T, iv)
+            c = bs_charm(S_own, K, T, iv)
+            col_g.append(float(np.sum(base * g * S_own * S_own * 0.01)))
+            col_v.append(float(np.sum(base * v * S_own * 0.01)))
+            col_c.append(float(np.sum(base * c * S_own)))
+        rows_gamma.append(col_g)
+        rows_vanna.append(col_v)
+        rows_charm.append(col_c)
+    return {"gamma": rows_gamma, "vanna": rows_vanna, "charm": rows_charm}
 
 
 def zero_dte_walls(spot, opts, bucket=None):
