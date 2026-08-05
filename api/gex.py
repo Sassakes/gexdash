@@ -609,7 +609,12 @@ def _vol_profile(target):
     try:
         cached = json.loads(kv_get(VOLPROF_KEY.format(t=target)) or "null")
         if cached and cached.get("p"):
-            return cached["p"], bool(cached.get("cal"))
+            # le drapeau "cal" est absent des entrees ecrites par une version
+            # anterieure du cache : on le deduit du contenu plutot que de lui
+            # faire confiance aveuglement (une entree sans "cal" mais dont le
+            # profil differe du gabarit par defaut EST calibree).
+            calibrated = bool(cached.get("cal")) or cached["p"] != _default_vol_profile()
+            return cached["p"], calibrated
     except Exception:
         pass
     return _default_vol_profile(), False
@@ -1084,6 +1089,19 @@ class handler(BaseHTTPRequestHandler):
             if old_p.get(k) is not None:
                 new_p[k] = old_p[k]
         new_p["levels_locked"] = True
+
+    @staticmethod
+    def _stamp_iv_ref(new_p, old_p, canonical):
+        """iv_atm FIGE au moment de la publication canonique (15h25) —
+        distinct de new_p["iv_atm"], qui continue lui de bouger à chaque
+        refresh intrajournalier. /api/emlive compare les deux pour mesurer
+        le crush de vol en cours de séance ; sans ce gel, la référence
+        dériverait avec le marché et le ratio resterait toujours à 1."""
+        same_day = bool(old_p) and old_p.get("date") == new_p.get("date")
+        if canonical or not same_day or old_p.get("iv_ref") is None:
+            new_p["iv_ref"] = new_p.get("iv_atm")
+        else:
+            new_p["iv_ref"] = old_p.get("iv_ref")
 
     def _auth_key(self, qs=None):
         """True if the request carries a valid GEX_REFRESH_KEY."""
@@ -1564,6 +1582,7 @@ class handler(BaseHTTPRequestHandler):
                     if latest is None:   # premier démarrage : calcul complet
                         payload = build_payload(target=target, mode="snapshot",
                                                 chain_cache=cache)
+                        payload["iv_ref"] = payload.get("iv_atm")
                         ok, why = _upstash_set(payload)
                         results[target] = {"daily_only": True, "bootstrap": True,
                                            "published": ok}
@@ -1646,6 +1665,7 @@ class handler(BaseHTTPRequestHandler):
                     self._preserve_daily(payload, latest)
                 if (not canonical) and self._gex_locked() and latest:
                     self._freeze_levels(payload, latest)
+                self._stamp_iv_ref(payload, latest, canonical)
                 # Trace intrajournaliere : l'open interest ne bouge pas en
                 # seance, donc les MURS sont figes — mais les gammas unitaires
                 # evoluent avec le spot, l'IV et la decroissance temporelle.
@@ -1815,6 +1835,17 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps({"ready": False}).encode(),
                            "application/json")
                 return
+            # Ratio d'IV : la contraction de la portee restante vient du temps
+            # ET de l'IV qui s'effondre en seance (surtout en 0DTE) — l'horloge
+            # seule est structurellement optimiste un jour de crush de vol.
+            # iv_now vient du DERNIER refresh (canonique ou intraday, tous deux
+            # recalculent iv_atm depuis la chaine) : aucun appel reseau ici.
+            # iv_ref est figee a la publication canonique de 15h25 (_stamp_iv_ref).
+            iv_now = pay.get("iv_atm")
+            iv_ref = pay.get("iv_ref") or iv_now
+            iv_ratio = 1.0
+            if iv_ref and iv_now and iv_ref > 0:
+                iv_ratio = max(0.5, min(1.5, iv_now / iv_ref))
             prof, calibrated = _vol_profile(target)
             nowm = _et_now_minutes()
             frac = _variance_remaining(prof, nowm)
@@ -1827,9 +1858,10 @@ class handler(BaseHTTPRequestHandler):
                     "ready": True, "closed": True, "target": target,
                     "em_day": round(em, 2), "anchor": anchor,
                     "price": round(px, 2),
+                    "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
                     "prof": prof, "calibrated": calibrated}).encode(), "application/json")
                 return
-            rem = em * math.sqrt(frac)
+            rem = em * iv_ratio * math.sqrt(frac)
             travel = abs(px - anchor) if anchor else None
             out = {
                 "ready": True, "target": target, "price": round(px, 2),
@@ -1844,6 +1876,7 @@ class handler(BaseHTTPRequestHandler):
                 "used_pct": round(100.0 * travel / em, 1) if travel is not None else None,
                 "calibrated": calibrated, "closed": False,
                 "et_minutes": nowm,
+                "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
                 "prof": prof,
             }
             self.send_response(200)
@@ -2463,6 +2496,7 @@ class handler(BaseHTTPRequestHandler):
                     self._preserve_daily(payload, prev)
                     if q("notify") != "1" and self._gex_locked():
                         self._freeze_levels(payload, prev)
+                self._stamp_iv_ref(payload, prev, q("notify") == "1")
                 ok, why = _upstash_set(payload)
                 payload["published"] = ok
                 payload["publish_info"] = why
