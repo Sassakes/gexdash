@@ -330,7 +330,8 @@ const T = {
     nIwmFlat:v => `Small caps neutres (${fmtPc(v)})`,
     nSpread:(a,x,b,y) => `Dispersion : ${a} ${fmtPc(x)} vs ${b} ${fmtPc(y)}`,
     b_risk_on:"RISK-ON", b_lean_on:"Penché risque", b_neutral:"Neutre",
-    b_lean_off:"Penché défensif", b_risk_off:"RISK-OFF",
+    b_lean_off:"Penché défensif", b_risk_off:"RISK-OFF", b_incomplete:"Incomplet",
+    magIncomplete:n => `Échantillon incomplet — ${n} valeur${n > 1 ? "s" : ""} manquante${n > 1 ? "s" : ""}, biais non calculé`,
     magHelp:"MAG7 — les sept plus grosses capitalisations technologiques, moteur "
       + "principal du Nasdaq 100. La moyenne équipondérée traite chaque titre à "
       + "poids égal : elle montre si la hausse est portée par l'ensemble du groupe "
@@ -364,7 +365,8 @@ const T = {
     nIwmFlat:v => `Small caps flat (${fmtPc(v)})`,
     nSpread:(a,x,b,y) => `Dispersion: ${a} ${fmtPc(x)} vs ${b} ${fmtPc(y)}`,
     b_risk_on:"RISK-ON", b_lean_on:"Leaning risk", b_neutral:"Neutral",
-    b_lean_off:"Leaning defensive", b_risk_off:"RISK-OFF",
+    b_lean_off:"Leaning defensive", b_risk_off:"RISK-OFF", b_incomplete:"Incomplete",
+    magIncomplete:n => `Incomplete sample — ${n} value${n > 1 ? "s" : ""} missing, bias not computed`,
     magHelp:"MAG7 — the seven largest technology names, the main driver of the "
       + "Nasdaq 100. The equal-weighted average treats each name alike: it shows "
       + "whether a move is carried by the whole group or by a single stock. The "
@@ -607,10 +609,18 @@ function renderMag(){
      Chaque réponse devient une ligne courte, colorée selon qu'elle conforte
      ou contredit le mouvement. */
   const bias = a.bias || "neutral";
-  const bcls = bias.includes("on") ? "up" : bias.includes("off") ? "dn" : "mid";
+  const bcls = bias === "incomplete" ? "mid" : bias.includes("on") ? "up" : bias.includes("off") ? "dn" : "mid";
   const d = a.day || 0, up = d >= 0;
   const notes = [];
 
+  // Un biais ne se calcule que sur un groupe complet (cf. _news_mag7 côté
+  // serveur) : sur échantillon partiel, on l'indique plutôt que d'afficher
+  // un verdict qui n'a l'air complet que par accident.
+  if (a.complete === false){
+    const nMiss = (a.missing || []).length
+      + [a.sox, a.iwm, a.vix].filter(v => v == null).length;
+    notes.push({tone: "warn", txt: t("magIncomplete")(Math.max(1, nMiss))});
+  }
   if (a.breadth != null){
     const wide = a.breadth >= 70, narrow = a.breadth <= 30;
     notes.push({

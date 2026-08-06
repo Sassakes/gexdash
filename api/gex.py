@@ -126,8 +126,14 @@ def _news_finnhub(path_, params, key, ttl):
         import requests
         p = dict(params)
         p["token"] = os.environ.get("FINNHUB_API_KEY", "")
-        return requests.get(f"https://finnhub.io/api/v1/{path_}", params=p,
-                            timeout=10).json()
+        try:
+            return requests.get(f"https://finnhub.io/api/v1/{path_}", params=p,
+                                timeout=10).json()
+        except Exception:
+            # Un symbole en échec (timeout, rate-limit) ne doit pas faire
+            # tomber tout le payload MAG7 en 502 : {} laisse le champ à None,
+            # géré explicitement en aval (agg.complete).
+            return {}
     return _news_cached(key, ttl, fetch)
 
 
@@ -458,47 +464,102 @@ def _news_mag7():
         f_mkt = ex.submit(_news_markets)
         rows, markets = f_mag.result(), f_mkt.result()
 
-    def avg(k):
-        vals = [r[k] for r in rows if r.get(k) is not None]
-        return round(sum(vals) / len(vals), 2) if vals else None
+    # Un appel Finnhub en échec (rate-limit, timeout) laisse un champ à None
+    # sans lever d'exception — cf. _news_finnhub. Moyenner ou compter la
+    # largeur sur un échantillon partiel produirait un chiffre qui A L'AIR
+    # complet mais ne l'est pas : la moyenne comme la largeur exigent donc la
+    # couverture TOTALE du groupe, jamais un sous-ensemble silencieux.
+    def avg_strict(k, group):
+        vals = [r.get(k) for r in group]
+        if not vals or any(v is None for v in vals):
+            return None
+        return round(sum(vals) / len(vals), 2)
+
+    mk = {m["sym"]: m.get("dp") for m in markets}
+    score_syms = ("SOXX", "IWM", "VIXY")
+    mag_complete = all(r.get("dp") is not None for r in rows) and bool(rows)
+    complete = mag_complete and all(mk.get(s) is not None for s in score_syms)
 
     # Lecture de régime : on ne se contente pas de la moyenne, qui masque une
     # hausse portée par une seule valeur. On mesure aussi la LARGEUR (combien
     # de titres montent) et on croise semis, small caps et volatilité — les
     # trois signaux qui distinguent une vraie prise de risque d'un rebond
-    # étroit sur quelques méga-capitalisations.
-    ups = [r for r in rows if (r.get("dp") or 0) > 0]
-    breadth = round(100.0 * len(ups) / len(rows)) if rows else None
-    mk = {m["sym"]: (m.get("dp") or 0) for m in markets}
-    mag_d = avg("dp") or 0
+    # étroit sur quelques méga-capitalisations. Le tout exige un groupe MAG7
+    # complet : sinon "6 titres sur 8 en hausse" et "8 sur 8" produiraient la
+    # même lecture par accident.
+    breadth = (round(100.0 * len([r for r in rows if (r.get("dp") or 0) > 0])
+                      / len(rows)) if mag_complete else None)
+    mag_d = avg_strict("dp", rows)
     score = 0
-    if mag_d > 0.15:
-        score += 1
-    elif mag_d < -0.15:
-        score -= 1
-    if (breadth or 0) >= 70:
-        score += 1
-    elif breadth is not None and breadth <= 30:
-        score -= 1
-    if mk.get("SOXX", 0) > 0.3:
-        score += 1                      # semis en tête = appétit pour le risque
-    elif mk.get("SOXX", 0) < -0.3:
-        score -= 1
-    if mk.get("IWM", 0) > 0.3:
-        score += 1                      # small caps suivent = hausse large
-    elif mk.get("IWM", 0) < -0.3:
-        score -= 1
-    if mk.get("VIXY", 0) < -1:
-        score += 1                      # volatilité qui reflue
-    elif mk.get("VIXY", 0) > 3:
-        score -= 1
-    bias = ("risk_on" if score >= 3 else "risk_off" if score <= -3
-            else "lean_on" if score > 0 else "lean_off" if score < 0 else "neutral")
+    bias = "incomplete"
+    if complete:
+        d = mag_d or 0
+        if d > 0.15:
+            score += 1
+        elif d < -0.15:
+            score -= 1
+        if (breadth or 0) >= 70:
+            score += 1
+        elif breadth is not None and breadth <= 30:
+            score -= 1
+        if mk["SOXX"] > 0.3:
+            score += 1                  # semis en tête = appétit pour le risque
+        elif mk["SOXX"] < -0.3:
+            score -= 1
+        if mk["IWM"] > 0.3:
+            score += 1                  # small caps suivent = hausse large
+        elif mk["IWM"] < -0.3:
+            score -= 1
+        if mk["VIXY"] < -1:
+            score += 1                  # volatilité qui reflue
+        elif mk["VIXY"] > 3:
+            score -= 1
+        bias = ("risk_on" if score >= 3 else "risk_off" if score <= -3
+                else "lean_on" if score > 0 else "lean_off" if score < 0 else "neutral")
     return {"rows": rows, "markets": markets,
-            "agg": {"day": avg("dp"), "week": avg("week"), "month": avg("month"),
+            "agg": {"day": mag_d, "week": avg_strict("week", rows),
+                    "month": avg_strict("month", rows),
                     "breadth": breadth, "score": score, "bias": bias,
+                    "complete": complete,
+                    "missing": [r["sym"] for r in rows if r.get("dp") is None],
                     "sox": mk.get("SOXX"), "iwm": mk.get("IWM"),
                     "vix": mk.get("VIXY")}}
+
+
+# Cache PARTAGE (Redis) pour le meme motif que _news_fj_shared : sans lui,
+# chaque instance Vercel maintient son propre cache mémoire de 45 s pour les
+# 17 symboles (8 MAG7 + 9 marchés) — N instances concurrentes = N x 17 appels
+# Finnhub, au-delà de la limite de 60 requêtes/minute du palier gratuit. Les
+# appels en excès échouaient silencieusement (cases vides, biais faussé). Un
+# seul calcul par fenêtre de TTL, partagé par tout le déploiement, suffit.
+MAG7_KEY = "gex:mag7"
+MAG7_TTL = 45
+MAG7_STALE_OK_S = 1200  # au-delà, un vieux snapshot complet ne vaut plus mieux qu'un instantané incomplet mais frais
+
+
+def _news_mag7_shared():
+    now = time.time()
+    cached = None
+    try:
+        blob = kv_get(MAG7_KEY)
+        if blob:
+            cached = json.loads(blob)
+            if now - cached.get("at", 0) < MAG7_TTL:
+                return cached["mag7"]
+    except Exception:
+        cached = None
+
+    data = _news_mag7()
+    if not data["agg"]["complete"] and cached \
+            and cached.get("mag7", {}).get("agg", {}).get("complete") \
+            and now - cached.get("at", 0) < MAG7_STALE_OK_S:
+        return cached["mag7"]           # chiffre un peu périmé plutôt qu'un biais fabriqué
+
+    try:
+        kv_set(MAG7_KEY, json.dumps({"at": now, "mag7": data}), ex=180)
+    except Exception:
+        pass
+    return data
 
 
 # ═══════════════════ EM RESTANT (cône intrajournalier) ═══════════════════
@@ -2227,7 +2288,7 @@ class handler(BaseHTTPRequestHandler):
                 elif typ == "feed":
                     out = {"feed": _news_feed()}
                 elif typ == "mag7":
-                    out = {"mag7": _news_mag7()}
+                    out = {"mag7": _news_mag7_shared()}
                 else:
                     out = {"news": _news_headlines("general")}
                 self.send_response(200)

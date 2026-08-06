@@ -214,6 +214,8 @@
   .mag7agg{display:flex; gap:12px; padding:5px 10px; background:var(--surface2);
     border-bottom:1px solid var(--line-strong); font-family:var(--mono); font-size:10.5px}
   .mag7agg span{color:var(--muted)} .mag7agg b{margin-left:5px}
+  .mag7warn{padding:4px 10px; font-size:9.5px; color:var(--red);
+    border-bottom:1px solid var(--line)}
   .ecowrap{height:100%; min-height:280px; overflow:auto;
     -webkit-overflow-scrolling:touch; display:flex}
   .ecowrap > *{flex:1 1 auto; width:100% !important; max-width:100% !important; min-width:0}
@@ -444,11 +446,13 @@ const TXT = {
   fr: {mkts:"Panorama marché", needAuth:"Connexion requise", goSignIn:"Se connecter", noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
-       feedKo:"flux indisponible", edit:"Éditer", done:"Terminé"},
+       feedKo:"flux indisponible", edit:"Éditer", done:"Terminé",
+       magIncomplete:"Échantillon incomplet"},
   en: {mkts:"Market snapshot", needAuth:"Sign-in required", goSignIn:"Sign in", noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
        hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
-       feedKo:"feed unavailable", edit:"Edit", done:"Done"},
+       feedKo:"feed unavailable", edit:"Edit", done:"Done",
+       magIncomplete:"Incomplete sample"},
 };
 const tx = k => (TXT[LANG] || TXT.fr)[k];
 
@@ -954,6 +958,8 @@ async function mountNewsCard(cfg, host){
         box.innerHTML =
           `<div class="mag7agg"><span>J${nPct(agg.day)}</span>
              <span>S${nPct(agg.week)}</span><span>M${nPct(agg.month)}</span></div>` +
+          (agg.complete === false
+            ? `<div class="mag7warn">${tx("magIncomplete")}</div>` : "") +
           rows.map(line).join("") +
           (mkts.length ? `<div class="mag7sep">${tx("mkts")}</div>`
                          + mkts.map(line).join("") : "");

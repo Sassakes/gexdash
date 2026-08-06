@@ -2625,7 +2625,18 @@ class FluxStrikesRenderer{
 }
 
 class FluxStrikesPrimitive{
-  constructor(){ this._series = null; this._requestUpdate = null; this._paneViews = [{renderer: new FluxStrikesRenderer(this)}]; }
+  // paneViews() doit renvoyer un objet dont `renderer` est une METHODE
+  // (l'API Series Primitives appelle paneView.renderer()) -- une instance
+  // posée directement sous cette clé jette "renderer is not a function" au
+  // premier paint, silencieusement pour l'appelant : l'exception remonte
+  // dans la boucle de rendu du chart et coupe TOUT le dessin du panneau
+  // (dégradé, ligne de prix, pastilles compris), pas seulement les repères
+  // de strikes.
+  constructor(){
+    this._series = null; this._requestUpdate = null;
+    this._renderer = new FluxStrikesRenderer(this);
+    this._paneViews = [{renderer: () => this._renderer}];
+  }
   attached(param){ this._series = param.series; this._requestUpdate = param.requestUpdate; }
   detached(){ this._series = null; this._requestUpdate = null; }
   updateAllViews(){}
