@@ -2478,13 +2478,15 @@ function fluxLevelMarkers(){
 function drawFlux(){
   const cv = $("fluxCanvas");
   if (!cv || cv.hidden || cv.offsetParent === null) return;
-  const box = cv.parentElement;
   const dpr = window.devicePixelRatio || 1;
-  const w = box.clientWidth, h = box.clientHeight;
+  // taille CSS du canevas LUI-MEME (fixée en dur dans le style, cf. .fluxbox),
+  // jamais celle du panneau parent : le parent contient le canevas, donc
+  // recopier sa hauteur dessus grossit le canevas -> grossit le parent ->
+  // boucle infinie via le ResizeObserver sur #fluxBox.
+  const w = cv.clientWidth, h = cv.clientHeight;
   if (!w || !h) return;
   cv.width = Math.max(1, Math.round(w * dpr));
   cv.height = Math.max(1, Math.round(h * dpr));
-  cv.style.width = w + "px"; cv.style.height = h + "px";
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
