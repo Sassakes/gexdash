@@ -860,8 +860,11 @@ function drawSessionLines(ctx, chart, times, w, h){
 }
 
 /* ═══ Interpolation du tick : la bougie GLISSE vers le nouveau prix (easing)
-   au lieu de sauter — l'effet de fluidité TradingView, côté rendu. ═══ */
-function animatePrice(holder, series, bar, newClose, ms){
+   au lieu de sauter — l'effet de fluidité TradingView, côté rendu.
+   onFrame (optionnel) est rappelé à chaque frame APRÈS series.update(bar) :
+   ça permet à un panneau annexe (cf. drawFlux) de suivre le même glissement
+   au lieu de sauter au tick suivant, sans dupliquer la boucle d'anim. ═══ */
+function animatePrice(holder, series, bar, newClose, ms, onFrame){
   if (holder._anim) cancelAnimationFrame(holder._anim);
   const start = performance.now(), from = bar.close;
   if (!isFinite(from) || Math.abs(newClose - from) < 1e-9){
@@ -869,6 +872,7 @@ function animatePrice(holder, series, bar, newClose, ms){
     bar.high = Math.max(bar.high, newClose);
     bar.low = Math.min(bar.low, newClose);
     series.update(bar);
+    if (onFrame) onFrame();
     return;
   }
   const step = now => {
@@ -879,6 +883,7 @@ function animatePrice(holder, series, bar, newClose, ms){
     bar.high = Math.max(bar.high, p);
     bar.low = Math.min(bar.low, p);
     try{ series.update(bar); }catch(_){ holder._anim = null; return; }
+    if (onFrame) onFrame();
     holder._anim = k < 1 ? requestAnimationFrame(step) : null;
   };
   holder._anim = requestAnimationFrame(step);

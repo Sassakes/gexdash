@@ -998,7 +998,7 @@ const T = {
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
     fluxWait:"En attente du prochain calcul intrajournalier",
-    fluxReady:h=>"Étape 1 · gamma seul · calculé "+h+" UTC",
+    fluxReady:h=>"Calculé "+h+" UTC",
     fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
     fsVerdict:"Synthèse flux", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCÉLÉRATION",
     fsV_derive:"DÉRIVE", fsV_divergence:"DIVERGENCE",
@@ -1061,7 +1061,7 @@ const T = {
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
     fluxWait:"Waiting for the next intraday computation",
-    fluxReady:h=>"Step 1 · gamma only · computed "+h+" UTC",
+    fluxReady:h=>"Computed "+h+" UTC",
     fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
     fsVerdict:"Flux synthesis", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCELERATION",
     fsV_derive:"DRIFT", fsV_divergence:"DIVERGENCE",
@@ -1943,18 +1943,21 @@ async function pollQuote(){
       CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
                        low: Math.min(prevClose, p), close: p};
       CHART.series.update(CHART.lastBar);
+      if (FLUX_ON) drawFlux();      // pas de glissement ici, un seul redessin suffit
     }else{
-      // bougie courante qui VIT : high/low s'étendent, close glisse vers p
+      // bougie courante qui VIT : high/low s'étendent, close glisse vers p —
+      // le repère de prix du canevas Flux suit CE MÊME glissement (onFrame),
+      // au lieu de sauter d'un coup au tick suivant.
       CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
       CHART.lastBar.low  = Math.min(CHART.lastBar.low, p);
-      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100);
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100, FLUX_ON ? drawFlux : null);
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
     updateEmCone();          // le cône se resserre au même rythme que le prix
-    // Repère de prix + synthèse du Flux suivent CE tick (aucun appel serveur) :
-    // la matrice elle-même ne bouge qu'au recalcul intrajournalier, seule la
-    // position du prix dedans doit vivre à chaque tick.
-    if (FLUX_ON){ renderFluxSynth(); drawFlux(); }
+    // Synthèse texte du Flux : une fois par tick (pas par frame d'anim, ça
+    // ferait clignoter les chiffres) ; la matrice elle-même ne bouge qu'au
+    // recalcul intrajournalier, seule la position du prix dedans vit ici.
+    if (FLUX_ON) renderFluxSynth();
   }catch(e){ liveBadge("live: ERREUR " + (e && e.message || e), false); }
 }
 
