@@ -385,6 +385,14 @@ fr: {
     {t:"h", x:"Le contexte volume"},
     {t:"p", x:"L'open interest est figé depuis la veille : le dégradé montre l'exposition héritée. Le volume du jour montre où les positions se construisent <b>maintenant</b>. Un strike dont le volume dépasse l'encours accumulé est un endroit où le hedging naît sous tes yeux."},
     {t:"note", x:"Réserve : le volume dit <b>où</b> ça bouge, pas dans quel sens. Un gros volume peut être de l'achat ou de la vente client, avec des implications opposées."},
+    {t:"h", x:"Prise en main"},
+    {t:"codes", items:[
+      {k:"🖱", n:"Survol", d:"Prix, heure et valeur $ exacte de la cellule sous le curseur — même lecture que le croisillon du chart de prix."},
+      {k:"⚙", n:"Molette", d:"Zoom centré sur le prix survolé, pour isoler une zone étroite sans que les extrêmes n'écrasent l'échelle."},
+      {k:"✋", n:"Glisser", d:"Décale la fenêtre de prix visible sans changer le niveau de zoom."},
+      {k:"⟲", n:"Double-clic", d:"Réinitialise le zoom sur la grille complète."}]},
+    {t:"note", x:"<b>Exemple.</b> Le dégradé est saturé sur toute la partie haute et tu veux voir précisément où le gamma repasse sous la moitié de son maximum : molette pour zoomer entre +1σ et +2σ, la ligne de contour fine marque exactement cette frontière — bien plus net qu'à l'œil sur un dégradé plein écran."},
+    {t:"p", x:"Le bouton <b>Strikes</b> superpose les niveaux d'options les plus actifs (volume/OI du jour) au dégradé — trait plein pour un call, pointillé pour un put, opacité proportionnelle au ratio volume/OI. Seuls les plus significatifs restent étiquetés ; le reste est réduit à un point discret en bord de grille pour ne pas noyer les niveaux qui comptent."},
     {t:"note", x:"Portée et Flux donnent un <b>contexte</b>, pas des signaux. Ils indiquent dans quel régime on se trouve et ce qui reste possible — l'entrée et la sortie restent la méthode du trader."}]},
 
   {id:"rythme", t:"Le calendrier des mises à jour", b:[
@@ -515,6 +523,14 @@ en: {
     {t:"h", x:"Volume context"},
     {t:"p", x:"Open interest is frozen from the prior day: the gradient shows inherited exposure. Today's volume shows where positions are being built <b>right now</b>. A strike whose volume exceeds accumulated open interest is a place where hedging is being born in front of you."},
     {t:"note", x:"Caveat: volume tells you <b>where</b> it's moving, not which direction. Heavy volume can be client buying or selling, with opposite implications."},
+    {t:"h", x:"Getting started"},
+    {t:"codes", items:[
+      {k:"🖱", n:"Hover", d:"Price, time and the exact $ value of the cell under the cursor — same reading as the price chart's crosshair."},
+      {k:"⚙", n:"Wheel", d:"Zoom centered on the hovered price, to isolate a narrow band without the extremes crushing the scale."},
+      {k:"✋", n:"Drag", d:"Pans the visible price window without changing the zoom level."},
+      {k:"⟲", n:"Double-click", d:"Resets the zoom to the full grid."}]},
+    {t:"note", x:"<b>Example.</b> The gradient is saturated across the whole top half and you want to see exactly where gamma drops below half its peak: wheel-zoom between +1σ and +2σ, and the thin contour line marks that boundary precisely — far clearer than eyeballing a full-panel gradient."},
+    {t:"p", x:"The <b>Strikes</b> button overlays the day's most active option levels (volume/OI) on the gradient — solid line for a call, dashed for a put, opacity scaled to the volume/OI ratio. Only the most significant stay labeled; the rest collapse into a discreet dot at the grid's edge so they don't drown out the levels that matter."},
     {t:"note", x:"Range and Flow give <b>context</b>, not signals. They show which regime you're in and what's still possible — entry and exit remain the trader's job."}]},
 
   {id:"rythme", t:"Update schedule", b:[

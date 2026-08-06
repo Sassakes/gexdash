@@ -255,7 +255,7 @@
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
   .fluxsw:first-child{margin-left:0}
   .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
-  #fluxCanvas{flex:none; width:100%; display:block; height:400px}
+  #fluxCanvas{flex:none; width:100%; display:block; height:400px; cursor:grab}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -2315,16 +2315,21 @@ function fluxPercentile(sortedAsc, p){
 }
 
 // ---- palette du dégradé : MÊME traitement que la heatmap du dashboard
-// (hmCellStyle, dash.html) -- interpolation de teinte base->saturée avec
-// easing pow(0.7), pas un simple alpha sur une couleur plate. Un halo doré
-// signale les cellules extrêmes (percentile 99), même langage visuel que le
-// reste du produit plutôt qu'une convention isolée à ce seul panneau. ----
+// (hmCellStyle, dash.html) -- interpolation de teinte base->saturée, pas un
+// simple alpha sur une couleur plate. Un halo doré signale les cellules
+// extrêmes (percentile 99), même langage visuel que le reste du produit
+// plutôt qu'une convention isolée à ce seul panneau.
+// easing pow(1.35) et non 0.7 comme dash.html : un exposant < 1 pousse les
+// valeurs FAIBLES vers la saturation, donc l'essentiel du champ finit
+// "chaud" et le dégradé paraît plat. > 1 réserve la pleine saturation aux
+// valeurs réellement extrêmes -- la structure interne (où c'est VRAIMENT
+// fort) redevient lisible plutôt qu'un aplat à deux tons. ----
 const FLUX_TEAL_BASE = [15, 26, 24], FLUX_TEAL_HOT = [38, 166, 154];
 const FLUX_RED_BASE = [28, 18, 18], FLUX_RED_HOT = [239, 83, 80];
 const FLUX_GOLD = [240, 185, 11];
 function fluxShade(v, ref, ref99){
   const av = Math.abs(v);
-  const x = Math.pow(Math.min(1, av / ref), 0.7);
+  const x = Math.pow(Math.min(1, av / ref), 1.35);
   const base = v >= 0 ? FLUX_TEAL_BASE : FLUX_RED_BASE, hot = v >= 0 ? FLUX_TEAL_HOT : FLUX_RED_HOT;
   let r = base[0] + (hot[0] - base[0]) * x, g = base[1] + (hot[1] - base[1]) * x, b = base[2] + (hot[2] - base[2]) * x;
   if (ref99 && av >= ref99){
@@ -2332,6 +2337,48 @@ function fluxShade(v, ref, ref99){
     r += (FLUX_GOLD[0] - r) * g2; g += (FLUX_GOLD[1] - g) * g2; b += (FLUX_GOLD[2] - b) * g2;
   }
   return [Math.round(r), Math.round(g), Math.round(b), 0.20 + 0.80 * x];
+}
+
+// Isoligne : où |valeur|/ref franchit un seuil donné, une frontière par
+// colonne horaire (gamma+ et gamma- traités séparément -- deux surfaces
+// distinctes, jamais fondues). Un dégradé lisse seul rend les zones dures à
+// distinguer une fois saturé ; ces isolignes donnent une frontière lisible,
+// comme les courbes de niveau d'une carte topographique. Une colonne sans
+// franchissement casse le trait plutôt que de sauter par-dessus un trou.
+function drawFluxContour(ctx, rows, nH, priceMin, priceMax, nP, threshold, ref, xFor, yFor){
+  const step = (priceMax - priceMin) / Math.max(1, nP - 1);
+  const posPts = new Array(nH).fill(null), negPts = new Array(nH).fill(null);
+  for (let hi = 0; hi < nH; hi++){
+    const col = rows[hi];
+    for (let pi = 0; pi < nP - 1; pi++){
+      const v0 = col[pi], v1 = col[pi + 1];
+      const p0 = priceMin + pi * step, p1 = priceMin + (pi + 1) * step;
+      if (p1 < priceMin || p0 > priceMax) continue;   // hors de la fenêtre zoomée
+      if (v0 >= 0 && v1 >= 0){
+        const a0 = v0 / ref, a1 = v1 / ref;
+        if ((a0 < threshold) !== (a1 < threshold))
+          posPts[hi] = priceMin + (pi + (threshold - a0) / (a1 - a0 || 1e-9)) * step;
+      } else if (v0 < 0 && v1 < 0){
+        const a0 = Math.abs(v0) / ref, a1 = Math.abs(v1) / ref;
+        if ((a0 < threshold) !== (a1 < threshold))
+          negPts[hi] = priceMin + (pi + (threshold - a0) / (a1 - a0 || 1e-9)) * step;
+      }
+    }
+  }
+  const draw = (pts, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
+    ctx.beginPath();
+    let started = false;
+    for (let hi = 0; hi < nH; hi++){
+      if (pts[hi] == null){ started = false; continue; }
+      const x = xFor(hi), y = yFor(pts[hi]);
+      if (!started){ ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  };
+  draw(posPts, `rgba(38,166,154,${0.25 + threshold * 0.35})`);
+  draw(negPts, `rgba(239,83,80,${0.25 + threshold * 0.35})`);
 }
 
 // $ bruts, jamais moyennes entre grecques (unites differentes, cf. BRIEF-flux.md) :
@@ -2506,6 +2553,11 @@ function fluxLevelMarkers(){
 // ce travail 60 fois par seconde. FLUX_LAYOUT porte les coordonnées dont le
 // croisillon a besoin pour retrouver prix/heure/valeur sous la souris.
 let FLUX_STATIC = null, FLUX_LAYOUT = null, FLUX_HOVER_WIRED = false;
+// Fenêtre de prix visible (zoom/pan) : null = plage complète, sinon
+// {min, max} en prix produit. Remise à null uniquement quand elle ne
+// recoupe plus la grille reçue (cf. drawFlux) -- persiste d'un
+// rafraîchissement ou d'un changement de mode à l'autre.
+let FLUX_VIEW = null;
 
 function blitFluxStatic(){
   const cv = $("fluxCanvas");
@@ -2553,7 +2605,15 @@ function drawFlux(){
 
   const rows = mat;                     // rows[heureIdx][prixIdx], matrice du mode sélectionné
   const nH = rows.length, nP = d.price_grid.length;
-  const priceMin = d.price_grid[0], priceMax = d.price_grid[nP - 1];
+  const fullMin = d.price_grid[0], fullMax = d.price_grid[nP - 1];
+  // FLUX_VIEW porte le zoom/pan courant (molette + glisser, cf. bindFluxHover).
+  // Réinitialisé seulement si la fenêtre en cours ne recoupe plus du tout la
+  // grille reçue (changement de cible ou de marché) -- pas à chaque simple
+  // rafraîchissement de données, pour que le zoom tienne d'un tick à l'autre.
+  if (!FLUX_VIEW || FLUX_VIEW.max <= fullMin || FLUX_VIEW.min >= fullMax){
+    FLUX_VIEW = {min: fullMin, max: fullMax};
+  }
+  const priceMin = FLUX_VIEW.min, priceMax = FLUX_VIEW.max;
   // yFor ne dépend que de padT/gh (fixes) : calculable avant de savoir combien
   // de place la marge droite des étiquettes va prendre.
   const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
@@ -2644,7 +2704,20 @@ function drawFlux(){
   }
   ctx.imageSmoothingEnabled = true;
   if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(src, padL, padT, gw, gh);
+  // `src` couvre TOUJOURS la grille complète [fullMin, fullMax] (le zoom ne
+  // change jamais ce qui est calculé, seulement ce qui est cadré) : on en
+  // découpe la tranche [priceMin, priceMax] avant l'étirement final -- même
+  // logique qu'un crop d'image, pas un recalcul.
+  const cropTop = (fullMax - priceMax) / (fullMax - fullMin || 1) * sh;
+  const cropH = (priceMax - priceMin) / (fullMax - fullMin || 1) * sh;
+  ctx.drawImage(src, 0, cropTop, sw, Math.max(1, cropH), padL, padT, gw, gh);
+
+  // ---- lignes de contour : où le dégradé franchit 33 % / 66 % de sa valeur
+  // de référence (percentile 95), séparément côté gamma+ et gamma-. Un
+  // dégradé lisse seul rend les zones difficiles à distinguer une fois
+  // saturé ; ces isolignes donnent une frontière lisible, comme les courbes
+  // de niveau d'une carte topographique. ----
+  [0.33, 0.66].forEach(thr => drawFluxContour(ctx, rows, nH, priceMin, priceMax, nP, thr, ref, xFor, yFor));
 
   // ---- axes : prix en unités sigma (même pas que la grille, 0.5σ), temps
   // en heures jusqu'à la clôture ----
@@ -2682,18 +2755,25 @@ function drawFlux(){
     .concat(markers.filter(m => m.tier === 2).sort((a, b) => b.ratio - a.ratio));
 
   for (const m of order){
-    ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
-    ctx.beginPath(); ctx.moveTo(padL, m.y); ctx.lineTo(padL + gw, m.y); ctx.stroke();
-    ctx.setLineDash([]);
-
+    // La LIGNE, pas seulement l'étiquette, doit passer par l'éviction pour
+    // les strikes (tier 2) : plusieurs dizaines de niveaux proches du prix
+    // (l'activité s'y concentre) donnaient un paquet de tirets superposés,
+    // illisible comme un code-barres, même si chaque étiquette individuelle
+    // respectait bien l'anti-collision. tier 0/1 (prix courant, CW/PW/Flip)
+    // reste toujours tracé : rares, jamais en surnombre.
     const show = m.tier < 2 || fits(m.y);
     if (!show){
-      // évincé : point discret au bord droit, la ligne reste identifiable
+      // évincé : point discret au bord droit, aucune ligne qui viendrait
+      // noyer les niveaux déjà retenus
       ctx.globalAlpha = 0.5; ctx.fillStyle = m.color;
       ctx.beginPath(); ctx.arc(w - 4, m.y, 1.7, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
       continue;
     }
+    ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
+    ctx.beginPath(); ctx.moveTo(padL, m.y); ctx.lineTo(padL + gw, m.y); ctx.stroke();
+    ctx.setLineDash([]);
+
     placedYs.push(m.y);
     ctx.font = m.font;
     const tw = ctx.measureText(m.text).width;
@@ -2794,30 +2874,102 @@ function drawFluxCrosshair(mx, my){
   }
 }
 
+// Zoom molette centré sur le prix sous le curseur (comme un chart de prix
+// classique) : factor < 1 rapproche les bornes (zoom avant), > 1 les
+// écarte. Jamais au-delà de la grille reçue -- il n'y a pas de donnée à
+// révéler hors de [fullMin, fullMax], contrairement à un vrai historique.
+function fluxZoomAt(price, factor){
+  if (!FLUX_LAYOUT) return;
+  const d = FLUX_DATA;
+  if (!d || !d.price_grid || !d.price_grid.length) return;
+  const fullMin = d.price_grid[0], fullMax = d.price_grid[d.price_grid.length - 1];
+  const cur = FLUX_VIEW || {min: fullMin, max: fullMax};
+  let newMin = price - (price - cur.min) * factor;
+  let newMax = price + (cur.max - price) * factor;
+  const minSpan = (fullMax - fullMin) * 0.04;      // pas de zoom infini sur une grille de 13 bandes
+  if (newMax - newMin < minSpan){
+    const mid = (newMin + newMax) / 2;
+    newMin = mid - minSpan / 2; newMax = mid + minSpan / 2;
+  }
+  if (newMin < fullMin){ newMax = Math.min(fullMax, newMax + (fullMin - newMin)); newMin = fullMin; }
+  if (newMax > fullMax){ newMin = Math.max(fullMin, newMin - (newMax - fullMax)); newMax = fullMax; }
+  FLUX_VIEW = {min: newMin, max: newMax};
+  drawFlux();
+}
+
 // Écoute souris posée une seule fois (comme le ResizeObserver de
-// setFluxView) : mousemove cadencé par requestAnimationFrame pour ne
-// jamais empiler plus d'un redessin par frame, mouseleave efface le
-// croisillon sans recalculer le dégradé (simple blit de FLUX_STATIC).
+// setFluxView). Trois usages, tous cadencés par requestAnimationFrame pour
+// ne jamais empiler plus d'un redessin par frame :
+//  - survol seul -> croisillon (drawFluxCrosshair, simple blit + overlay) ;
+//  - glisser (bouton enfoncé) -> pan vertical, décale FLUX_VIEW ;
+//  - molette -> zoom centré sur le prix sous le curseur ;
+//  - double-clic -> réinitialise le zoom (FLUX_VIEW = null, drawFlux le
+//    recalcule sur la grille complète).
 function bindFluxHover(){
   if (FLUX_HOVER_WIRED) return;
   FLUX_HOVER_WIRED = true;
   const cv = $("fluxCanvas");
   if (!cv) return;
   let raf = null, pending = null;
+  let drag = null;   // {startY, view0} pendant un glisser
+
   cv.addEventListener("mousemove", e => {
     const r = cv.getBoundingClientRect();
-    pending = {mx: e.clientX - r.left, my: e.clientY - r.top};
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (drag){
+      pending = {drag: true, my};
+    } else {
+      pending = {drag: false, mx, my};
+    }
     if (raf) return;
     raf = requestAnimationFrame(() => {
       raf = null;
-      if (pending) drawFluxCrosshair(pending.mx, pending.my);
+      if (!pending) return;
+      if (pending.drag){
+        const L = FLUX_LAYOUT;
+        if (!L) return;
+        // glisser le contenu VERS LE BAS doit faire descendre les prix
+        // affichés (comme saisir la grille et la tirer) : la fenêtre de
+        // prix se décale dans le sens opposé au mouvement de la souris.
+        const dy = pending.my - drag.startY;
+        const priceDelta = (dy / L.gh) * (drag.view0.max - drag.view0.min);
+        const d = FLUX_DATA;
+        const fullMin = d.price_grid[0], fullMax = d.price_grid[d.price_grid.length - 1];
+        let newMin = drag.view0.min + priceDelta, newMax = drag.view0.max + priceDelta;
+        if (newMin < fullMin){ newMax += fullMin - newMin; newMin = fullMin; }
+        if (newMax > fullMax){ newMin -= newMax - fullMax; newMax = fullMax; }
+        FLUX_VIEW = {min: newMin, max: newMax};
+        drawFlux();
+      } else {
+        drawFluxCrosshair(pending.mx, pending.my);
+      }
     });
+  });
+  cv.addEventListener("mousedown", e => {
+    if (!FLUX_LAYOUT || !FLUX_VIEW) return;
+    drag = {startY: e.clientY, view0: {...FLUX_VIEW}};
+    cv.style.cursor = "grabbing";
+  });
+  window.addEventListener("mouseup", () => {
+    if (!drag) return;
+    drag = null;
+    cv.style.cursor = "";
   });
   cv.addEventListener("mouseleave", () => {
     if (raf) cancelAnimationFrame(raf);
     raf = null; pending = null;
-    blitFluxStatic();
+    if (!drag) blitFluxStatic();
   });
+  cv.addEventListener("wheel", e => {
+    if (!FLUX_LAYOUT) return;
+    e.preventDefault();
+    const r = cv.getBoundingClientRect();
+    const my = e.clientY - r.top;
+    const L = FLUX_LAYOUT;
+    const price = L.priceMax - (my - L.padT) / L.gh * (L.priceMax - L.priceMin || 1);
+    fluxZoomAt(price, e.deltaY > 0 ? 1.15 : 1 / 1.15);
+  }, {passive: false});
+  cv.addEventListener("dblclick", () => { FLUX_VIEW = null; drawFlux(); });
 }
 
 // Fusionne calls/puts du contexte volume/OI (déjà top_n côté serveur, cf.
