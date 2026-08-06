@@ -409,6 +409,56 @@ def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
     return {"gamma": rows_gamma, "vanna": rows_vanna, "charm": rows_charm}
 
 
+def flow_volume_context(opts, spot_prod, basis, top_n=5):
+    """Contexte live : OI est fige depuis hier soir, le volume est celui du
+    jour -- comparer les deux montre OU les positions se construisent
+    AUJOURD'HUI, sans attendre un flux tick-par-tick qu'on n'a pas.
+    Agrege par strike (echelle produit = index + basis, comme le reste du
+    panneau Flux -- cf. per_strike_gex), calls et puts separes.
+
+    Un ratio vol/OI > 1 signale un strike ou l'activite du jour depasse deja
+    tout l'encours accumule. Ca ne dit PAS le sens : un gros volume peut etre
+    de l'achat ou de la vente cote client, avec des implications inverses
+    pour les dealers -- indicateur de zone d'attention, pas de direction.
+
+    Retourne {"calls": [...], "puts": [...], "call_vol", "put_vol",
+    "call_put_ratio"} trie par volume decroissant, ou None si la chaine n'a
+    aucun volume exploitable (WE, avant l'ouverture)."""
+    agg = {}
+    for o in opts:
+        if o.vol <= 0:
+            continue
+        k_idx = o.K / (o.scale or 1.0)
+        key = (round(k_idx, 6), o.is_call)
+        v = agg.setdefault(key, [0.0, 0.0])
+        v[0] += o.vol
+        v[1] += o.OI
+    if not agg:
+        return None
+    calls, puts = [], []
+    call_vol = put_vol = 0.0
+    for (k_idx, is_call), (vol, oi) in agg.items():
+        k_prod = k_idx + basis
+        entry = {
+            "strike": round(k_prod, 2),
+            "volume": int(vol),
+            "oi": int(oi),
+            "vol_oi_ratio": round(vol / oi, 2) if oi > 0 else None,
+            "distance": round(k_prod - spot_prod, 2),
+        }
+        (calls if is_call else puts).append(entry)
+        if is_call:
+            call_vol += vol
+        else:
+            put_vol += vol
+    calls.sort(key=lambda e: -e["volume"])
+    puts.sort(key=lambda e: -e["volume"])
+    ratio = round(call_vol / put_vol, 2) if put_vol > 0 else None
+    return {"calls": calls[:top_n], "puts": puts[:top_n],
+            "call_vol": int(call_vol), "put_vol": int(put_vol),
+            "call_put_ratio": ratio}
+
+
 def zero_dte_walls(spot, opts, bucket=None):
     """Call/Put walls on the nearest expiry only, weighted by max(OI, volume):
     OI is yesterday's settled positioning, volume captures today's 0DTE flow.

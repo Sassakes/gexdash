@@ -36,7 +36,7 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
-                           flow_gamma_matrix)
+                           flow_gamma_matrix, flow_volume_context)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -831,6 +831,8 @@ def _refresh_flow(target, payload, capture):
         "gamma": mats["gamma"], "vanna": mats["vanna"], "charm": mats["charm"],
         "iv_now": iv_now, "iv_ref": iv_ref,
         "dsigma": round(dsigma, 4) if dsigma is not None else None,
+        "volume_context": flow_volume_context(
+            opts, payload.get("nq_price"), basis),
     }
     # Controle de justesse (obligatoire, brief etape 1) : a T=maintenant
     # (rang 0) et sur la colonne du spot courant (grille centree dessus,

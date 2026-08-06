@@ -272,6 +272,31 @@
   .fluxsynth .fsrow.neg .fsval{color:var(--red)}
   .fluxsynth .fsrow.flat .fsval{color:var(--muted)}
   .fluxsynth .fssens{color:var(--muted); font-size:10px}
+
+  /* ---- fluxvolctx : contexte live volume du jour vs OI figé -- même
+     enveloppe que fluxsynth, sous elle ---- */
+  .fluxvolctx{padding:8px 16px 12px; border-bottom:1px solid var(--line); flex:none;
+    font-family:var(--mono)}
+  .fluxvolctx .fvbias{display:flex; align-items:baseline; gap:8px; margin-bottom:8px;
+    font-size:11px; flex-wrap:wrap}
+  .fluxvolctx .fvbias .fvlab{font-size:9px; letter-spacing:.13em; text-transform:uppercase;
+    color:var(--faint)}
+  .fluxvolctx .fvbias .fvval{font-weight:700}
+  .fluxvolctx .fvbias .fvval.call{color:var(--teal)}
+  .fluxvolctx .fvbias .fvval.put{color:var(--red)}
+  .fluxvolctx .fvcols{display:flex; gap:18px; flex-wrap:wrap}
+  .fluxvolctx .fvcol{flex:1 1 220px; min-width:0}
+  .fluxvolctx .fvcol .fvhead{font-size:9px; letter-spacing:.13em; text-transform:uppercase;
+    margin-bottom:4px}
+  .fluxvolctx .fvcol.call .fvhead{color:var(--teal)}
+  .fluxvolctx .fvcol.put .fvhead{color:var(--red)}
+  .fluxvolctx .fvrow{font-size:10.5px; padding:1.5px 0; color:var(--muted)}
+  .fluxvolctx .fvrow .fvk{color:var(--text); font-weight:600}
+  .fluxvolctx .fvrow .fvd{color:var(--faint)}
+  .fluxvolctx .fvrow .fvr{padding:0 4px; border-radius:3px; margin-left:2px}
+  .fluxvolctx .fvrow.hi{color:var(--text)}
+  .fluxvolctx .fvrow.hi .fvr{background:var(--gold-soft); color:var(--gold); font-weight:700}
+  .fluxvolctx .fvempty{color:var(--faint); font-size:10.5px}
   .dp{display:flex; gap:22px; align-items:center; flex-wrap:wrap}
   .dp-big{font-family:var(--mono); font-size:30px; color:var(--text); line-height:1}
   .dp-sub{font-size:11px; color:var(--muted); margin-top:5px}
@@ -472,6 +497,8 @@
     .fluxbox{height:340px}
     .fluxsynth{padding:8px 10px 10px}
     .fluxsynth .fsrows{flex-direction:column; gap:5px}
+    .fluxvolctx{padding:8px 10px 10px}
+    .fluxvolctx .fvcols{flex-direction:column; gap:8px}
     .fluxbar{padding:8px 10px; flex-wrap:wrap; row-gap:4px}
     .cbar{padding:8px 10px}
     .ivs button{padding:8px 12px; min-height:36px}
@@ -862,6 +889,7 @@
     <div class="chartbox" id="chartBox"></div>
     <div class="fluxbox" id="fluxBox" hidden>
       <div class="fluxsynth" id="fluxSynth" hidden></div>
+      <div class="fluxvolctx" id="fluxVolCtx" hidden></div>
       <div class="fluxbar">
         <span class="fluxleft">
           <span class="note" id="fluxNote"></span>
@@ -972,6 +1000,10 @@ const T = {
     fs_vanna_pos:"soutien si IV ↑", fs_vanna_neg:"fragilise si IV ↑", fs_vanna_flat:"neutre",
     fs_charm_pos:"dérive haussière", fs_charm_neg:"dérive baissière", fs_charm_flat:"neutre",
     fs_unitGamma:"/1%", fs_unitVanna:"/pt IV", fs_unitCharm:"/jour",
+    fvBiasLbl:"Biais volume du jour", fvCalls:"CALLS", fvPuts:"PUTS", fvVolUnit:"vol",
+    fvCaveat:"Le volume ne dit pas le sens : un gros volume peut être de l'achat ou de la vente côté client, avec des implications opposées pour les dealers. Indicateur de zone d'attention, pas de direction.",
+    fvEmpty:"Pas de volume exploitable pour l'instant",
+    fvRatioHi:"vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -1030,6 +1062,10 @@ const T = {
     fs_vanna_pos:"supports if IV ↑", fs_vanna_neg:"destabilizes if IV ↑", fs_vanna_flat:"flat",
     fs_charm_pos:"bullish drift", fs_charm_neg:"bearish drift", fs_charm_flat:"flat",
     fs_unitGamma:"/1%", fs_unitVanna:"/pt IV", fs_unitCharm:"/day",
+    fvBiasLbl:"Today's volume bias", fvCalls:"CALLS", fvPuts:"PUTS", fvVolUnit:"vol",
+    fvCaveat:"Volume doesn't say direction: a large volume can be client buying or selling, with opposite implications for dealers. An attention-zone indicator, not a directional one.",
+    fvEmpty:"No exploitable volume yet",
+    fvRatioHi:"vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1353,7 +1389,7 @@ function applyLang(){
   const fb = $("fluxBtn");
   if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
   renderFluxLegend();
-  if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
+  if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); renderFluxVolCtx(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
   $("pineNote").textContent = t("pineNote");
@@ -2347,6 +2383,59 @@ function renderFluxSynth(){
     `</div>`;
 }
 
+// -- comptage brut (pas de $) : volume/OI en nombre de contrats, jamais
+// mêlé aux unités $ de fmtFluxUsd ci-dessus.
+function fmtFluxCount(v){
+  if (v == null) return "—";
+  if (v >= 1e6) return fmt(v / 1e6, 1) + "M";
+  if (v >= 1e3) return fmt(v / 1e3, 1) + "k";
+  return fmt(v, 0);
+}
+
+// Contexte live volume/OI (cf. docs/BRIEF-flux.md non concerné -- module
+// séparé, calculé serveur dans _refresh_flow/flow_volume_context à partir
+// des MÊMES options déjà agrégées pour gex_by_strike). OI figé depuis hier
+// soir, volume propre au jour : les comparer montre où la position se
+// construit AUJOURD'HUI. Ne dit jamais le sens (cf. fvCaveat, en infobulle) —
+// zone d'attention, pas signal directionnel.
+function renderFluxVolCtx(){
+  const box = $("fluxVolCtx");
+  if (!box) return;
+  const vc = FLUX_DATA && FLUX_DATA.volume_context;
+  if (!vc){ box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  const row = (e) => {
+    const hi = e.vol_oi_ratio != null && e.vol_oi_ratio > 1;
+    const dist = e.distance == null ? "" :
+      (e.distance >= 0 ? "+" : "") + fmt(e.distance, 0) + " " + t("pts");
+    return `<div class="fvrow ${hi ? "hi" : ""}" ${hi ? `title="${t("fvRatioHi")}"` : ""}>
+      <span class="fvk">${fmt(e.strike)}</span>
+      · ${fmtFluxCount(e.volume)} ${t("fvVolUnit")}
+      · <span class="fvr">×${e.vol_oi_ratio != null ? e.vol_oi_ratio.toFixed(2) : "—"}</span>
+      · <span class="fvd">${dist}</span>
+    </div>`;
+  };
+  const col = (cls, head, rows) => `<div class="fvcol ${cls}">
+      <div class="fvhead">${head}</div>
+      ${rows.length ? rows.map(row).join("") : `<div class="fvempty">${t("fvEmpty")}</div>`}
+    </div>`;
+  const ratio = vc.call_put_ratio;
+  const dom = ratio == null ? null : (ratio >= 1 ? "call" : "put");
+  const biasTxt = ratio == null ? "—"
+    : "×" + (dom === "call" ? ratio : (1 / ratio)).toFixed(2);
+  box.innerHTML =
+    `<div class="fvbias">
+       <span class="fvlab">${t("fvBiasLbl")}</span>
+       <span class="fvval ${dom || ""}">${dom ? t(dom === "call" ? "fvCalls" : "fvPuts") : "—"}</span>
+       <span class="fvd">(${biasTxt} · ${fmtFluxCount(vc.call_vol)} / ${fmtFluxCount(vc.put_vol)})</span>
+       <span class="fvd" title="${t("fvCaveat")}" style="cursor:help">ⓘ</span>
+     </div>
+     <div class="fvcols">` +
+     col("call", t("fvCalls"), vc.calls || []) +
+     col("put", t("fvPuts"), vc.puts || []) +
+    `</div>`;
+}
+
 // Call Wall / Put Wall / Gamma Flip déjà calculés côté serveur — mêmes
 // niveaux que ceux tracés sur le chart de prix, mêmes couleurs (KIND_COLOR).
 function fluxLevelMarkers(){
@@ -2506,6 +2595,7 @@ async function loadFlux(){
   }
   renderFluxNote();
   renderFluxSynth();
+  renderFluxVolCtx();
   drawFlux();
 }
 
