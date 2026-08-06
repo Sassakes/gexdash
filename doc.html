@@ -356,6 +356,37 @@ fr: {
     {t:"note", x:"Chaque grille défile <b>à l'intérieur</b> de son panneau et se recentre automatiquement sur le prix courant. Un compte à rebours indique le temps restant avant la prochaine ouverture US. Le bouton <b>?</b> rappelle la signification des couleurs à tout moment."},
     {t:"p", x:"C'est la vue à privilégier pour repérer <b>où la masse se concentre</b>, et surtout si un mur repose sur une seule échéance — donc fragile après son expiration — ou sur toutes à la fois."}]},
 
+  {id:"portee", t:"Portée", b:[
+    {t:"p", x:"La bande EM du jour est posée à l'ouverture et ne bouge plus : elle dit combien le marché est censé parcourir sur la séance. Mais elle ne dit pas ce qui reste possible <b>maintenant</b>. La portée répond à cette question : centrée sur le prix courant, elle se resserre au fil des heures."},
+    {t:"p", x:"Deux sources de contraction sont prises en compte : le temps qui passe, et l'IV qui se comprime en séance."},
+    {t:"h", x:"Comment le lire"},
+    {t:"note", x:"Ce n'est <b>pas</b> un niveau à jouer — il suit le prix, on ne le touche jamais. C'est une jauge de distance encore atteignable, à croiser avec tes vrais niveaux."},
+    {t:"chips", items:[
+      {c:"r", tag:"Cible hors d'atteinte", x:"Il est 19h. Le Call Wall est 150 points au-dessus, la portée n'autorise plus que 80. La cible est inatteignable aujourd'hui : réduire l'objectif ou sortir, plutôt que d'attendre un mouvement que le marché n'a plus le carburant de faire."},
+      {c:"t", tag:"Extension encore possible", x:"Il est 17h, le prix a déjà parcouru 76% de la bande du jour. La bande semble épuisée — mais la borne haute de la portée dépasse la borne haute de la bande. Le marché peut encore sortir de l'extension attendue : signature d'une journée de tendance, ne pas contrer."}]},
+    {t:"p", x:"L'horloge n'est pas linéaire : la nuit Globex consomme peu de variance, l'ouverture cash et la clôture en brûlent l'essentiel. À midi il ne reste pas la moitié de la portée, mais environ 71%."}]},
+
+  {id:"flux", t:"Flux", b:[
+    {t:"p", x:"Le plus gros vendeur d'une séance est rarement directionnel : c'est un teneur de marché qui se couvre. Un client achète des puts, le dealer se retrouve long delta, il vend des futures pour rester neutre — et le prix baisse sans qu'une conviction soit en jeu."},
+    {t:"p", x:"La vue Flux projette cette couverture sur une grille prix × temps : si le prix arrivait ici, à telle heure, quel flux les dealers seraient contraints d'exécuter."},
+    {t:"h", x:"Lire le dégradé"},
+    {t:"chips", items:[
+      {c:"t", tag:"Vert · gamma positif", x:"La couverture va CONTRE le mouvement, elle amortit. Compression, pin, ranges. Les zones vertes intenses tiennent."},
+      {c:"r", tag:"Rouge · gamma négatif", x:"La couverture va AVEC le mouvement, elle amplifie. Accélérations, cassures. Les zones rouges intenses lâchent vite."}]},
+    {t:"h", x:"Les trois grecques"},
+    {t:"codes", items:[
+      {k:"Γ", n:"Gamma", d:"Flux provoqué par le mouvement du prix."},
+      {k:"V", n:"Vanna", d:"Flux provoqué par une variation d'IV, à prix constant."},
+      {k:"Θ", n:"Charm", d:"Flux provoqué par l'écoulement du temps, à prix constant."}]},
+    {t:"p", x:"Vanna et charm forcent des rehedges <b>sans que le prix bouge</b>. C'est ce qui explique les dérives de fin de séance sans catalyseur."},
+    {t:"note", x:"<b>Exemple — dérive de fin de séance.</b> 16h : gamma positif, le marché compresse. Le charm est nettement positif sur la colonne de 21h. Traduction : même sans mouvement, les dealers devront acheter en fin de séance. Une dérive haussière lente est probable vers la clôture, sans qu'aucune nouvelle ne l'explique."},
+    {t:"h", x:"Le verdict de synthèse"},
+    {t:"p", x:"COMPRESSION, DÉRIVE, ACCÉLÉRATION ou DIVERGENCE. Quand les composantes se contredisent, le verdict affiche DIVERGENCE plutôt que de moyenner — un gamma positif avec un charm fortement négatif, c'est une compression qui se dégrade, et c'est le signal le plus utile."},
+    {t:"h", x:"Le contexte volume"},
+    {t:"p", x:"L'open interest est figé depuis la veille : le dégradé montre l'exposition héritée. Le volume du jour montre où les positions se construisent <b>maintenant</b>. Un strike dont le volume dépasse l'encours accumulé est un endroit où le hedging naît sous tes yeux."},
+    {t:"note", x:"Réserve : le volume dit <b>où</b> ça bouge, pas dans quel sens. Un gros volume peut être de l'achat ou de la vente client, avec des implications opposées."},
+    {t:"note", x:"Portée et Flux donnent un <b>contexte</b>, pas des signaux. Ils indiquent dans quel régime on se trouve et ce qui reste possible — l'entrée et la sortie restent la méthode du trader."}]},
+
   {id:"rythme", t:"Le calendrier des mises à jour", b:[
     {t:"p", x:"Chaque famille est recalculée <b>au moment où son information existe</b>, et jamais entre-temps. Un niveau qui bouge sous tes pieds n'est pas un niveau."},
     {t:"clocks", items:[
@@ -454,6 +485,37 @@ en: {
       {k:"Overlay", n:"GEX levels", d:"Overlays Call Wall, Put Wall, Flip, Max Pain and Expected Move on the ladder."}]},
     {t:"note", x:"Each grid scrolls <b>inside</b> its panel and auto-centres on the live price. A countdown shows the time left before the next US open. The <b>?</b> button recalls what the colours mean at any time."},
     {t:"p", x:"It is the view of choice to spot <b>where mass concentrates</b>, and above all whether a wall rests on a single expiry — hence fragile once it expires — or on all of them."}]},
+
+  {id:"portee", t:"Range", b:[
+    {t:"p", x:"The day's EM band is set at the open and never moves again: it tells you how far the market is priced to travel over the session. But it doesn't say what's still possible <b>right now</b>. Range answers that question: centred on the current price, it tightens hour by hour."},
+    {t:"p", x:"Two sources of contraction are accounted for: time passing, and IV compressing intraday."},
+    {t:"h", x:"How to read it"},
+    {t:"note", x:"This is <b>not</b> a level to trade off — it follows price, you never touch it. It's a gauge of distance still reachable, to be cross-checked against your real levels."},
+    {t:"chips", items:[
+      {c:"r", tag:"Target out of reach", x:"It's 7pm. The Call Wall is 150 points above, and range no longer allows more than 80. The target is unreachable today: scale back the objective or exit, rather than waiting for a move the market no longer has the fuel to make."},
+      {c:"t", tag:"Extension still possible", x:"It's 5pm, price has already covered 76% of the day's band. The band looks spent — but range's upper bound extends beyond the band's upper bound. The market can still break out of the expected extension: the signature of a trend day, don't fade it."}]},
+    {t:"p", x:"The clock isn't linear: overnight Globex burns little variance, the cash open and the close consume most of it. At noon there isn't half the range left, but about 71%."}]},
+
+  {id:"flux", t:"Flow", b:[
+    {t:"p", x:"The biggest seller in a session is rarely directional: it's a market maker hedging. A client buys puts, the dealer ends up long delta, and sells futures to stay neutral — and price drops without any conviction behind it."},
+    {t:"p", x:"The Flow view projects that hedging onto a price × time grid: if price got there, at that hour, what flow would dealers be forced to execute."},
+    {t:"h", x:"Reading the gradient"},
+    {t:"chips", items:[
+      {c:"t", tag:"Green · positive dealer gamma", x:"Hedging goes AGAINST the move, it dampens. Compression, pins, ranges. Intense green zones hold."},
+      {c:"r", tag:"Red · negative dealer gamma", x:"Hedging goes WITH the move, it amplifies. Accelerations, breaks. Intense red zones give way fast."}]},
+    {t:"h", x:"The three greeks"},
+    {t:"codes", items:[
+      {k:"Γ", n:"Gamma", d:"Flow triggered by price movement."},
+      {k:"V", n:"Vanna", d:"Flow triggered by a change in IV, at constant price."},
+      {k:"Θ", n:"Charm", d:"Flow triggered by the passage of time, at constant price."}]},
+    {t:"p", x:"Vanna and charm force rehedges <b>without price moving at all</b>. That's what explains end-of-session drifts with no catalyst."},
+    {t:"note", x:"<b>Example — end-of-session drift.</b> 4pm: positive gamma, the market compresses. Charm is strongly positive in the 9pm column. Translation: even with no move, dealers will have to buy late in the session. A slow bullish drift into the close is likely, with no news to explain it."},
+    {t:"h", x:"The summary verdict"},
+    {t:"p", x:"COMPRESSION, DRIFT, ACCELERATION or DIVERGENCE. When components contradict each other, the verdict shows DIVERGENCE rather than averaging them out — positive gamma with strongly negative charm is a compression that's degrading, and that's the most useful signal."},
+    {t:"h", x:"Volume context"},
+    {t:"p", x:"Open interest is frozen from the prior day: the gradient shows inherited exposure. Today's volume shows where positions are being built <b>right now</b>. A strike whose volume exceeds accumulated open interest is a place where hedging is being born in front of you."},
+    {t:"note", x:"Caveat: volume tells you <b>where</b> it's moving, not which direction. Heavy volume can be client buying or selling, with opposite implications."},
+    {t:"note", x:"Range and Flow give <b>context</b>, not signals. They show which regime you're in and what's still possible — entry and exit remain the trader's job."}]},
 
   {id:"rythme", t:"Update schedule", b:[
     {t:"p", x:"Each family is recomputed <b>when its information exists</b>, and never in between. A level that moves under your feet is not a level."},
