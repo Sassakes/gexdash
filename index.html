@@ -240,7 +240,10 @@
   .chartbox{height:400px; position:relative}
 
   /* ============ flux (gamma dealer, projection prix x temps) ============ */
-  .fluxbox{height:400px; display:flex; flex-direction:column}
+  /* min-height, pas height : le canevas (flex:1) doit rester genereux meme
+     quand fluxsynth/fluxvolctx grossissent (plus de lignes, wrap) -- meme
+     lecture que le chart de prix, qui lui n'a aucun chrome au-dessus */
+  .fluxbox{min-height:640px; display:flex; flex-direction:column}
   .fluxbar{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 16px; border-bottom:1px solid var(--line); flex:none;
@@ -251,7 +254,7 @@
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
   .fluxsw:first-child{margin-left:0}
   .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
-  #fluxCanvas{flex:1; width:100%; display:block; min-height:0}
+  #fluxCanvas{flex:1; width:100%; display:block; min-height:340px}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -494,7 +497,8 @@
     .cell{padding:10px 12px}
     .cell.price .val{font-size:22px}
     .chartbox{height:300px}
-    .fluxbox{height:340px}
+    .fluxbox{min-height:480px}
+    #fluxCanvas{min-height:240px}
     .fluxsynth{padding:8px 10px 10px}
     .fluxsynth .fsrows{flex-direction:column; gap:5px}
     .fluxvolctx{padding:8px 10px 10px}
@@ -898,6 +902,9 @@
             <button data-m="vanna" type="button">Vanna</button>
             <button data-m="charm" type="button">Charm</button>
           </span>
+          <span class="chips">
+            <button id="fluxStrikesBtn" type="button" class="on"><i class="led"></i><span id="fluxStrikesLbl"></span></button>
+          </span>
         </span>
         <span class="fluxlegend">
           <i class="fluxsw fluxsw-neg"></i><span id="fluxNegLbl"></span>
@@ -1004,6 +1011,7 @@ const T = {
     fvCaveat:"Le volume ne dit pas le sens : un gros volume peut être de l'achat ou de la vente côté client, avec des implications opposées pour les dealers. Indicateur de zone d'attention, pas de direction.",
     fvEmpty:"Pas de volume exploitable pour l'instant",
     fvRatioHi:"vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
+    fluxStrikesChip:"Strikes", fluxStrikesTip:"Repères des strikes actifs (volume/OI du jour) sur le dégradé",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -1066,6 +1074,7 @@ const T = {
     fvCaveat:"Volume doesn't say direction: a large volume can be client buying or selling, with opposite implications for dealers. An attention-zone indicator, not a directional one.",
     fvEmpty:"No exploitable volume yet",
     fvRatioHi:"vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
+    fluxStrikesChip:"Strikes", fluxStrikesTip:"Today's active strike markers (volume/OI) on the gradient",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1389,6 +1398,8 @@ function applyLang(){
   const fb = $("fluxBtn");
   if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
   renderFluxLegend();
+  const fsl = $("fluxStrikesLbl"); if (fsl) fsl.textContent = t("fluxStrikesChip");
+  const fsb = $("fluxStrikesBtn"); if (fsb) fsb.title = t("fluxStrikesTip");
   if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); renderFluxVolCtx(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
@@ -1447,6 +1458,7 @@ async function load(){
   if (fluxBtn) fluxBtn.onclick = () => { pulseFluxBtn(); setFluxView(!FLUX_ON); };
   // sélecteur gamma / vanna / charm — gamma par défaut, cf. bindFluxMode()
   bindFluxMode();
+  bindFluxStrikesToggle();
   bindChips();
   loadLinks();
   await loadTarget();
@@ -2241,6 +2253,22 @@ try{ FLUX_ON = localStorage.getItem("gexFluxOn") === "1"; }catch(_){}
 let FLUX_DATA = null;      // dernière matrice reçue (ou null si pas encore prête)
 let FLUX_POLL = null;
 let FLUX_RESIZE_WIRED = false;
+// Bascule des repères de strikes actifs sur le dégradé -- séparée du dégradé
+// lui-même (cf. renderFluxVolCtx) : certains veulent le dégradé seul.
+let FLUX_STRIKES_ON = true;
+try{ FLUX_STRIKES_ON = localStorage.getItem("gexFluxStrikesOn") !== "0"; }catch(_){}
+
+function bindFluxStrikesToggle(){
+  const b = $("fluxStrikesBtn");
+  if (!b) return;
+  b.classList.toggle("on", FLUX_STRIKES_ON);
+  b.onclick = () => {
+    FLUX_STRIKES_ON = !FLUX_STRIKES_ON;
+    try{ localStorage.setItem("gexFluxStrikesOn", FLUX_STRIKES_ON ? "1" : "0"); }catch(_){}
+    b.classList.toggle("on", FLUX_STRIKES_ON);
+    drawFlux();
+  };
+}
 // Étape 2 : gamma / vanna / charm, affichés SÉPARÉMENT (jamais fondus en un
 // agrégat unique — unités et interprétations diffèrent, cf. BRIEF-flux.md).
 // Gamma par défaut à chaque chargement de page, pas persisté.
@@ -2556,6 +2584,37 @@ function drawFlux(){
     ctx.fillStyle = m.color; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(m.label, padL + gw + 5, y);
   });
+
+  // ---- repères strikes actifs (volume/OI du jour) : où l'activité se
+  // construit AUJOURD'HUI par rapport au paysage gamma. Neutre/blanc cassé
+  // et fin exprès -- le dégradé est déjà coloré, cf. renderFluxVolCtx pour
+  // les mêmes entrées en liste. ----
+  if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
+    if (m.strike == null || m.strike < priceMin || m.strike > priceMax) return;
+    const ratio = m.vol_oi_ratio;
+    const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
+    const opacity = 0.22 + 0.55 * k, lw = 1 + 1.4 * k;
+    const y = yFor(m.strike);
+    ctx.strokeStyle = `rgba(236,234,228,${opacity})`;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(m.isCall ? [] : [3, 2]);   // plein = call, tireté = put
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = `rgba(236,234,228,${Math.min(1, opacity + 0.25)})`;
+    ctx.font = "9.5px IBM Plex Mono, monospace";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
+    ctx.fillText(`${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`, padL + gw + 5, y);
+  });
+}
+
+// Fusionne calls/puts du contexte volume/OI (déjà top_n côté serveur, cf.
+// flow_volume_context) en une seule liste taguée pour le rendu des repères.
+function fluxStrikeMarkers(){
+  const vc = FLUX_DATA && FLUX_DATA.volume_context;
+  if (!vc) return [];
+  const tag = (arr, isCall) => (arr || []).map(e => Object.assign({isCall}, e));
+  return tag(vc.calls, true).concat(tag(vc.puts, false));
 }
 
 // Statut affiché dans #fluxNote, gardé à part du texte lui-même : un
