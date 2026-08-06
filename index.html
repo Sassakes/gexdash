@@ -2492,8 +2492,8 @@ function drawFlux(){
   ctx.clearRect(0, 0, w, h);
 
   const d = FLUX_DATA;
-  const padL = 46, padR = 40, padT = 8, padB = 20;
-  const gw = Math.max(1, w - padL - padR), gh = Math.max(1, h - padT - padB);
+  const padL = 46, padT = 8, padB = 20;
+  const gh = Math.max(1, h - padT - padB);
 
   const mat = d && d[FLUX_MODE];
   if (!mat || !mat.length || !d.price_grid || !d.price_grid.length){
@@ -2507,7 +2507,49 @@ function drawFlux(){
   const rows = mat;                     // rows[heureIdx][prixIdx], matrice du mode sélectionné
   const nH = rows.length, nP = d.price_grid.length;
   const priceMin = d.price_grid[0], priceMax = d.price_grid[nP - 1];
+  // yFor ne dépend que de padT/gh (fixes) : calculable avant de savoir combien
+  // de place la marge droite des étiquettes va prendre.
   const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
+
+  // ---- repères candidats, construits AVANT la marge droite : sa largeur suit
+  // le texte le plus long qu'elle doit contenir (spot, CW/PW/Flip, strikes),
+  // jamais une valeur fixe qui les aurait tronqués (cf. drawLevelLabels sur le
+  // chart de prix, même logique de pastille + liseré coloré). tier 0 = prix
+  // courant, tier 1 = niveaux GEX (toujours affichés, peu nombreux), tier 2 =
+  // strikes actifs (peuvent être évincés si ça ne tient pas). ----
+  const LVL_FONT = "11px IBM Plex Mono, monospace", STRIKE_FONT = "9.5px IBM Plex Mono, monospace";
+  const markers = [];
+  const spot = CHART.lastBar ? CHART.lastBar.close
+             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
+  if (spot != null && spot >= priceMin && spot <= priceMax){
+    markers.push({price: spot, tier: 0, text: fmt(spot, 0), color: C.text, textColor: C.text,
+                  dash: [4, 3], lw: 1, font: LVL_FONT});
+  }
+  fluxLevelMarkers().forEach(m => {
+    if (m.price == null || m.price < priceMin || m.price > priceMax) return;
+    markers.push({price: m.price, tier: 1, text: m.label, color: m.color, textColor: m.color,
+                  dash: [2, 3], lw: 1, font: LVL_FONT});
+  });
+  if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
+    if (m.strike == null || m.strike < priceMin || m.strike > priceMax) return;
+    const ratio = m.vol_oi_ratio;
+    const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
+    const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
+    markers.push({
+      price: m.strike, tier: 2, ratio: ratio || 0,
+      text: `${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`,
+      color: `rgba(236,234,228,${0.35 + 0.45 * k})`,       // ligne : opacité ~ vol/OI
+      textColor: "rgba(236,234,228,.92)",                  // étiquette : toujours lisible une fois affichée
+      dash: m.isCall ? [] : [3, 2], lw: 1 + 1.4 * k, font: STRIKE_FONT,
+    });
+  });
+
+  let maxTextW = 0;
+  for (const m of markers){ ctx.font = m.font; maxTextW = Math.max(maxTextW, ctx.measureText(m.text).width); }
+  const padR = markers.length
+    ? Math.min(Math.max(maxTextW + 16, 50), Math.max(60, w * 0.42))
+    : 40;
+  const gw = Math.max(1, w - padL - padR);
   const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
 
   // ---- normalisation par PERCENTILE (pas min/max) : une valeur extrême
@@ -2563,51 +2605,45 @@ function drawFlux(){
     ctx.fillText(label, x, padT + gh + 4);
   });
 
-  // ---- repères existants : prix courant + Call Wall / Put Wall / Flip ----
-  // Prix live (même source que le cône EM, cf. updateEmCone), pas le dernier
-  // payload /api/gex : la matrice reste valable entre deux recalculs, seule
-  // la position du prix dedans bouge, à chaque tick de pollQuote().
-  const spot = CHART.lastBar ? CHART.lastBar.close
-             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
-  if (spot != null && spot >= priceMin && spot <= priceMax){
-    const y = yFor(spot);
-    ctx.setLineDash([4, 3]); ctx.strokeStyle = C.text; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = C.text; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText(fmt(spot, 0), padL + gw + 5, y);
-  }
-  fluxLevelMarkers().forEach(m => {
-    if (m.price == null || m.price < priceMin || m.price > priceMax) return;
-    const y = yFor(m.price);
-    ctx.setLineDash([2, 3]); ctx.strokeStyle = m.color; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = m.color; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText(m.label, padL + gw + 5, y);
-  });
+  // ---- repères : ligne toujours tracée sur le dégradé, étiquette en
+  // pastille (fond sombre + liseré coloré, même traitement que les niveaux
+  // du chart de prix) posée seulement si la place le permet. tier 0/1 (prix
+  // courant, CW/PW/Flip) toujours étiquetés -- rares et prioritaires ; tier 2
+  // (strikes) triés par ratio vol/OI décroissant, le reste évincé en simple
+  // point pour rester lisible plutôt que de s'empiler. ----
+  markers.forEach(m => { m.y = yFor(m.price); });
+  const rowH = 17;
+  const placedYs = [];
+  const fits = y => !placedYs.some(py => Math.abs(py - y) < rowH);
+  const order = markers.filter(m => m.tier < 2)
+    .concat(markers.filter(m => m.tier === 2).sort((a, b) => b.ratio - a.ratio));
 
-  // ---- repères strikes actifs (volume/OI du jour) : où l'activité se
-  // construit AUJOURD'HUI par rapport au paysage gamma. Neutre/blanc cassé
-  // et fin exprès -- le dégradé est déjà coloré, cf. renderFluxVolCtx pour
-  // les mêmes entrées en liste. ----
-  if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
-    if (m.strike == null || m.strike < priceMin || m.strike > priceMax) return;
-    const ratio = m.vol_oi_ratio;
-    const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
-    const opacity = 0.22 + 0.55 * k, lw = 1 + 1.4 * k;
-    const y = yFor(m.strike);
-    ctx.strokeStyle = `rgba(236,234,228,${opacity})`;
-    ctx.lineWidth = lw;
-    ctx.setLineDash(m.isCall ? [] : [3, 2]);   // plein = call, tireté = put
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
+  for (const m of order){
+    ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
+    ctx.beginPath(); ctx.moveTo(padL, m.y); ctx.lineTo(padL + gw, m.y); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = `rgba(236,234,228,${Math.min(1, opacity + 0.25)})`;
-    ctx.font = "9.5px IBM Plex Mono, monospace";
+
+    const show = m.tier < 2 || fits(m.y);
+    if (!show){
+      // évincé : point discret au bord droit, la ligne reste identifiable
+      ctx.globalAlpha = 0.5; ctx.fillStyle = m.color;
+      ctx.beginPath(); ctx.arc(w - 4, m.y, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    placedYs.push(m.y);
+    ctx.font = m.font;
+    const tw = ctx.measureText(m.text).width;
+    const bh = 15, bw = tw + 13;
+    const x0 = padL + gw + 5;
+    ctx.fillStyle = "rgba(12,12,15,.9)";
+    ctx.fillRect(x0, m.y - bh / 2, bw, bh);
+    ctx.fillStyle = m.color;
+    ctx.fillRect(x0, m.y - bh / 2, 2, bh);                  // liseré de couleur
+    ctx.fillStyle = m.textColor;
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
-    ctx.fillText(`${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`, padL + gw + 5, y);
-  });
+    ctx.fillText(m.text, x0 + 7, m.y + 0.5);
+  }
 }
 
 // Fusionne calls/puts du contexte volume/OI (déjà top_n côté serveur, cf.
