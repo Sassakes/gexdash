@@ -255,7 +255,10 @@
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
   .fluxsw:first-child{margin-left:0}
   .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
-  #fluxCanvas{flex:none; width:100%; display:block; height:400px}
+  /* conteneur lightweight-charts (plus un canvas brut) : position:relative
+     pour l'overlay de pastilles CW/PW/Flip (FLUXC.lblCv), même patron que
+     .chartbox/CHART.lblCv */
+  #fluxCanvas{flex:none; width:100%; display:block; height:400px; position:relative}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -911,7 +914,7 @@
           <i class="fluxsw fluxsw-pos"></i><span id="fluxPosLbl"></span>
         </span>
       </div>
-      <canvas id="fluxCanvas"></canvas>
+      <div id="fluxCanvas"></div>
     </div>
   </section>
 
@@ -1400,7 +1403,9 @@ function applyLang(){
   renderFluxLegend();
   const fsl = $("fluxStrikesLbl"); if (fsl) fsl.textContent = t("fluxStrikesChip");
   const fsb = $("fluxStrikesBtn"); if (fsb) fsb.title = t("fluxStrikesTip");
-  if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); renderFluxVolCtx(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
+  // relabel note + axes (maint./now, clôture/close) : refreshFluxChart() force
+  // un plein redessin, tickMarkFormatter relit t() au passage.
+  if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); renderFluxVolCtx(); refreshFluxChart(); }
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
   $("pineNote").textContent = t("pineNote");
@@ -1507,6 +1512,7 @@ function ensureChart(){
     return !!CHART.chart;
   }
   const box = $("chartBox");
+  CHART.box = box;
   CHART.chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
             fontFamily:"IBM Plex Mono, monospace", fontSize:10},
@@ -1543,7 +1549,7 @@ function ensureChart(){
       wickUpColor:PREFS.up, wickDownColor:PREFS.dn, priceLineColor:PREFS.px}),
     reloadBars: loadBars,
     onLevelsChanged: () => { paintChips(); applyLevelLines(); },
-    applyLabelSize: drawLevelLabels,
+    applyLabelSize: () => drawLevelLabels(CHART),
   });
   return true;
 }
@@ -1601,7 +1607,7 @@ async function loadBars(){
       CHART._paint = () => {
         if (CHART._raf) return;
         CHART._raf = requestAnimationFrame(() => {
-          CHART._raf = 0; drawIdxSessions(); drawLevelLabels();
+          CHART._raf = 0; drawIdxSessions(); drawLevelLabels(CHART);
         });
       };
       const redraw = CHART._paint;
@@ -1762,9 +1768,9 @@ async function loadBars(){
      tout le reste s'estompe pour isoler la lecture.                     */
 const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
 
-function drawLevelLabels(){
-  const cv = CHART.lblCv, box = $("chartBox");
-  if (!cv || !CHART.chart || !CHART.series) return;
+function drawLevelLabels(holder){
+  const cv = holder.lblCv, box = holder.box;
+  if (!cv || !holder.chart || !holder.series) return;
   // Dimensions MÉMORISÉES : lire clientWidth force le navigateur à recalculer
   // la mise en page (reflow). C'était fait à chaque frame et à chaque mouvement
   // de souris — le poste le plus coûteux du rendu. Le ResizeObserver les met
@@ -1776,7 +1782,7 @@ function drawLevelLabels(){
      ne correspondait plus à sa taille d'affichage et le navigateur l'étirait
      — d'où les étiquettes floues, visibles surtout sur mobile où le rapport
      de pixels est élevé. */
-  const w = CHART._boxW || box.clientWidth, h = CHART._boxH || box.clientHeight;
+  const w = holder._boxW || box.clientWidth, h = holder._boxH || box.clientHeight;
   const dpr = window.devicePixelRatio || 1;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
     // bitmap à la résolution de l'écran, ET taille CSS à la taille réelle :
@@ -1789,7 +1795,7 @@ function drawLevelLabels(){
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const meta = CHART.lvMeta || [];
+  const meta = holder.lvMeta || [];
   if (!meta.length) return;
 
   const fs = PREFS.lblSize || 10;
@@ -1799,20 +1805,20 @@ function drawLevelLabels(){
   // "hover": rien tant qu'on ne vise pas — chart nue
   const MODE = PREFS.lblMode || (IS_TOUCH ? "all" : "auto");
   let scaleW = 62;
-  try{ scaleW = CHART.chart.priceScale("right").width() || 62; }catch(_){}
+  try{ scaleW = holder.chart.priceScale("right").width() || 62; }catch(_){}
   const xRight = w - scaleW - 6;
-  const hoverY = CHART.hoverY;
+  const hoverY = holder.hoverY;
 
   /* Référence de lecture : l'ancre Open si la grille est chargée, sinon le
      dernier prix. Au-dessus -> l'étiquette se pose SUR la ligne ; en dessous
      -> elle se pose SOUS la ligne. La ligne n'est jamais recouverte. */
-  const ref = (CHART.grid && CHART.grid.anchor != null) ? CHART.grid.anchor
-            : (CHART.lastBar ? CHART.lastBar.close : null);
+  const ref = (holder.grid && holder.grid.anchor != null) ? holder.grid.anchor
+            : (holder.lastBar ? holder.lastBar.close : null);
   const bh = fs + 7, off = bh / 2 + 3;
 
   const items = [];
   for (const m of meta){
-    const y = CHART.series.priceToCoordinate(m.price);
+    const y = holder.series.priceToCoordinate(m.price);
     if (y == null || y < 6 || y > h - 6) continue;
     const above = ref == null ? true : m.price >= ref;
     const ly = Math.min(h - bh / 2 - 2,
@@ -1943,15 +1949,16 @@ async function pollQuote(){
       CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
                        low: Math.min(prevClose, p), close: p};
       CHART.series.update(CHART.lastBar);
-      if (FLUX_ON) drawFlux();      // pas de glissement ici, un seul redessin suffit
     }else{
-      // bougie courante qui VIT : high/low s'étendent, close glisse vers p —
-      // le repère de prix du canevas Flux suit CE MÊME glissement (onFrame),
-      // au lieu de sauter d'un coup au tick suivant.
+      // bougie courante qui VIT : high/low s'étendent, close glisse vers p
       CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
       CHART.lastBar.low  = Math.min(CHART.lastBar.low, p);
-      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100, FLUX_ON ? drawFlux : null);
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100);
     }
+    // Repère de prix du panneau Flux : glisse au même rythme, via LA MÊME
+    // fonction d'easing, dans LE MÊME tick -- pas de notion de "bougie" pour
+    // ce point unique, donc pas de branche bucket/glissement séparée.
+    if (FLUX_ON && FLUXC.spotSeries && FLUXC.lastBar) animatePrice(FLUXC, FLUXC.spotSeries, FLUXC.lastBar, p, 1100, null, "value");
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
     updateEmCone();          // le cône se resserre au même rythme que le prix
     // Synthèse texte du Flux : une fois par tick (pas par frame d'anim, ça
@@ -1967,25 +1974,25 @@ async function pollQuote(){
    les niveaux GEX/EM/Open. Groupes actuels : "levels" (payload serveur,
    géré par applyLevelLines) et "emcone" (cône EM restant, calculé en
    local) — support direct pour de futurs tracés dérivés du même genre. */
-function setLineGroup(group, specs){
-  if (!CHART.series) return;
-  for (const pl of (CHART.lineGroups[group] || [])) CHART.series.removePriceLine(pl);
+function setLineGroup(holder, group, specs){
+  if (!holder.series) return;
+  for (const pl of (holder.lineGroups[group] || [])) holder.series.removePriceLine(pl);
   const lines = [], meta = [];
   for (const s of specs){
     // lightweight-charts n'aime ni null ni NaN sur une price line : mieux
     // vaut ne pas tracer que planter tout le rendu du chart.
     if (s.price == null || Number.isNaN(s.price)) continue;
-    lines.push(CHART.series.createPriceLine({
+    lines.push(holder.series.createPriceLine({
       price: s.price, color: s.color, lineWidth: s.width || 1,
       lineStyle: s.solid ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: false, title: "",
     }));
     meta.push({price: s.price, color: s.color, code: s.code || "", tier: s.tier != null ? s.tier : 2});
   }
-  CHART.lineGroups[group] = lines;
-  CHART.groupMeta[group] = meta;
-  CHART.lvMeta = Object.values(CHART.groupMeta).flat();
-  drawLevelLabels();
+  holder.lineGroups[group] = lines;
+  holder.groupMeta[group] = meta;
+  holder.lvMeta = Object.values(holder.groupMeta).flat();
+  drawLevelLabels(holder);
 }
 
 function applyLevelLines(){
@@ -2010,7 +2017,7 @@ function applyLevelLines(){
       specs.push({price: g.down, color: "#26A69A", solid: false, code: "σ−" + m, tier: 3});
     }
   }
-  setLineGroup("levels", specs);
+  setLineGroup(CHART, "levels", specs);
   updateEmCone();
 }
 
@@ -2103,16 +2110,16 @@ async function loadEmProfile(){
 function updateEmCone(){
   if (!CHART.series) return;
   if (!LVSHOW.cone || !EMCONE.prof || EMCONE.target !== TARGET){
-    setLineGroup("emcone", []);
+    setLineGroup(CHART, "emcone", []);
     return;
   }
   const d = LAST_D;
   const emDay = d && d.expected_move && d.expected_move.straddle;
   const anchor = d && d.open_grid && d.open_grid.anchor;
   const price = CHART.lastBar ? CHART.lastBar.close : (d ? d.nq_price : null);
-  if (!emDay || !anchor || price == null){ setLineGroup("emcone", []); return; }
+  if (!emDay || !anchor || price == null){ setLineGroup(CHART, "emcone", []); return; }
   const frac = emVarianceRemaining(EMCONE.prof, etMinutesNow());
-  if (frac == null){ setLineGroup("emcone", []); return; }    // hors séance
+  if (frac == null){ setLineGroup(CHART, "emcone", []); return; }    // hors séance
   const rem = emDay * Math.sqrt(frac);
   const coneHigh = price + rem, coneLow = price - rem;
   const bandHigh = anchor + emDay, bandLow = anchor - emDay;
@@ -2120,7 +2127,7 @@ function updateEmCone(){
   // possible au-delà de l'EM du jour. Réutilise l'or déjà employé pour les
   // niveaux "majeurs" (flip/HGEX/Max Pain/Open) comme code couleur d'alerte.
   const overHigh = coneHigh > bandHigh, overLow = coneLow < bandLow;
-  setLineGroup("emcone", [
+  setLineGroup(CHART, "emcone", [
     {price: coneHigh, color: overHigh ? C.gold : C.teal, solid: true, width: overHigh ? 2 : 1,
      code: "EM↑", tier: 1},
     {price: coneLow, color: overLow ? C.gold : C.red, solid: true, width: overLow ? 2 : 1,
@@ -2186,10 +2193,11 @@ function show(d){
   renderEM(d);
   renderPine(d);
   $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T", " ").slice(0, 16));
-  // repères "prix courant / CW / PW / Flip" superposés au flux : redessiner
-  // à chaque payload frais plutôt que d'attendre le prochain calcul serveur
-  // (qui ne tourne que 3x/jour, cf. docs/BRIEF-flux.md)
-  if (FLUX_ON) drawFlux();
+  // repères "CW / PW / Flip" superposés au flux : ré-alimentés à chaque
+  // payload frais plutôt que d'attendre le prochain calcul serveur (qui ne
+  // tourne que 3x/jour, cf. docs/BRIEF-flux.md) -- ne touche que le groupe
+  // "levels", ni le dégradé ni le point spot.
+  if (FLUX_ON) refreshFluxLevels();
 }
 
 function renderLevels(d){
@@ -2255,7 +2263,6 @@ let FLUX_ON = false;
 try{ FLUX_ON = localStorage.getItem("gexFluxOn") === "1"; }catch(_){}
 let FLUX_DATA = null;      // dernière matrice reçue (ou null si pas encore prête)
 let FLUX_POLL = null;
-let FLUX_RESIZE_WIRED = false;
 // Bascule des repères de strikes actifs sur le dégradé -- séparée du dégradé
 // lui-même (cf. renderFluxVolCtx) : certains veulent le dégradé seul.
 let FLUX_STRIKES_ON = true;
@@ -2269,7 +2276,7 @@ function bindFluxStrikesToggle(){
     FLUX_STRIKES_ON = !FLUX_STRIKES_ON;
     try{ localStorage.setItem("gexFluxStrikesOn", FLUX_STRIKES_ON ? "1" : "0"); }catch(_){}
     b.classList.toggle("on", FLUX_STRIKES_ON);
-    drawFlux();
+    if (FLUXC.strikesPrimitive) FLUXC.strikesPrimitive.requestUpdate();
   };
 }
 // Étape 2 : gamma / vanna / charm, affichés SÉPARÉMENT (jamais fondus en un
@@ -2285,7 +2292,7 @@ function bindFluxMode(){
     document.querySelectorAll("#fluxModeChips button[data-m]").forEach(x =>
       x.classList.toggle("on", x.dataset.m === FLUX_MODE));
     renderFluxLegend();
-    drawFlux();
+    refreshFluxChart();
   });
 }
 
@@ -2478,175 +2485,282 @@ function fluxLevelMarkers(){
     .map(L => ({price: L.price_nq, label: kinds[L.kind], color: KIND_COLOR[L.kind]}));
 }
 
-function drawFlux(){
-  const cv = $("fluxCanvas");
-  if (!cv || cv.hidden || cv.offsetParent === null) return;
-  const dpr = window.devicePixelRatio || 1;
-  // taille CSS du canevas LUI-MEME (fixée en dur dans le style, cf. .fluxbox),
-  // jamais celle du panneau parent : le parent contient le canevas, donc
-  // recopier sa hauteur dessus grossit le canevas -> grossit le parent ->
-  // boucle infinie via le ResizeObserver sur #fluxBox.
-  const w = cv.clientWidth, h = cv.clientHeight;
-  if (!w || !h) return;
-  cv.width = Math.max(1, Math.round(w * dpr));
-  cv.height = Math.max(1, Math.round(h * dpr));
-  const ctx = cv.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
+/* ═══ FLUX CHART — instance lightweight-charts dédiée (cf. plan de
+   migration : le panneau reste séparé du chart de prix, BRIEF-flux.md
+   justifie déjà ça par des axes/lecture différents, mais le MOTEUR de
+   rendu devient le même). Holder FLUXC, miroir de CHART.
 
-  const d = FLUX_DATA;
-  const padL = 46, padT = 8, padB = 20;
-  const gh = Math.max(1, h - padT - padB);
+   - Dégradé  : custom series (patron officiel TradingView
+     plugin-examples/heatmap-series, adapté). cellShader reprend EXACTEMENT
+     la normalisation percentile-95 déjà validée (plus de changement visuel,
+     seulement de qui dessine les pixels).
+   - Spot     : Line series à un point, animée par LA MÊME fonction
+     animatePrice() que la bougie du chart de prix, dans LE MÊME appel de
+     pollQuote() -- synchronisée par construction, pas de rustine.
+   - CW/PW/Flip : réutilisent setLineGroup/drawLevelLabels du chart de prix
+     (généralisés holder-first plus haut) -- même anti-collision, même style
+     de pastille, aucun code dupliqué.
+   - Strikes actifs (volume/OI) : Series Primitive attachée au dégradé,
+     porte l'algorithme déjà écrit (tri par ratio, éviction en point). ═══ */
+const FLUXC = {chart:null, series:null, spotSeries:null, lineGroups:{}, groupMeta:{}, lvMeta:[],
+               lastBar:null, box:null, lblCv:null, _boxW:0, _boxH:0, hoverY:null, grid:null,
+               gridSpot:null, gridUnit:null, timeAnchor:0, closeSec:0, strikesPrimitive:null};
 
-  const mat = d && d[FLUX_MODE];
-  if (!mat || !mat.length || !d.price_grid || !d.price_grid.length){
-    ctx.fillStyle = C.faint;
-    ctx.font = "11px IBM Plex Mono, monospace";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText($("fluxNote").textContent || "", w / 2, h / 2);
-    return;
+// $ bruts -> [-1,1] par percentile 95 (même normalisation que l'ancien
+// canevas) : le cellShader n'a plus qu'à mapper une intensité déjà prête,
+// jamais de logique de dégradé dans le renderer lui-même.
+function fluxCellShader(amount){
+  const inten = Math.max(0, Math.min(1, Math.abs(amount)));
+  const rgb = amount >= 0 ? [38, 166, 154] : [239, 83, 80];   // C.teal / C.red
+  const a = 0.10 + 0.90 * inten;      // plancher d'opacité : grille lisible même près de zéro
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
+}
+
+class FluxHeatmapRenderer{
+  constructor(){ this._data = null; this._options = null; }
+  update(data, options){ this._data = data; this._options = options; }
+  draw(target, priceToCoordinate){
+    if (!this._data || !this._options) return;
+    target.useBitmapCoordinateSpace(scope => this._drawImpl(scope, priceToCoordinate));
   }
-
-  const rows = mat;                     // rows[heureIdx][prixIdx], matrice du mode sélectionné
-  const nH = rows.length, nP = d.price_grid.length;
-  const priceMin = d.price_grid[0], priceMax = d.price_grid[nP - 1];
-  // yFor ne dépend que de padT/gh (fixes) : calculable avant de savoir combien
-  // de place la marge droite des étiquettes va prendre.
-  const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
-
-  // ---- repères candidats, construits AVANT la marge droite : sa largeur suit
-  // le texte le plus long qu'elle doit contenir (spot, CW/PW/Flip, strikes),
-  // jamais une valeur fixe qui les aurait tronqués (cf. drawLevelLabels sur le
-  // chart de prix, même logique de pastille + liseré coloré). tier 0 = prix
-  // courant, tier 1 = niveaux GEX (toujours affichés, peu nombreux), tier 2 =
-  // strikes actifs (peuvent être évincés si ça ne tient pas). ----
-  const LVL_FONT = "11px IBM Plex Mono, monospace", STRIKE_FONT = "9.5px IBM Plex Mono, monospace";
-  const markers = [];
-  const spot = CHART.lastBar ? CHART.lastBar.close
-             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
-  if (spot != null && spot >= priceMin && spot <= priceMax){
-    markers.push({price: spot, tier: 0, text: fmt(spot, 0), color: C.text, textColor: C.text,
-                  dash: [4, 3], lw: 1, font: LVL_FONT});
+  _drawImpl(scope, priceToCoordinate){
+    const bars = this._data.bars;
+    if (!bars || !bars.length) return;
+    const {context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr} = scope;
+    const spacing = (this._data.barSpacing || 8) * hr;
+    const colW = Math.max(1, spacing);
+    for (const bar of bars){
+      const cells = bar.originalData && bar.originalData.cells;
+      if (!cells) continue;
+      const x = bar.x * hr - colW / 2;
+      for (const cell of cells){
+        const yLow = priceToCoordinate(cell.low), yHigh = priceToCoordinate(cell.high);
+        if (yLow == null || yHigh == null) continue;
+        const top = Math.min(yLow, yHigh) * vr, bot = Math.max(yLow, yHigh) * vr;
+        ctx.fillStyle = this._options.cellShader(cell.amount);
+        ctx.fillRect(x, top, colW, Math.max(1, bot - top));
+      }
+    }
   }
-  fluxLevelMarkers().forEach(m => {
-    if (m.price == null || m.price < priceMin || m.price > priceMax) return;
-    markers.push({price: m.price, tier: 1, text: m.label, color: m.color, textColor: m.color,
-                  dash: [2, 3], lw: 1, font: LVL_FONT});
-  });
-  if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
-    if (m.strike == null || m.strike < priceMin || m.strike > priceMax) return;
-    const ratio = m.vol_oi_ratio;
-    const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
-    const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
-    markers.push({
-      price: m.strike, tier: 2, ratio: ratio || 0,
-      text: `${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`,
-      color: `rgba(236,234,228,${0.35 + 0.45 * k})`,       // ligne : opacité ~ vol/OI
-      textColor: "rgba(236,234,228,.92)",                  // étiquette : toujours lisible une fois affichée
-      dash: m.isCall ? [] : [3, 2], lw: 1 + 1.4 * k, font: STRIKE_FONT,
-    });
-  });
+}
 
-  let maxTextW = 0;
-  for (const m of markers){ ctx.font = m.font; maxTextW = Math.max(maxTextW, ctx.measureText(m.text).width); }
-  const padR = markers.length
-    ? Math.min(Math.max(maxTextW + 16, 50), Math.max(60, w * 0.42))
-    : 40;
-  const gw = Math.max(1, w - padL - padR);
-  const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
+class FluxHeatmapSeries{
+  constructor(){ this._renderer = new FluxHeatmapRenderer(); }
+  priceValueBuilder(plotRow){
+    const cells = plotRow.cells;
+    return cells && cells.length ? [cells[0].low, cells[cells.length - 1].high] : [];
+  }
+  isWhitespace(data){ return !(data && data.cells && data.cells.length); }
+  renderer(){ return this._renderer; }
+  update(data, options){ this._renderer.update(data, options); }
+  defaultOptions(){
+    const base = (typeof LightweightCharts !== "undefined" && LightweightCharts.customSeriesDefaultOptions) || {};
+    return Object.assign({}, base, {lastValueVisible: false, priceLineVisible: false, cellShader: fluxCellShader});
+  }
+}
 
-  // ---- normalisation par PERCENTILE (pas min/max) : une valeur extrême
-  // isolée ne doit pas écraser tout le reste du dégradé ----
+// Repères de strikes actifs (volume/OI) : Series Primitive attachée au
+// dégradé -- même algorithme que l'ancien canevas (tri par ratio vol/OI
+// décroissant, éviction en simple point quand ça ne tient plus), mais
+// alimenté par le vrai priceToCoordinate de la série au lieu d'un yFor()
+// calculé à la main.
+class FluxStrikesRenderer{
+  constructor(primitive){ this._primitive = primitive; }
+  draw(target){
+    target.useBitmapCoordinateSpace(scope => this._drawImpl(scope));
+  }
+  _drawImpl(scope){
+    const p = this._primitive;
+    if (!FLUX_STRIKES_ON || !p._series) return;
+    const markers = fluxStrikeMarkers();
+    if (!markers.length) return;
+    const {context: ctx, horizontalPixelRatio: hr, verticalPixelRatio: vr, bitmapSize} = scope;
+    const STRIKE_FONT = "9.5px IBM Plex Mono, monospace";
+    const items = [];
+    for (const m of markers){
+      const yCoord = p._series.priceToCoordinate(m.strike);
+      if (yCoord == null) continue;
+      const ratio = m.vol_oi_ratio;
+      const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
+      const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
+      items.push({
+        y: yCoord, ratio: ratio || 0, dash: m.isCall ? [] : [6, 4], lw: (1 + 1.4 * k) * vr,
+        color: `rgba(236,234,228,${0.35 + 0.45 * k})`, textColor: "rgba(236,234,228,.92)",
+        text: `${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`,
+      });
+    }
+    if (!items.length) return;
+    const w = bitmapSize.width;
+    const rowH = 17 * vr;
+    const placedYs = [];
+    const fits = y => !placedYs.some(py => Math.abs(py - y) < rowH);
+    const order = [...items].sort((a, b) => b.ratio - a.ratio);
+    ctx.font = STRIKE_FONT;
+    ctx.textBaseline = "middle";
+    for (const it of order){
+      const y = it.y * vr;
+      ctx.setLineDash(it.dash); ctx.strokeStyle = it.color; ctx.lineWidth = it.lw;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.setLineDash([]);
+      if (!fits(y)){
+        // évincé : point discret au bord droit, la ligne reste identifiable
+        ctx.globalAlpha = 0.5; ctx.fillStyle = it.color;
+        ctx.beginPath(); ctx.arc(w - 4 * hr, y, 1.7 * hr, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      placedYs.push(y);
+      const tw = ctx.measureText(it.text).width * hr;
+      const bh = 15 * vr, bw = tw + 13 * hr;
+      const x0 = w - bw - 6 * hr;
+      ctx.fillStyle = "rgba(12,12,15,.9)";
+      ctx.fillRect(x0, y - bh / 2, bw, bh);
+      ctx.fillStyle = it.color;
+      ctx.fillRect(x0, y - bh / 2, 2 * hr, bh);
+      ctx.fillStyle = it.textColor;
+      ctx.textAlign = "left";
+      ctx.fillText(it.text, x0 + 7 * hr, y + 0.5 * vr);
+    }
+  }
+}
+
+class FluxStrikesPrimitive{
+  constructor(){ this._series = null; this._requestUpdate = null; this._paneViews = [{renderer: new FluxStrikesRenderer(this)}]; }
+  attached(param){ this._series = param.series; this._requestUpdate = param.requestUpdate; }
+  detached(){ this._series = null; this._requestUpdate = null; }
+  updateAllViews(){}
+  paneViews(){ return this._paneViews; }
+  requestUpdate(){ if (this._requestUpdate) this._requestUpdate(); }
+}
+
+// Bornes ±0.25σ (moitié du pas 0.5σ de la grille serveur, cf. _flow_grids)
+// autour de chaque point : les cellules pavent l'axe prix sans trou ni
+// chevauchement, même repère que le dégradé précédent.
+function fluxCellBounds(priceGrid){
+  const n = priceGrid.length;
+  const half = n > 1 ? (priceGrid[1] - priceGrid[0]) / 2 : 1;
+  return priceGrid.map(p => ({low: p - half, high: p + half}));
+}
+
+// Construit les lignes du custom series à partir de la matrice /api/flow.
+// time = horloge RÉELLE au moment du calcul (pas celle, figée, du dernier
+// recalcul serveur) : la fenêtre "maintenant -> clôture" glisse avec le
+// temps qui passe entre deux recalculs intraday, comme l'ancien canevas.
+function buildFluxRows(d, mode){
+  const mat = d && d[mode];
+  if (!mat || !mat.length || !d.price_grid || !d.price_grid.length || !d.hours || !d.hours.length) return null;
+  const bounds = fluxCellBounds(d.price_grid);
   const absVals = [];
-  for (const row of rows) for (const v of row) absVals.push(Math.abs(v));
+  for (const row of mat) for (const v of row) absVals.push(Math.abs(v));
   absVals.sort((a, b) => a - b);
   const ref = fluxPercentile(absVals, 0.95) || 1;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rows = d.hours.map((h, hi) => ({
+    time: nowSec + Math.round(h * 3600),
+    cells: mat[hi].map((v, pi) => ({low: bounds[pi].low, high: bounds[pi].high, amount: v / ref})),
+  }));
+  return {rows, nowSec, closeSec: nowSec + Math.round(d.hours[d.hours.length - 1] * 3600)};
+}
 
-  // ---- grille rendue à résolution native (nH x nP) puis étirée avec lissage
-  // du navigateur : dégradé continu sans réimplémenter une interpolation ----
-  const off = document.createElement("canvas");
-  off.width = nH; off.height = nP;
-  const octx = off.getContext("2d");
-  const img = octx.createImageData(nH, nP);
-  for (let pi = 0; pi < nP; pi++){
-    const rowY = nP - 1 - pi;            // prix haut en haut de l'image
-    for (let hi = 0; hi < nH; hi++){
-      const v = rows[hi][pi];
-      const inten = Math.max(0, Math.min(1, Math.abs(v) / ref));
-      const rgb = v >= 0 ? [38, 166, 154] : [239, 83, 80];   // C.teal / C.red
-      const idx = (rowY * nH + hi) * 4;
-      img.data[idx] = rgb[0]; img.data[idx + 1] = rgb[1]; img.data[idx + 2] = rgb[2];
-      // plancher d'opacité : la structure de la grille reste lisible même
-      // près de zéro, au lieu de disparaître dans le fond du panneau
-      img.data[idx + 3] = Math.round(255 * (0.10 + 0.90 * inten));
-    }
-  }
-  octx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(off, padL, padT, gw, gh);
+// "maint." / "+1h" / "clôture" : relatif à l'ancre horaire de la dernière
+// matrice chargée (FLUXC.timeAnchor), pas à des bornes de barre exactes --
+// le sélecteur de ticks de lightweight-charts choisit lui-même où poser des
+// graduations selon le zoom, on ne fait que les LIBELLER.
+function fluxTickLabel(timeSec){
+  if (!FLUXC.timeAnchor) return "";
+  const diffH = (timeSec - FLUXC.timeAnchor) / 3600;
+  if (Math.abs(diffH) < 0.08) return t("fluxNow");
+  if (FLUXC.closeSec && Math.abs(timeSec - FLUXC.closeSec) < 180) return t("fluxClose");
+  return (diffH > 0 ? "+" : "") + Math.round(diffH) + "h";
+}
 
-  // ---- axes : prix en unités sigma (même pas que la grille, 0.5σ), temps
-  // en heures jusqu'à la clôture ----
-  ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
-  ctx.font = "10px IBM Plex Mono, monospace";
-  ctx.fillStyle = C.faint;
-  for (let i = 0; i < nP; i += 2){
-    const mult = Math.round((i - (nP - 1) / 2) * 0.5 * 2) / 2;
-    const y = yFor(d.price_grid[i]);
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gw, y); ctx.stroke();
-    ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    ctx.fillText((mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ", padL - 6, y);
+// Prix en unités sigma (même pas que la grille serveur, 0.5σ) : formateur
+// custom de la série, utilisé pour l'axe ET le crosshair/priceLine.
+function fluxPriceLabel(price){
+  if (FLUXC.gridUnit && FLUXC.gridSpot != null){
+    const mult = Math.round(((price - FLUXC.gridSpot) / FLUXC.gridUnit) * 2) / 2;
+    return (mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ";
   }
-  ctx.textAlign = "center"; ctx.textBaseline = "top";
-  d.hours.forEach((hVal, hi) => {
-    const x = xFor(hi);
-    const isLast = hi === d.hours.length - 1;
-    const label = hVal === 0 ? t("fluxNow")
-                : (isLast && hVal % 1 !== 0) ? t("fluxClose")
-                : "+" + Math.round(hVal) + "h";
-    ctx.fillText(label, x, padT + gh + 4);
+  return fmt(price, 0);
+}
+
+function ensureFluxChart(){
+  if (FLUXC.chart || typeof LightweightCharts === "undefined") return !!FLUXC.chart;
+  const box = $("fluxCanvas");
+  FLUXC.box = box;
+  FLUXC.chart = LightweightCharts.createChart(box, {
+    layout:{background:{type:"solid", color:"transparent"}, textColor:C.muted,
+            fontFamily:"IBM Plex Mono, monospace", fontSize:10},
+    grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
+    rightPriceScale:{borderColor:C.line},
+    timeScale:{borderColor:C.line, timeVisible:true, secondsVisible:false, tickMarkFormatter: fluxTickLabel},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Normal,
+      vertLine:{color:C.faint, width:1, style:LightweightCharts.LineStyle.Dashed},
+      horzLine:{color:C.faint, width:1, style:LightweightCharts.LineStyle.Dashed}},
   });
+  FLUXC.series = FLUXC.chart.addCustomSeries(new FluxHeatmapSeries(), {
+    cellShader: fluxCellShader,
+    priceFormat: {type: "custom", formatter: fluxPriceLabel, minMove: 0.01},
+  });
+  FLUXC.strikesPrimitive = new FluxStrikesPrimitive();
+  FLUXC.series.attachPrimitive(FLUXC.strikesPrimitive);
+  FLUXC.spotSeries = FLUXC.chart.addLineSeries({
+    color: C.text, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: true, priceLineStyle: LightweightCharts.LineStyle.Dashed,
+    lastValueVisible: true, crosshairMarkerVisible: false,
+  });
+  new ResizeObserver(() => FLUXC.chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
+    .observe(box);
+  // Pastilles CW/PW/Flip : même overlay canvas absolu + même fonction
+  // générique drawLevelLabels(holder) que le chart de prix (cf. CHART.lblCv).
+  FLUXC.lblCv = document.createElement("canvas");
+  FLUXC.lblCv.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:2";
+  box.appendChild(FLUXC.lblCv);
+  FLUXC._boxW = box.clientWidth; FLUXC._boxH = box.clientHeight;
+  new ResizeObserver(entries => {
+    const rect = entries[0] && entries[0].contentRect;
+    if (rect && rect.width && rect.height){ FLUXC._boxW = rect.width; FLUXC._boxH = rect.height; }
+    drawLevelLabels(FLUXC);
+  }).observe(box);
+  return true;
+}
 
-  // ---- repères : ligne toujours tracée sur le dégradé, étiquette en
-  // pastille (fond sombre + liseré coloré, même traitement que les niveaux
-  // du chart de prix) posée seulement si la place le permet. tier 0/1 (prix
-  // courant, CW/PW/Flip) toujours étiquetés -- rares et prioritaires ; tier 2
-  // (strikes) triés par ratio vol/OI décroissant, le reste évincé en simple
-  // point pour rester lisible plutôt que de s'empiler. ----
-  markers.forEach(m => { m.y = yFor(m.price); });
-  const rowH = 17;
-  const placedYs = [];
-  const fits = y => !placedYs.some(py => Math.abs(py - y) < rowH);
-  const order = markers.filter(m => m.tier < 2)
-    .concat(markers.filter(m => m.tier === 2).sort((a, b) => b.ratio - a.ratio));
-
-  for (const m of order){
-    ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
-    ctx.beginPath(); ctx.moveTo(padL, m.y); ctx.lineTo(padL + gw, m.y); ctx.stroke();
-    ctx.setLineDash([]);
-
-    const show = m.tier < 2 || fits(m.y);
-    if (!show){
-      // évincé : point discret au bord droit, la ligne reste identifiable
-      ctx.globalAlpha = 0.5; ctx.fillStyle = m.color;
-      ctx.beginPath(); ctx.arc(w - 4, m.y, 1.7, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-      continue;
-    }
-    placedYs.push(m.y);
-    ctx.font = m.font;
-    const tw = ctx.measureText(m.text).width;
-    const bh = 15, bw = tw + 13;
-    const x0 = padL + gw + 5;
-    ctx.fillStyle = "rgba(12,12,15,.9)";
-    ctx.fillRect(x0, m.y - bh / 2, bw, bh);
-    ctx.fillStyle = m.color;
-    ctx.fillRect(x0, m.y - bh / 2, 2, bh);                  // liseré de couleur
-    ctx.fillStyle = m.textColor;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText(m.text, x0 + 7, m.y + 0.5);
+// Recharge le dégradé + niveaux sur la série déjà créée -- appelé au chargement
+// de la matrice (loadFlux) et au changement de mode (gamma/vanna/charm), PAS
+// à chaque tick de prix (cf. pollQuote, qui ne bouge que FLUXC.spotSeries).
+function refreshFluxChart(){
+  if (!ensureFluxChart()) return;
+  const d = FLUX_DATA;
+  const built = d ? buildFluxRows(d, FLUX_MODE) : null;
+  if (!built){
+    FLUXC.series.setData([]);
+    FLUXC.spotSeries.setData([]);
+    setLineGroup(FLUXC, "levels", []);
+    if (FLUXC.strikesPrimitive) FLUXC.strikesPrimitive.requestUpdate();
+    return;
   }
+  FLUXC.timeAnchor = built.nowSec;
+  FLUXC.closeSec = built.closeSec;
+  FLUXC.gridSpot = d.spot;
+  FLUXC.gridUnit = d.unit;
+  FLUXC.series.setData(built.rows);
+  FLUXC.chart.timeScale().setVisibleRange({from: built.nowSec, to: built.closeSec});
+  const spot = CHART.lastBar ? CHART.lastBar.close
+             : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
+  const point = {time: built.nowSec, value: spot};
+  FLUXC.spotSeries.setData([point]);
+  FLUXC.lastBar = point;    // ré-alimenté par animatePrice(key:"value") à chaque tick, cf. pollQuote
+  refreshFluxLevels();
+  if (FLUXC.strikesPrimitive) FLUXC.strikesPrimitive.requestUpdate();
+}
+
+// CW/PW/Flip seuls (groupe "levels") : appelé à chaque payload /api/gex frais
+// (les niveaux peuvent bouger sans attendre le prochain calcul intraday de la
+// matrice, cf. docs/BRIEF-flux.md) sans toucher au dégradé ni au point spot.
+function refreshFluxLevels(){
+  if (!FLUXC.chart) return;   // pas encore initialisé (vue Flux jamais ouverte) : rien à mettre à jour
+  const specs = fluxLevelMarkers().map(m => ({price: m.price, color: m.color, solid: true, code: m.label, tier: 1}));
+  setLineGroup(FLUXC, "levels", specs);
 }
 
 // Fusionne calls/puts du contexte volume/OI (déjà top_n côté serveur, cf.
@@ -2696,7 +2810,7 @@ async function loadFlux(){
   renderFluxNote();
   renderFluxSynth();
   renderFluxVolCtx();
-  drawFlux();
+  refreshFluxChart();
 }
 
 function armFluxPoll(){
@@ -2729,10 +2843,7 @@ function setFluxView(on){
     $("chartNote").textContent = "";       // statut Flux affiché dans #fluxNote
     $("chartTitle").textContent = t("fluxTitle");
     renderFluxLegend();
-    if (!FLUX_RESIZE_WIRED){
-      FLUX_RESIZE_WIRED = true;
-      new ResizeObserver(() => drawFlux()).observe($("fluxBox"));
-    }
+    ensureFluxChart();    // lazy comme ensureChart() -- son propre ResizeObserver est posé une seule fois ici
     loadFlux();
   } else {
     $("chartTitle").textContent = t("chart");
