@@ -240,10 +240,11 @@
   .chartbox{height:400px; position:relative}
 
   /* ============ flux (gamma dealer, projection prix x temps) ============ */
-  /* min-height, pas height : le canevas (flex:1) doit rester genereux meme
-     quand fluxsynth/fluxvolctx grossissent (plus de lignes, wrap) -- meme
-     lecture que le chart de prix, qui lui n'a aucun chrome au-dessus */
-  .fluxbox{min-height:640px; display:flex; flex-direction:column}
+  /* hauteur du conteneur = contenu (bar/synth/volctx + canevas) ; c'est le
+     canevas lui-meme qui est cale sur la meme dimension que .chartbox, pas
+     le panneau entier -- sinon un min-height sur le panneau grossit sans
+     borne des que le contenu au-dessus (synth/volctx) prend plus de place */
+  .fluxbox{display:flex; flex-direction:column}
   .fluxbar{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 16px; border-bottom:1px solid var(--line); flex:none;
@@ -254,7 +255,7 @@
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
   .fluxsw:first-child{margin-left:0}
   .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
-  #fluxCanvas{flex:1; width:100%; display:block; min-height:340px}
+  #fluxCanvas{flex:none; width:100%; display:block; height:400px}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -497,8 +498,7 @@
     .cell{padding:10px 12px}
     .cell.price .val{font-size:22px}
     .chartbox{height:300px}
-    .fluxbox{min-height:480px}
-    #fluxCanvas{min-height:240px}
+    #fluxCanvas{height:300px}
     .fluxsynth{padding:8px 10px 10px}
     .fluxsynth .fsrows{flex-direction:column; gap:5px}
     .fluxvolctx{padding:8px 10px 10px}
