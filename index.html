@@ -261,7 +261,9 @@
   .fluxCanvasWrap{position:relative; flex:none; width:100%; height:400px}
   .fluxCanvasWrap canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
   #fluxCvBg, #fluxCvMain{pointer-events:none}
-  #fluxCvCursor{cursor:grab; touch-action:none}
+  /* défaut hors zone de tracé ; "crosshair" (survol) / "grabbing" (glisser)
+     appliqués en JS selon la position réelle du pointeur, cf. bindFluxHover */
+  #fluxCvCursor{cursor:default; touch-action:none}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -1021,6 +1023,7 @@ const T = {
     fvCaveat:"Le volume ne dit pas le sens : un gros volume peut être de l'achat ou de la vente côté client, avec des implications opposées pour les dealers. Indicateur de zone d'attention, pas de direction.",
     fvEmpty:"Pas de volume exploitable pour l'instant",
     fvRatioHi:"vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
+    fluxOiLbl:"OI",
     fluxStrikesChip:"Strikes", fluxStrikesTip:"Repères des strikes actifs (volume/OI du jour) sur le dégradé",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
@@ -1084,6 +1087,7 @@ const T = {
     fvCaveat:"Volume doesn't say direction: a large volume can be client buying or selling, with opposite implications for dealers. An attention-zone indicator, not a directional one.",
     fvEmpty:"No exploitable volume yet",
     fvRatioHi:"vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
+    fluxOiLbl:"OI",
     fluxStrikesChip:"Strikes", fluxStrikesTip:"Today's active strike markers (volume/OI) on the gradient",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
@@ -2561,7 +2565,7 @@ function fluxLevelMarkers(){
   const kinds = {res:"CW", sup:"PW", flip:"Flip"};
   return Object.keys(kinds).map(k => d.levels.find(L => L.kind === k))
     .filter(Boolean)
-    .map(L => ({price: L.price_nq, label: kinds[L.kind], color: KIND_COLOR[L.kind]}));
+    .map(L => ({price: L.price_nq, label: kinds[L.kind], full: L.label, color: KIND_COLOR[L.kind]}));
 }
 
 // ═══ trois canevas empilés (cvBg dégradé / cvMain grille+niveaux / cvCursor
@@ -2661,7 +2665,7 @@ function fluxLayout(d, mat, w, h){
   }
   fluxLevelMarkers().forEach(m => {
     if (m.price == null || m.price < fullMin || m.price > fullMax) return;
-    markers.push({price: m.price, tier: 1, text: m.label, color: m.color, textColor: m.color,
+    markers.push({price: m.price, tier: 1, text: m.label, full: m.full, color: m.color, textColor: m.color,
                   dash: [2, 3], lw: 1, font: LVL_FONT});
   });
   if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
@@ -2671,6 +2675,8 @@ function fluxLayout(d, mat, w, h){
     const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
     markers.push({
       price: m.strike, tier: 2, ratio: ratio || 0,
+      strike: m.strike, isCall: m.isCall, volume: m.volume, oi: m.oi,
+      vol_oi_ratio: ratio, distance: m.distance,
       text: `${m.isCall ? "C" : "P"} ${fmt(m.strike)} ${rTxt}`,
       color: `rgba(236,234,228,${0.35 + 0.45 * k})`,       // ligne : opacité ~ vol/OI
       textColor: "rgba(236,234,228,.92)",                  // étiquette : toujours lisible une fois affichée
@@ -2686,7 +2692,7 @@ function fluxLayout(d, mat, w, h){
     : 40;
   const gw = Math.max(1, w - padL - padR);
 
-  return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, markers};
+  return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, markers, spot};
 }
 
 // ---- bitmap du dégradé : grille native (nH x nP) construite dans un canevas
@@ -2849,7 +2855,7 @@ function drawFluxMain(cv, d, mat, lay){
   // par la vue courante (lay.markers porte les candidats sur la plage
   // complète, cf. fluxLayout). ----
   const markers = lay.markers.filter(m => m.price >= priceMin && m.price <= priceMax);
-  markers.forEach(m => { m.y = yFor(m.price); });
+  markers.forEach(m => { m.y = yFor(m.price); m.shown = false; });
   const rowH = 17;
   const placedYs = [];
   const fits = y => !placedYs.some(py => Math.abs(py - y) < rowH);
@@ -2862,6 +2868,7 @@ function drawFluxMain(cv, d, mat, lay){
       ctx.globalAlpha = 0.5; ctx.fillStyle = m.color;
       ctx.beginPath(); ctx.arc(w - 4, m.y, 1.7, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
+      m.dotX = w - 4; m.dotY = m.y;
       continue;
     }
     const my2 = Math.round(m.y) + 0.5;
@@ -2881,9 +2888,14 @@ function drawFluxMain(cv, d, mat, lay){
     ctx.fillStyle = m.textColor;
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(m.text, x0 + 7, m.y + 0.5);
+    m.shown = true; m.boxX = x0; m.boxY = m.y - bh / 2; m.boxW = bw; m.boxH = bh;
   }
 
-  FLUX_LAYOUT = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours: d.hours, rows: mat};
+  // markers + spot repassés à la couche curseur (cf. drawFluxCursorLayer) --
+  // survol des niveaux/strikes, jamais un recalcul du dégradé ou un second
+  // passage sur cvMain pour une simple hover.
+  FLUX_LAYOUT = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours: d.hours, rows: mat,
+                 spot: lay.spot, markers: order};
 }
 
 // "maint." / "+1.3h" / "clôture" : même vocabulaire que les graduations de
@@ -2892,6 +2904,53 @@ function fluxHoverTimeLabel(hVal, hours){
   if (Math.abs(hVal) < 0.05) return t("fluxNow");
   if (Math.abs(hVal - hours[hours.length - 1]) < 0.05) return t("fluxClose");
   return (hVal > 0 ? "+" : "") + hVal.toFixed(1) + "h";
+}
+
+// Police unique de la couche curseur, fixée une fois hors de toute boucle de
+// dessin (jamais réassignée par cellule/marqueur -- un seul ctx.font par
+// frame, measureText appelé seulement pour les libellés réellement affichés).
+const FLUX_CUR_FONT = "11px IBM Plex Mono, monospace";
+
+// Infobulle générique (fond semi-opaque + bordure fine, seule façon de rester
+// lisible sur un dégradé coloré) : plusieurs lignes, positionnée près de
+// (x, y), qui se retourne côté gauche/haut dès qu'elle sortirait du cadre.
+function fluxDrawTooltip(ctx, x, y, lines, w, h, borderColor){
+  const lh = 15, padX = 8, padY = 6;
+  let tw = 0;
+  for (const s of lines) tw = Math.max(tw, ctx.measureText(s).width);
+  const boxW = tw + padX * 2, boxH = lines.length * lh + padY;
+  let bx = x + 12, by = y - boxH / 2;
+  if (bx + boxW > w) bx = x - boxW - 12;
+  if (bx < 0) bx = 2;
+  if (by < 0) by = 2;
+  if (by + boxH > h) by = h - boxH - 2;
+  ctx.fillStyle = "rgba(12,12,15,.94)";
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1;
+  ctx.fillRect(bx, by, boxW, boxH);
+  ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
+  ctx.fillStyle = C.text;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  lines.forEach((s, i) => ctx.fillText(s, bx + padX, by + padY / 2 + lh * i + lh / 2));
+}
+
+// Repère (niveau ou strike) le plus proche du pointeur : survol direct de son
+// étiquette en marge, sinon proximité verticale (<=6px) avec sa ligne DANS la
+// grille. Le repère de prix courant (tier 0) n'est pas un "niveau" au sens de
+// l'ergonomie demandée -- exclu du survol.
+function fluxHoverMarker(markers, mx, my, inBounds){
+  let hover = null, bestDy = 6;
+  for (const m of (markers || [])){
+    if (m.tier < 1) continue;
+    if (m.shown && mx >= m.boxX && mx <= m.boxX + m.boxW && my >= m.boxY && my <= m.boxY + m.boxH){
+      return m;   // survol direct de l'étiquette : priorité absolue
+    }
+    if (inBounds){
+      const dy = Math.abs(my - m.y);
+      if (dy <= bestDy){ bestDy = dy; hover = m; }
+    }
+  }
+  return hover;
 }
 
 // ---- cvCursor : réticule + infobulle, propre couche transparente au-dessus
@@ -2905,8 +2964,58 @@ function drawFluxCursorLayer(cv){
   const L = FLUX_LAYOUT, pos = FLUX_CURSOR;
   if (!L || !pos) return;
   const {mx, my} = pos;
-  const {padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours, rows} = L;
+  const {padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours, rows, markers, spot} = L;
   const inBounds = mx >= padL && mx <= padL + gw && my >= padT && my <= padT + gh;
+  ctx.font = FLUX_CUR_FONT;
+
+  // ---- survol niveaux/strikes : vit aussi hors grille (étiquettes en marge),
+  // donc évalué avant tout retour anticipé sur inBounds. ----
+  const hover = fluxHoverMarker(markers, mx, my, inBounds);
+  if (hover){
+    // le reste des étiquettes s'atténue pour faire ressortir la sélection
+    for (const m of markers){
+      if (m === hover || !m.shown) continue;
+      ctx.fillStyle = "rgba(9,9,11,.55)";
+      ctx.fillRect(m.boxX, m.boxY, m.boxW, m.boxH);
+    }
+    // tier 2 (strikes) : couleur de base modulée par le ratio vol/OI, jamais
+    // pleinement opaque -- le survol doit forcer l'opacité max quel que soit
+    // ce ratio (cf. "l'étiquette passe en pleine opacité").
+    const hoverColor = hover.tier === 2 ? "rgba(236,234,228,.95)" : hover.color;
+    const hy = Math.round(hover.y) + 0.5;
+    ctx.setLineDash(hover.dash || []);
+    ctx.strokeStyle = hoverColor; ctx.lineWidth = (hover.lw || 1) + 1.6;
+    ctx.beginPath(); ctx.moveTo(padL, hy); ctx.lineTo(padL + gw, hy); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (hover.shown){
+      ctx.fillStyle = "rgba(20,20,24,.98)";
+      ctx.fillRect(hover.boxX, hover.boxY, hover.boxW, hover.boxH);
+      ctx.fillStyle = hoverColor;
+      ctx.fillRect(hover.boxX, hover.boxY, 2, hover.boxH);
+      ctx.strokeStyle = hoverColor; ctx.lineWidth = 1;
+      ctx.strokeRect(hover.boxX + 0.5, hover.boxY + 0.5, hover.boxW - 1, hover.boxH - 1);
+      ctx.fillStyle = hover.textColor;
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(hover.text, hover.boxX + 7, hover.boxY + hover.boxH / 2 + 0.5);
+    }
+
+    const distPts = spot != null ? hover.price - spot : null;
+    const distPct = distPts != null && spot ? distPts / spot * 100 : null;
+    const distTxt = distPts == null ? t("pts") + " —"
+      : (distPts >= 0 ? "+" : "") + fmt(distPts, 0) + " " + t("pts")
+        + (distPct != null ? "  (" + (distPct >= 0 ? "+" : "") + fmt(distPct, 2) + " %)" : "");
+    const lines = hover.tier === 2
+      ? [
+          `${hover.isCall ? t("fvCalls") : t("fvPuts")} ${fmt(hover.strike)}`,
+          `${fmtFluxCount(hover.volume)} ${t("fvVolUnit")} · ${t("fluxOiLbl")} ${fmtFluxCount(hover.oi)}` +
+            ` · ×${hover.vol_oi_ratio != null ? hover.vol_oi_ratio.toFixed(2) : "—"}`,
+          distTxt,
+        ]
+      : [hover.full || hover.text, `${t("th")[1]}: ${fmt(hover.price)}`, distTxt];
+    fluxDrawTooltip(ctx, mx, hover.y, lines, w, h, hoverColor);
+  }
+
   if (!inBounds) return;
 
   const price = priceMax - (my - padT) / gh * (priceMax - priceMin || 1);
@@ -2928,7 +3037,6 @@ function drawFluxCursorLayer(cv){
   ctx.setLineDash([]);
 
   // ---- pastille de prix, bord droit ----
-  ctx.font = "11px IBM Plex Mono, monospace";
   const priceTxt = fmt(price, 0);
   const ptw = ctx.measureText(priceTxt).width;
   const pbx = w - ptw - 13, pbh = 17;
@@ -2948,22 +3056,16 @@ function drawFluxCursorLayer(cv){
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(timeTxt, tbx + ttw / 2 + 5, tby + 7.5);
 
-  // ---- tooltip : mode courant + valeur $ exacte de la cellule ----
-  if (val != null){
-    const txt = `${FLUX_MODE_LABEL[FLUX_MODE] || FLUX_MODE} ${fmtFluxUsd(val)}`;
-    const tw2 = ctx.measureText(txt).width;
-    const boxW = tw2 + 16, boxH = 22;
-    let bx = mx + 12, by = my - boxH - 8;
-    if (bx + boxW > w) bx = mx - boxW - 12;
-    if (by < 0) by = my + 12;
-    ctx.fillStyle = "rgba(12,12,15,.94)";
-    ctx.strokeStyle = val >= 0 ? C.teal : C.red;
-    ctx.lineWidth = 1;
-    ctx.fillRect(bx, by, boxW, boxH);
-    ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
-    ctx.fillStyle = C.text;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText(txt, bx + 8, by + boxH / 2 + 0.5);
+  // ---- tooltip de cellule : grecque + valeur $, prix, horizon -- masquée
+  // pendant le survol d'un niveau/strike pour ne pas superposer deux
+  // infobulles au même endroit. ----
+  if (!hover && val != null){
+    const lines = [
+      `${FLUX_MODE_LABEL[FLUX_MODE] || FLUX_MODE}  ${fmtFluxUsd(val)}`,
+      `${t("th")[1]}: ${fmt(price, 0)}`,
+      fluxHoverTimeLabel(hVal, hours),
+    ];
+    fluxDrawTooltip(ctx, mx, my, lines, w, h, val >= 0 ? C.teal : C.red);
   }
 }
 
@@ -3015,6 +3117,18 @@ function bindFluxHover(){
 
   const setCursorPos = (mx, my) => { FLUX_CURSOR = {mx, my}; invalidateFlux("cursor"); };
   const clearCursorPos = () => { FLUX_CURSOR = null; invalidateFlux("cursor"); };
+  const touchXY = touch => {
+    const r = cv.getBoundingClientRect();
+    return {mx: touch.clientX - r.left, my: touch.clientY - r.top};
+  };
+  // crosshair sur la zone de tracé, défaut ailleurs (comfort n°5) -- jamais
+  // pendant un glisser, où le curseur reste "grabbing".
+  const updateCursorIcon = (mx, my) => {
+    if (drag){ cv.style.cursor = "grabbing"; return; }
+    const L = FLUX_LAYOUT;
+    const inGrid = L && mx >= L.padL && mx <= L.padL + L.gw && my >= L.padT && my <= L.padT + L.gh;
+    cv.style.cursor = inGrid ? "crosshair" : "default";
+  };
 
   const panTo = my => {
     const L = FLUX_LAYOUT;
@@ -3037,19 +3151,21 @@ function bindFluxHover(){
     const r = cv.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     if (drag) panTo(my); else setCursorPos(mx, my);
+    updateCursorIcon(mx, my);
   });
   cv.addEventListener("mousedown", e => {
     if (!FLUX_LAYOUT || !FLUX_VIEW) return;
     drag = {startY: e.clientY, view0: {...FLUX_VIEW}};
     cv.style.cursor = "grabbing";
   });
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("mouseup", e => {
     if (!drag) return;
     drag = null;
-    cv.style.cursor = "";
+    const r = cv.getBoundingClientRect();
+    updateCursorIcon(e.clientX - r.left, e.clientY - r.top);
   });
   cv.addEventListener("mouseleave", () => {
-    if (!drag) clearCursorPos();
+    if (!drag){ clearCursorPos(); cv.style.cursor = "default"; }
   });
   cv.addEventListener("wheel", e => {
     if (!FLUX_LAYOUT) return;
@@ -3071,8 +3187,13 @@ function bindFluxHover(){
     if (e.touches.length === 1){
       pinch = null;
       drag = {startY: e.touches[0].clientY, view0: {...FLUX_VIEW}};
+      // tactile : l'infobulle apparaît à l'appui (comfort n°5), même point
+      // que le doigt qui va ensuite glisser/paner.
+      const {mx, my} = touchXY(e.touches[0]);
+      setCursorPos(mx, my);
     } else if (e.touches.length === 2){
       drag = null;
+      clearCursorPos();
       const r = cv.getBoundingClientRect();
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
       const L = FLUX_LAYOUT;
@@ -3094,10 +3215,12 @@ function bindFluxHover(){
       invalidateFlux("bg", "main", "cursor");
     } else if (drag && e.touches.length === 1){
       panTo(e.touches[0].clientY);
+      const {mx, my} = touchXY(e.touches[0]);
+      setCursorPos(mx, my);
     }
     e.preventDefault();
   }, {passive: false});
-  const touchEnd = () => { drag = null; pinch = null; };
+  const touchEnd = () => { drag = null; pinch = null; clearCursorPos(); };
   cv.addEventListener("touchend", touchEnd);
   cv.addEventListener("touchcancel", touchEnd);
 }
