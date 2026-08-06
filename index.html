@@ -2314,6 +2314,26 @@ function fluxPercentile(sortedAsc, p){
   return sortedAsc[idx];
 }
 
+// ---- palette du dégradé : MÊME traitement que la heatmap du dashboard
+// (hmCellStyle, dash.html) -- interpolation de teinte base->saturée avec
+// easing pow(0.7), pas un simple alpha sur une couleur plate. Un halo doré
+// signale les cellules extrêmes (percentile 99), même langage visuel que le
+// reste du produit plutôt qu'une convention isolée à ce seul panneau. ----
+const FLUX_TEAL_BASE = [15, 26, 24], FLUX_TEAL_HOT = [38, 166, 154];
+const FLUX_RED_BASE = [28, 18, 18], FLUX_RED_HOT = [239, 83, 80];
+const FLUX_GOLD = [240, 185, 11];
+function fluxShade(v, ref, ref99){
+  const av = Math.abs(v);
+  const x = Math.pow(Math.min(1, av / ref), 0.7);
+  const base = v >= 0 ? FLUX_TEAL_BASE : FLUX_RED_BASE, hot = v >= 0 ? FLUX_TEAL_HOT : FLUX_RED_HOT;
+  let r = base[0] + (hot[0] - base[0]) * x, g = base[1] + (hot[1] - base[1]) * x, b = base[2] + (hot[2] - base[2]) * x;
+  if (ref99 && av >= ref99){
+    const g2 = Math.min(1, (av - ref99) / (ref * 0.5 || 1));   // au-delà de p99 : vire au doré
+    r += (FLUX_GOLD[0] - r) * g2; g += (FLUX_GOLD[1] - g) * g2; b += (FLUX_GOLD[2] - b) * g2;
+  }
+  return [Math.round(r), Math.round(g), Math.round(b), 0.20 + 0.80 * x];
+}
+
 // $ bruts, jamais moyennes entre grecques (unites differentes, cf. BRIEF-flux.md) :
 // simple mise a l'echelle M/Md pour la lisibilite, le signe reprend la convention
 // dealer de gex_by_strike (deja appliquee dans flow_gamma_matrix cote serveur).
@@ -2478,6 +2498,26 @@ function fluxLevelMarkers(){
     .map(L => ({price: L.price_nq, label: kinds[L.kind], color: KIND_COLOR[L.kind]}));
 }
 
+// Le dégradé, les axes et les repères sont chers à recalculer (tri
+// percentile, bitmap multi-étages) mais changent rarement -- seulement au
+// rafraîchissement des données, au changement de mode ou au resize. Le
+// croisillon change à CHAQUE mouvement de souris : le peindre par-dessus une
+// copie déjà prête (FLUX_STATIC) plutôt que tout redessiner évite de refaire
+// ce travail 60 fois par seconde. FLUX_LAYOUT porte les coordonnées dont le
+// croisillon a besoin pour retrouver prix/heure/valeur sous la souris.
+let FLUX_STATIC = null, FLUX_LAYOUT = null, FLUX_HOVER_WIRED = false;
+
+function blitFluxStatic(){
+  const cv = $("fluxCanvas");
+  if (!cv || !FLUX_STATIC) return;
+  const vctx = cv.getContext("2d");
+  vctx.save();
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.clearRect(0, 0, cv.width, cv.height);
+  vctx.drawImage(FLUX_STATIC, 0, 0);
+  vctx.restore();
+}
+
 function drawFlux(){
   const cv = $("fluxCanvas");
   if (!cv || cv.hidden || cv.offsetParent === null) return;
@@ -2490,7 +2530,9 @@ function drawFlux(){
   if (!w || !h) return;
   cv.width = Math.max(1, Math.round(w * dpr));
   cv.height = Math.max(1, Math.round(h * dpr));
-  const ctx = cv.getContext("2d");
+  if (!FLUX_STATIC) FLUX_STATIC = document.createElement("canvas");
+  FLUX_STATIC.width = cv.width; FLUX_STATIC.height = cv.height;
+  const ctx = FLUX_STATIC.getContext("2d");   // tout se dessine hors-écran
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
@@ -2504,6 +2546,8 @@ function drawFlux(){
     ctx.font = "11px IBM Plex Mono, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText($("fluxNote").textContent || "", w / 2, h / 2);
+    FLUX_LAYOUT = null;
+    blitFluxStatic();
     return;
   }
 
@@ -2561,9 +2605,10 @@ function drawFlux(){
   for (const row of rows) for (const v of row) absVals.push(Math.abs(v));
   absVals.sort((a, b) => a - b);
   const ref = fluxPercentile(absVals, 0.95) || 1;
+  const ref99 = fluxPercentile(absVals, 0.99) || ref;
 
-  // ---- grille rendue à résolution native (nH x nP) puis étirée avec lissage
-  // du navigateur : dégradé continu sans réimplémenter une interpolation ----
+  // ---- grille rendue à résolution native (nH x nP) : quelques dizaines de
+  // pixels, la matrice serveur n'a pas plus de granularité que ça ----
   const off = document.createElement("canvas");
   off.width = nH; off.height = nP;
   const octx = off.getContext("2d");
@@ -2571,20 +2616,35 @@ function drawFlux(){
   for (let pi = 0; pi < nP; pi++){
     const rowY = nP - 1 - pi;            // prix haut en haut de l'image
     for (let hi = 0; hi < nH; hi++){
-      const v = rows[hi][pi];
-      const inten = Math.max(0, Math.min(1, Math.abs(v) / ref));
-      const rgb = v >= 0 ? [38, 166, 154] : [239, 83, 80];   // C.teal / C.red
+      const [r, g, b, a] = fluxShade(rows[hi][pi], ref, ref99);
       const idx = (rowY * nH + hi) * 4;
-      img.data[idx] = rgb[0]; img.data[idx + 1] = rgb[1]; img.data[idx + 2] = rgb[2];
-      // plancher d'opacité : la structure de la grille reste lisible même
-      // près de zéro, au lieu de disparaître dans le fond du panneau
-      img.data[idx + 3] = Math.round(255 * (0.10 + 0.90 * inten));
+      img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = b;
+      img.data[idx + 3] = Math.round(255 * a);
     }
   }
   octx.putImageData(img, 0, 0);
+
+  // ---- montée en résolution PROGRESSIVE avant l'étirement final : un
+  // facteur d'agrandissement unique et énorme (grille brute -> plein
+  // panneau, souvent x40 à x80) pousse le lissage du navigateur dans une
+  // zone où le résultat varie d'un moteur à l'autre -- parfois net, parfois
+  // légèrement crénelé. Deux ou trois étapes intermédiaires (x3 à chaque
+  // fois) donnent un rendu homogène partout : la technique standard pour un
+  // agrandissement de haute qualité, l'inverse d'un mipmap. ----
+  let src = off, sw = nH, sh = nP;
+  while (sw < gw / 3 && sh < gh / 3 && sw < 480){
+    const nw = Math.min(gw, sw * 3), nh = Math.min(gh, sh * 3);
+    const stage = document.createElement("canvas");
+    stage.width = nw; stage.height = nh;
+    const sctx = stage.getContext("2d");
+    sctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in sctx) sctx.imageSmoothingQuality = "high";
+    sctx.drawImage(src, 0, 0, nw, nh);
+    src = stage; sw = nw; sh = nh;
+  }
   ctx.imageSmoothingEnabled = true;
   if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(off, padL, padT, gw, gh);
+  ctx.drawImage(src, padL, padT, gw, gh);
 
   // ---- axes : prix en unités sigma (même pas que la grille, 0.5σ), temps
   // en heures jusqu'à la clôture ----
@@ -2647,6 +2707,117 @@ function drawFlux(){
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(m.text, x0 + 7, m.y + 0.5);
   }
+
+  FLUX_LAYOUT = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours: d.hours, rows};
+  blitFluxStatic();
+}
+
+// "maint." / "+1.3h" / "clôture" : même vocabulaire que les graduations de
+// l'axe, mais en continu (pas de trous entre les heures pointées).
+function fluxHoverTimeLabel(hVal, hours){
+  if (Math.abs(hVal) < 0.05) return t("fluxNow");
+  if (Math.abs(hVal - hours[hours.length - 1]) < 0.05) return t("fluxClose");
+  return (hVal > 0 ? "+" : "") + hVal.toFixed(1) + "h";
+}
+
+// Croisillon interactif : prix + heure sous la souris (pastilles pleines,
+// même lecture que le crosshair du chart de prix TradingView) et un
+// tooltip donnant la valeur $ exacte de la cellule survolée. Repeint par-
+// dessus FLUX_STATIC (déjà prêt) -- jamais en recalculant le dégradé.
+function drawFluxCrosshair(mx, my){
+  const cv = $("fluxCanvas");
+  const L = FLUX_LAYOUT;
+  if (!cv || !L){ blitFluxStatic(); return; }
+  const {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours, rows} = L;
+  const inBounds = mx >= padL && mx <= padL + gw && my >= padT && my <= padT + gh;
+  blitFluxStatic();
+  if (!inBounds) return;
+
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const price = priceMax - (my - padT) / gh * (priceMax - priceMin || 1);
+  const hFrac = (mx - padL) / gw * Math.max(1, nH - 1);
+  const hi0 = Math.max(0, Math.min(nH - 1, Math.floor(hFrac)));
+  const hi1 = Math.min(nH - 1, hi0 + 1);
+  const hVal = hours[hi0] + (hours[hi1] - hours[hi0]) * (hFrac - hi0);
+  const hi = Math.max(0, Math.min(nH - 1, Math.round(hFrac)));
+  const step = (priceMax - priceMin) / Math.max(1, nP - 1);
+  const pi = Math.max(0, Math.min(nP - 1, Math.round((price - priceMin) / (step || 1))));
+  const val = rows[hi] ? rows[hi][pi] : null;
+
+  // ---- lignes pointillées, même style que le crosshair du chart de prix ----
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = "rgba(230,228,222,.35)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, my); ctx.lineTo(padL + gw, my); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(mx, padT); ctx.lineTo(mx, padT + gh); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ---- pastille de prix, bord droit ----
+  ctx.font = "11px IBM Plex Mono, monospace";
+  const priceTxt = fmt(price, 0);
+  const ptw = ctx.measureText(priceTxt).width;
+  const pbx = w - ptw - 13, pbh = 17;
+  ctx.fillStyle = C.text;
+  ctx.fillRect(pbx, my - pbh / 2, ptw + 10, pbh);
+  ctx.fillStyle = "#0A0A0C";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(priceTxt, pbx + 5, my + 0.5);
+
+  // ---- pastille de temps, bord bas ----
+  const timeTxt = fluxHoverTimeLabel(hVal, hours);
+  const ttw = ctx.measureText(timeTxt).width;
+  const tbx = Math.max(0, Math.min(w - ttw - 10, mx - ttw / 2 - 5)), tby = padT + gh + 2;
+  ctx.fillStyle = C.text;
+  ctx.fillRect(tbx, tby, ttw + 10, 15);
+  ctx.fillStyle = "#0A0A0C";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(timeTxt, tbx + ttw / 2 + 5, tby + 7.5);
+
+  // ---- tooltip : mode courant + valeur $ exacte de la cellule ----
+  if (val != null){
+    const txt = `${FLUX_MODE_LABEL[FLUX_MODE] || FLUX_MODE} ${fmtFluxUsd(val)}`;
+    const tw2 = ctx.measureText(txt).width;
+    const boxW = tw2 + 16, boxH = 22;
+    let bx = mx + 12, by = my - boxH - 8;
+    if (bx + boxW > w) bx = mx - boxW - 12;
+    if (by < 0) by = my + 12;
+    ctx.fillStyle = "rgba(12,12,15,.94)";
+    ctx.strokeStyle = val >= 0 ? C.teal : C.red;
+    ctx.lineWidth = 1;
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
+    ctx.fillStyle = C.text;
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(txt, bx + 8, by + boxH / 2 + 0.5);
+  }
+}
+
+// Écoute souris posée une seule fois (comme le ResizeObserver de
+// setFluxView) : mousemove cadencé par requestAnimationFrame pour ne
+// jamais empiler plus d'un redessin par frame, mouseleave efface le
+// croisillon sans recalculer le dégradé (simple blit de FLUX_STATIC).
+function bindFluxHover(){
+  if (FLUX_HOVER_WIRED) return;
+  FLUX_HOVER_WIRED = true;
+  const cv = $("fluxCanvas");
+  if (!cv) return;
+  let raf = null, pending = null;
+  cv.addEventListener("mousemove", e => {
+    const r = cv.getBoundingClientRect();
+    pending = {mx: e.clientX - r.left, my: e.clientY - r.top};
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = null;
+      if (pending) drawFluxCrosshair(pending.mx, pending.my);
+    });
+  });
+  cv.addEventListener("mouseleave", () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null; pending = null;
+    blitFluxStatic();
+  });
 }
 
 // Fusionne calls/puts du contexte volume/OI (déjà top_n côté serveur, cf.
@@ -2733,6 +2904,7 @@ function setFluxView(on){
       FLUX_RESIZE_WIRED = true;
       new ResizeObserver(() => drawFlux()).observe($("fluxBox"));
     }
+    bindFluxHover();
     loadFlux();
   } else {
     $("chartTitle").textContent = t("chart");
