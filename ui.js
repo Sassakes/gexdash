@@ -862,20 +862,15 @@ function drawSessionLines(ctx, chart, times, w, h){
 /* ═══ Interpolation du tick : la bougie GLISSE vers le nouveau prix (easing)
    au lieu de sauter — l'effet de fluidité TradingView, côté rendu.
    onFrame (optionnel) est rappelé à chaque frame APRÈS series.update(bar) :
-   ça permet à un panneau annexe de suivre le même glissement au lieu de
-   sauter au tick suivant, sans dupliquer la boucle d'anim.
-   key (optionnel, "close" par défaut) : nom du champ animé sur `bar` — une
-   bougie a `close`, une série Line n'a que `value` (cf. le repère de prix
-   du panneau Flux, qui réutilise cette même fonction avec key="value"). Les
-   bornes high/low n'existent que sur les bougies : ignorées si absentes. ═══ */
-function animatePrice(holder, series, bar, newClose, ms, onFrame, key){
-  key = key || "close";
+   ça permet à un panneau annexe (cf. drawFlux) de suivre le même glissement
+   au lieu de sauter au tick suivant, sans dupliquer la boucle d'anim. ═══ */
+function animatePrice(holder, series, bar, newClose, ms, onFrame){
   if (holder._anim) cancelAnimationFrame(holder._anim);
-  const start = performance.now(), from = bar[key];
+  const start = performance.now(), from = bar.close;
   if (!isFinite(from) || Math.abs(newClose - from) < 1e-9){
-    bar[key] = newClose;
-    if ("high" in bar) bar.high = Math.max(bar.high, newClose);
-    if ("low" in bar) bar.low = Math.min(bar.low, newClose);
+    bar.close = newClose;
+    bar.high = Math.max(bar.high, newClose);
+    bar.low = Math.min(bar.low, newClose);
     series.update(bar);
     if (onFrame) onFrame();
     return;
@@ -884,9 +879,9 @@ function animatePrice(holder, series, bar, newClose, ms, onFrame, key){
     const k = Math.min(1, (now - start) / ms);
     const e = 1 - Math.pow(1 - k, 3);          /* easeOutCubic */
     const p = from + (newClose - from) * e;
-    bar[key] = p;
-    if ("high" in bar) bar.high = Math.max(bar.high, p);
-    if ("low" in bar) bar.low = Math.min(bar.low, p);
+    bar.close = p;
+    bar.high = Math.max(bar.high, p);
+    bar.low = Math.min(bar.low, p);
     try{ series.update(bar); }catch(_){ holder._anim = null; return; }
     if (onFrame) onFrame();
     holder._anim = k < 1 ? requestAnimationFrame(step) : null;
