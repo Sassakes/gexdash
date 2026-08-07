@@ -1656,6 +1656,24 @@ async function loadBars(){
         redraw();
       }).observe($("chartBox"));
 
+      /* Filet de sécurité pour la toute première mesure (ligne 1632) : sur
+         mobile, le conteneur peut ne pas avoir sa taille DÉFINITIVE au moment
+         de ce premier clientWidth (police pas encore posée, barre d'adresse
+         pas encore stabilisée) — le ResizeObserver ne rattrape que les
+         changements FUTURS, pas un écart déjà présent à la lecture initiale.
+         On réessaie donc sur quelques frames et on ne redessine que si la
+         taille a réellement bougé, en mémorisant celle qui a servi. */
+      let _sizeTries = 0;
+      const _stabilizeSize = () => {
+        const bw = $("chartBox").clientWidth, bh = $("chartBox").clientHeight;
+        if (bw && (bw !== CHART._boxW || bh !== CHART._boxH)){
+          CHART._boxW = bw; CHART._boxH = bh;
+          redraw();
+        }
+        if (++_sizeTries < 8) requestAnimationFrame(_stabilizeSize);
+      };
+      requestAnimationFrame(_stabilizeSize);
+
       /* Le glissement de l'ÉCHELLE DE PRIX n'émet aucun événement exploitable.
          On surveille donc la géométrie à chaque frame : dès que la position
          d'un prix témoin bouge (zoom, drag, autoscale, kinetic scroll), on
