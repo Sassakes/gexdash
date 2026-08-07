@@ -166,9 +166,8 @@
 
   /* ============ bouton FLUX : détaché des onglets marchés — il ne
      sélectionne pas un marché, il bascule le panneau central ============ */
-  .fluxToggleWrap{position:relative; display:inline-flex; margin:0 0 16px 14px}
   .fluxToggle{
-    position:relative; display:inline-flex; align-items:center; margin:0;
+    position:relative; display:inline-flex; align-items:center; margin:0 0 16px 14px;
     background:var(--surface2); color:var(--muted); border:1px solid var(--line-strong);
     padding:8px 22px; font-size:12.5px; font-weight:600; letter-spacing:.08em;
     cursor:pointer; transition:color .22s ease, background .22s ease, border-color .22s ease;
@@ -179,19 +178,6 @@
   .fluxToggle:hover{color:var(--text); border-color:rgba(240,185,11,.35)}
   .fluxToggle.on{color:var(--gold); background:var(--gold-soft); border-color:rgba(240,185,11,.5)}
   .fluxToggle:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  /* badge d'aide ancré sur le coin du bouton FLUX — discret, ne participe pas
-     au flex de la ctxbar (position absolue dans le wrapper), donc jamais de
-     réagencement à ajouter quand la barre passe en scroll horizontal mobile */
-  .fluxGuideBtn{
-    position:absolute; top:-7px; right:-7px; z-index:2;
-    display:flex; align-items:center; justify-content:center;
-    width:18px; height:18px; border-radius:50%;
-    background:var(--surface2); border:1px solid var(--line-strong);
-    color:var(--faint); font-size:10.5px; font-weight:700; text-decoration:none;
-    transition:color .15s ease, border-color .15s ease, background .15s ease;
-  }
-  .fluxGuideBtn:hover{color:var(--gold); border-color:var(--gold); background:var(--gold-soft)}
-  .fluxGuideBtn:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   /* bascule au clic : 220ms, sobre — un aller-retour d'échelle/opacité, pas
      un effet appuyé */
   .fluxToggle.swap{animation:fluxSwap .22s ease-out}
@@ -501,8 +487,7 @@
     /* cibles tactiles confortables + pas de zoom auto iOS sur les champs */
     .chips button, .ivs button, .tabs button, .fluxToggle, #tzTop{min-height:40px}
     .chips button{padding:8px 13px; font-size:11.5px}
-    .fluxToggleWrap{width:100%; margin:2px 0 16px}
-    .fluxToggle{width:100%; margin:0; justify-content:center}
+    .fluxToggle{width:100%; margin:2px 0 16px; justify-content:center}
     .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
     /* le sélecteur de fuseau et la langue passent à la ligne proprement */
@@ -897,11 +882,8 @@
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
   </div>
-  <span class="fluxToggleWrap">
-    <button id="fluxBtn" type="button" class="fluxToggle"
-            title="Flux gamma dealer · projection prix × temps">FLUX</button>
-    <a id="fluxGuideBtn" href="/flux" class="fluxGuideBtn" title="Guide complet du Flux">?</a>
-  </span>
+  <button id="fluxBtn" type="button" class="fluxToggle"
+          title="Flux gamma dealer · projection prix × temps">FLUX</button>
   <div class="goldsel" id="goldSel" hidden role="group" aria-label="Échelle de l'or">
     <button data-g="GC" type="button">GC</button>
     <button data-g="XAU" type="button">XAUUSD</button>
@@ -1044,7 +1026,6 @@ const T = {
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
-    fluxGuideTip:"Guide complet du Flux · concept, lecture, exemples",
     fluxWait:"En attente du prochain calcul intrajournalier",
     fluxReady:h=>"Calculé "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
@@ -1110,7 +1091,6 @@ const T = {
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
-    fluxGuideTip:"Full Flow guide · concept, reading, examples",
     fluxWait:"Waiting for the next intraday computation",
     fluxReady:h=>"Computed "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
@@ -1450,7 +1430,6 @@ function applyLang(){
   // la vue courante — "FLUX" sur le chart, "CHART" une fois dans le flux
   const fb = $("fluxBtn");
   if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
-  const fgb = $("fluxGuideBtn"); if (fgb) fgb.title = t("fluxGuideTip");
   renderFluxLegend();
   const fsl = $("fluxStrikesLbl"); if (fsl) fsl.textContent = t("fluxStrikesChip");
   const fsb = $("fluxStrikesBtn"); if (fsb) fsb.title = t("fluxStrikesTip");
@@ -2740,33 +2719,62 @@ function drawFlux(){
   invalidateFlux("bg", "main", "cursor");
 }
 
-// Epoch UTC réel de l'ouverture cash (9h30 ET) du jour courant. Re-mesure
+// Bornes de la séance Flux, en ET. 8h30 (pas 9h30, l'open cash) pour couvrir
+// l'heure des publications macro US (CPI, NFP...) qui bougent déjà le future
+// avant l'ouverture cash ; 16h00, clôture cash, inchangée. Mêmes repères que
+// le cron serveur (cf. vercel.json) -- ne pas faire dériver l'un sans l'autre,
+// sinon le panneau affiche une portion "historique" que la matrice projetée
+// ne couvre pas encore (ou plus).
+const FLUX_SESSION_START_ET = [8, 30];
+const FLUX_SESSION_END_ET = [16, 0];
+
+// Epoch UTC réel d'une heure ET donnée, pour le jour courant. Re-mesure
 // l'offset ET à chaque appel (Intl.DateTimeFormat, cf. marketPollMs dans
 // ui.js) plutôt que de supposer -4h/-5h en dur -- correct des deux côtés
 // d'un changement d'heure d'été sans cas particulier à coder.
-function etCashOpenEpoch(){
+function etEpochToday(hh, mm){
   const P = tSec => new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York",
       year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false})
     .formatToParts(new Date(tSec * 1000)).reduce((a, x) => (a[x.type] = x.value, a), {});
   const now = Math.floor(Date.now() / 1000);
   const p = P(now);
-  const guess = Date.UTC(+p.year, +p.month - 1, +p.day, 9, 30, 0) / 1000;
+  const guess = Date.UTC(+p.year, +p.month - 1, +p.day, hh, mm, 0) / 1000;
   const pg = P(guess);
-  const diffMin = (9 * 60 + 30) - ((+pg.hour % 24) * 60 + (+pg.minute));
+  const diffMin = (hh * 60 + mm) - ((+pg.hour % 24) * 60 + (+pg.minute));
   return guess + diffMin * 60;
 }
 
-// Prix réalisé depuis l'ouverture cash jusqu'à maintenant, à partir des
-// bougies DÉJÀ chargées pour le chart de prix (CHART.bars, cf. loadBars) --
-// aucun appel réseau supplémentaire. Mêmes timestamps décalés (tzShift) que
-// ce chart, directement comparables sans nouvelle conversion. elapsedH sert
-// à dimensionner la portion "historique" du panneau Flux par rapport à la
-// portion "projection" (cf. fluxLayout).
+// Vrai uniquement pendant la fenêtre où le cron serveur recalcule
+// effectivement le flux (cf. FLUX_SESSION_START_ET/END_ET, lun-ven) --
+// inutile de poller /api/flow en dehors, la donnée ne bouge pas tant que le
+// prochain tir n'a pas eu lieu.
+function fluxSessionOpenNow(){
+  const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
+      weekday: "short", hour: "2-digit", minute: "2-digit"})
+    .formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  if (p.weekday === "Sat" || p.weekday === "Sun") return false;
+  const mins = (+p.hour % 24) * 60 + (+p.minute);
+  const [sh, sm] = FLUX_SESSION_START_ET, [eh, em] = FLUX_SESSION_END_ET;
+  return mins >= sh * 60 + sm && mins <= eh * 60 + em;
+}
+
+// Prix réalisé depuis le début de séance Flux jusqu'à maintenant -- ou
+// jusqu'à la clôture si celle-ci est déjà passée. Sans ce plafond, la
+// portion "historique" du panneau continuait de s'étirer avec l'horloge
+// murale même séance terminée (bug vu en prod : le panneau semblait
+// "avancer" tout seul le soir et le week-end alors qu'aucune nouvelle
+// donnée n'arrivait). À partir des bougies DÉJÀ chargées pour le chart de
+// prix (CHART.bars, cf. loadBars) -- aucun appel réseau supplémentaire.
+// Mêmes timestamps décalés (tzShift) que ce chart, directement comparables
+// sans nouvelle conversion. elapsedH sert à dimensionner la portion
+// "historique" du panneau Flux par rapport à la portion "projection"
+// (cf. fluxLayout).
 function fluxSessionHistory(){
-  const openShifted = tzShift(etCashOpenEpoch());
+  const openShifted = tzShift(etEpochToday(...FLUX_SESSION_START_ET));
+  const closeShifted = tzShift(etEpochToday(...FLUX_SESSION_END_ET));
   const bars = CHART.bars;
   if (!bars || !bars.length) return {points: [], elapsedH: 0, openShifted};
-  const nowShifted = tzShift(Math.floor(Date.now() / 1000));
+  const nowShifted = Math.min(tzShift(Math.floor(Date.now() / 1000)), closeShifted);
   const elapsedH = Math.max(0, (nowShifted - openShifted) / 3600);
   if (elapsedH <= 0.02) return {points: [], elapsedH: 0, openShifted};   // séance qui vient d'ouvrir : rien à tracer
   const points = bars
@@ -3604,14 +3612,28 @@ async function loadFlux(){
   drawFlux();
 }
 
+// Vrai pendant la dernière fenêtre où armFluxPoll a effectivement armé le
+// poll -- sert au watchdog ci-dessous à détecter la bascule fermé -> ouvert
+// (ouverture de séance, page laissée ouverte toute la nuit) pour recharger
+// tout de suite au lieu d'attendre le premier tick des 2 minutes.
+let FLUX_POLL_ON = false;
+
 function armFluxPoll(){
   clearInterval(FLUX_POLL);
+  const wasOn = FLUX_POLL_ON;
+  FLUX_POLL_ON = fluxSessionOpenNow();
   // le cron serveur tourne toutes les 10 min en séance (5 min sur la
-  // dernière heure, cf. vercel.json) : 2 min de poll suffit à récupérer
-  // chaque nouveau tir sans tarder, sans non plus interroger à chaque cycle
-  // de cron pile.
-  if (FLUX_ON) FLUX_POLL = setInterval(loadFlux, 2 * 60 * 1000);
+  // première et la dernière heure, cf. vercel.json) : 2 min de poll suffit
+  // à récupérer chaque nouveau tir sans tarder, sans non plus interroger à
+  // chaque cycle de cron pile. Hors séance (soir, nuit, week-end) le cron ne
+  // tourne plus -- pas la peine de poller un cache qui ne bouge pas.
+  if (FLUX_ON && FLUX_POLL_ON){
+    if (!wasOn) loadFlux();
+    FLUX_POLL = setInterval(loadFlux, 2 * 60 * 1000);
+  }
 }
+
+let FLUX_POLL_WATCH = null;
 
 function setFluxView(on){
   FLUX_ON = on;
@@ -3639,6 +3661,12 @@ function setFluxView(on){
     if (!FLUX_RESIZE_WIRED){
       FLUX_RESIZE_WIRED = true;
       new ResizeObserver(() => drawFlux()).observe($("fluxBox"));
+    }
+    if (!FLUX_POLL_WATCH){
+      // Régime réévalué chaque minute (même granularité que CHART._pollWatch
+      // pour le prix) : la bascule ouverture/clôture de séance reprend ou
+      // coupe le poll sans qu'il soit nécessaire de recharger la page.
+      FLUX_POLL_WATCH = setInterval(() => { if (FLUX_ON) armFluxPoll(); }, 60000);
     }
     bindFluxHover();
     loadFlux();

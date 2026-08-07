@@ -146,17 +146,25 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
 de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques,
-recalculent uniquement le flux) toutes les 5 min de 13h30 (ouverture cash US,
-9h30 ET) à 14h30 (première heure) et de 19h00 à 20h00 (dernière heure),
-toutes les 10 min entre les deux — cf. `vercel.json`. Symétrique : les deux
-bornes de séance (ouverture, clôture) sont les moments où l'historique du
-panneau Flux (cf. section ci-dessous) et le flux lui-même bougent le plus
-vite, resserrer ailleurs coûterait un fetch CBOE en plus par tir pour un
-gain de lisibilité marginal. Démarrer à l'ouverture réelle, pas une heure
-après : un décalage ici laisse le panneau Flux figé toute la première heure
-de séance sans que rien ne le signale (bug vu en prod le 2026-08-07, faux
-diagnostic possible si on suppose la séance déjà avancée sans revérifier
-l'heure d'ouverture produit/ET).
+recalculent uniquement le flux) toutes les 5 min de 12h30 (8h30 ET — pas
+l'ouverture cash à 9h30 ET, une heure plus tôt pour couvrir les publications
+macro US type CPI/NFP qui bougent déjà le future) à 13h30 (première heure)
+et de 19h00 à 20h00 (dernière heure, clôture cash 16h ET inchangée), toutes
+les 10 min entre les deux — cf. `vercel.json`. Bornes tenues IDENTIQUES entre
+le cron serveur et `FLUX_SESSION_START_ET`/`FLUX_SESSION_END_ET` côté client
+(`index.html`) : les faire dériver l'une de l'autre affiche une portion
+"historique" que la matrice projetée ne couvre pas encore (ou plus).
+Symétrique : les deux bornes de séance (ouverture, clôture) sont les moments
+où l'historique du panneau Flux (cf. section ci-dessous) et le flux lui-même
+bougent le plus vite, resserrer ailleurs coûterait un fetch CBOE en plus par
+tir pour un gain de lisibilité marginal. Démarrer à l'ouverture réelle, pas
+une heure après : un décalage ici laisse le panneau Flux figé toute la
+première heure de séance sans que rien ne le signale (bug vu en prod le
+2026-08-07, faux diagnostic possible si on suppose la séance déjà avancée
+sans revérifier l'heure d'ouverture produit/ET). Côté client, la portion
+"historique" (prix réalisé depuis le début de séance) doit être plafonnée à
+la clôture, jamais à l'horloge murale — sinon le panneau semble "avancer"
+tout seul après 16h ET et le week-end (bug vu en prod le 2026-08-08).
 QStash : 00h11 daily, 15h25 publication. GitHub Actions : niveaux et macro.
 
 **Garde de fraîcheur `/api/cron`.** Une cible dont le payload publié date

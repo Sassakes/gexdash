@@ -1082,6 +1082,8 @@ STATIC = {
     "/calendar.json": ("calendar.json", "application/json"),
     "/doc": ("doc.html", "text/html; charset=utf-8"),
     "/wiki": ("doc.html", "text/html; charset=utf-8"),
+    "/flux": ("flux.html", "text/html; charset=utf-8"),
+    "/flux.html": ("flux.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
