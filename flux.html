@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHub - Guide du Flux</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+<meta name="description" content="Le module Flux de gexdash expliqué point par point : pourquoi les dealers déplacent le prix sans conviction, comment lire le dégradé, exemples sur de vrais mouvements.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  [hidden]{display:none !important}
+
+  :root{
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
+    --line:#212127; --line-strong:#2E2E36;
+    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
+    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350; --blue:#5B8DEF;
+    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.6}
+  a{color:var(--gold)}
+
+  header{
+    display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
+    background:rgba(10,10,12,.95); backdrop-filter:blur(10px);
+  }
+  header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
+  header h1 b{color:var(--gold)}
+  .nav{display:flex; gap:3px; margin-left:auto; align-items:center; flex-wrap:wrap}
+  .nav a{color:var(--muted); font-size:12px; text-decoration:none; padding:6px 10px;
+         border:1px solid transparent}
+  .nav a:hover{color:var(--text); border-color:var(--line-strong); background:var(--surface2)}
+  .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
+  .lang button{background:none; border:none; color:var(--muted); font:inherit;
+               font-size:11px; padding:5px 10px; cursor:pointer}
+  .lang button.on{background:var(--gold); color:#0A0A0C; font-weight:600}
+
+  /* ── hero ── */
+  .hero{padding:34px 20px 6px; max-width:1180px; margin:0 auto}
+  .eyebrow{font-family:var(--mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase;
+           color:var(--faint); margin-bottom:10px}
+  .eyebrow a{color:var(--faint); text-decoration:none}
+  .eyebrow a:hover{color:var(--muted)}
+  .hero h2{font-size:26px; font-weight:600; letter-spacing:-.01em; max-width:720px}
+  .hero p{color:var(--muted); font-size:14.5px; margin-top:10px; max-width:640px}
+  .heroCtas{display:flex; gap:10px; flex-wrap:wrap; margin-top:22px}
+  .ctaBtn{display:inline-flex; align-items:center; gap:7px; padding:12px 20px; font-size:13px;
+          font-weight:600; text-decoration:none; border:1px solid; white-space:nowrap;
+          transition:background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease}
+  .ctaBtn:active{transform:scale(.98)}
+  .ctaBtn.primary{background:var(--gold); color:#0A0A0C; border-color:var(--gold)}
+  .ctaBtn.primary:hover{background:#ffc93d}
+  .ctaBtn.ghost{background:transparent; color:var(--muted); border-color:var(--line-strong)}
+  .ctaBtn.ghost:hover{color:var(--text); border-color:var(--text)}
+
+  /* ── mise en page sommaire + contenu ── */
+  .wrap{display:grid; grid-template-columns:216px 1fr; gap:34px;
+        max-width:1180px; margin:0 auto; padding:26px 20px 30px; align-items:start}
+  .toc{position:sticky; top:70px; max-height:calc(100vh - 92px); overflow-y:auto}
+  .toc .lbl{font-size:9px; letter-spacing:.16em; text-transform:uppercase;
+            color:var(--faint); padding:0 10px 8px}
+  .toc a{display:flex; gap:9px; align-items:baseline; padding:7px 10px; font-size:12.5px;
+         color:var(--muted); text-decoration:none; border-left:2px solid transparent}
+  .toc a i{font-family:var(--mono); font-size:10px; color:var(--faint); font-style:normal}
+  .toc a:hover{color:var(--text); background:var(--surface)}
+  .toc a.on{color:var(--gold); border-left-color:var(--gold); background:var(--surface)}
+  .toc a.on i{color:var(--gold)}
+
+  /* ── sections ── */
+  section{margin-bottom:16px; scroll-margin-top:74px;
+          background:var(--surface); border:1px solid var(--line)}
+  .shead{display:flex; align-items:center; gap:12px; padding:16px 22px;
+         border-bottom:1px solid var(--line); background:var(--surface2)}
+  .shead i{font-family:var(--mono); font-size:11px; color:var(--gold); font-style:normal;
+           border:1px solid rgba(240,185,11,.35); padding:3px 8px}
+  .shead h3{font-size:15px; font-weight:600; letter-spacing:.01em}
+  .sbody{padding:20px 22px}
+  .sbody > * + *{margin-top:14px}
+  p.tx{font-size:13.5px; color:var(--muted); max-width:70ch}
+  p.tx b, li b{color:var(--text); font-weight:600}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface3);
+       border:1px solid var(--line-strong); padding:1px 6px; color:var(--text)}
+
+  /* blocs : chips explicatifs */
+  .chips{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:11px}
+  .chip{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
+  .chip .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
+            display:inline-block; margin-bottom:9px}
+  .chip.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .chip.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
+  .chip.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .chip p{font-size:12.5px; color:var(--muted)}
+
+  /* blocs : scénarios (mini-chart + explication) */
+  .scen{display:flex; flex-direction:column; gap:14px}
+  .scen-card{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
+  .scen-card .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
+                 display:inline-block; margin-bottom:10px}
+  .scen-card.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
+  .scen-card.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .scen-card.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .scen-card svg{width:100%; height:auto; display:block; background:#0C0C0F;
+                 border:1px solid var(--line); margin:0 0 10px}
+  .scen-card p{font-size:12.5px; color:var(--muted)}
+
+  /* blocs : grille de codes */
+  .codes{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:9px}
+  .cx{display:flex; gap:12px; background:var(--surface2); border:1px solid var(--line);
+      padding:11px 13px}
+  .cx .kk{font-family:var(--mono); font-size:12px; color:var(--gold); min-width:52px;
+          padding-top:1px}
+  .cx .nn{font-size:12.5px; color:var(--text); font-weight:500}
+  .cx .dd{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5}
+
+  /* blocs : étapes */
+  .steps{counter-reset:st}
+  .steps li{list-style:none; counter-increment:st; position:relative;
+            padding:11px 0 11px 42px; font-size:13px; color:var(--muted);
+            border-bottom:1px solid rgba(255,255,255,.05)}
+  .steps li:last-child{border-bottom:none}
+  .steps li::before{content:counter(st); position:absolute; left:0; top:10px;
+    width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:11px; color:var(--gold);
+    border:1px solid rgba(240,185,11,.35)}
+
+  /* blocs : note */
+  .note{background:var(--surface2); border:1px solid var(--line);
+        border-left:2px solid var(--gold); padding:13px 16px; font-size:12.5px;
+        color:var(--muted)}
+
+  /* blocs : accordéon */
+  .faq{border:1px solid var(--line)}
+  .faq details{border-bottom:1px solid var(--line)}
+  .faq details:last-child{border-bottom:none}
+  .faq summary{cursor:pointer; padding:13px 16px; font-size:13px; color:var(--text);
+    list-style:none; display:flex; align-items:center; gap:11px; background:var(--surface2)}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::before{content:"+"; font-family:var(--mono); color:var(--gold); font-size:14px}
+  .faq details[open] summary::before{content:"−"}
+  .faq summary:hover{color:var(--gold)}
+  .faq .ans{padding:2px 16px 15px 40px; font-size:12.5px; color:var(--muted)}
+
+  /* clôture : rappel CTA */
+  .closer{max-width:1180px; margin:0 auto; padding:6px 20px 70px}
+  .closerCard{background:linear-gradient(180deg,var(--surface2),var(--surface));
+              border:1px solid var(--line); padding:28px 26px; text-align:center}
+  .closerCard h4{font-size:17px; font-weight:600; margin-bottom:8px}
+  .closerCard p{color:var(--muted); font-size:13px; max-width:520px; margin:0 auto 18px}
+
+  footer{border-top:1px solid var(--line); padding:20px; text-align:center;
+         color:var(--faint); font-size:11px}
+
+  @media (max-width:560px){
+    .hero{padding:22px 14px 2px}
+    .hero h2{font-size:19px}
+    .hero p{font-size:13px}
+    .ctaBtn{width:100%; justify-content:center}
+    .wrap{padding:16px 14px 20px}
+    .closer{padding:2px 14px 50px}
+    .shead{padding:13px 15px; gap:10px}
+    .shead h3{font-size:14px}
+    .sbody{padding:16px 15px}
+    p.tx{font-size:13px}
+    .codes, .chips{grid-template-columns:1fr}
+    .steps li{padding-left:38px; font-size:12.5px}
+    .faq summary{padding:12px 14px; font-size:12.5px}
+    .faq .ans{padding-left:36px}
+    header{padding:11px 14px; gap:9px}
+    header h1{font-size:11px; letter-spacing:.14em}
+    .nav a{padding:6px 8px; font-size:11.5px}
+  }
+  @media (max-width:860px){
+    .wrap{grid-template-columns:1fr; gap:18px}
+    .toc{position:static; display:flex; gap:6px; overflow-x:auto; padding-bottom:6px}
+    .toc .lbl{display:none}
+    .toc a{border-left:none; border:1px solid var(--line-strong); white-space:nowrap;
+           padding:6px 11px}
+    .toc a.on{border-color:var(--gold)}
+    .toc a i{display:none}
+    .hero{padding-top:22px}
+    .hero h2{font-size:21px}
+  }
+</style>
+<script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</head>
+<body>
+<header>
+  <h1><b>THE</b>HUB · <span id="hTitle">Flux</span></h1>
+  <nav class="nav">
+    <a href="/" id="nTerm">Terminal</a>
+    <a href="/dash" id="nDash">Dashboard</a>
+    <a href="/heatmap" id="nHeat">Heatmap</a>
+    <a href="/doc" id="nDoc">Doc</a>
+    <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
+  </nav>
+</header>
+
+<div class="hero">
+  <div class="eyebrow"><a href="/doc" id="eyebrowLink">Documentation</a> <span id="eyebrowSep">▸</span> <span id="eyebrowHere">Flux</span></div>
+  <h2 id="heroT"></h2>
+  <p id="heroP"></p>
+  <div class="heroCtas">
+    <a href="/?flux=1" class="ctaBtn primary" id="ctaOpen"></a>
+    <a href="/doc#flux" class="ctaBtn ghost" id="ctaDoc"></a>
+  </div>
+</div>
+
+<div class="wrap">
+  <aside class="toc" id="toc"></aside>
+  <main id="body"></main>
+</div>
+
+<div class="closer">
+  <div class="closerCard">
+    <h4 id="closerT"></h4>
+    <p id="closerP"></p>
+    <a href="/?flux=1" class="ctaBtn primary" id="ctaOpen2"></a>
+  </div>
+</div>
+
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+
+/* ───── scénarios : impact du positionnement dealer sur un mini-chart de prix
+   statique -- rendre VISIBLE ce que "gamma positif/négatif" et "charm" font
+   concrètement au prix, pas seulement le décrire en mots. Copié tel quel
+   depuis doc.html (même moteur SVG, même données de scénario). ───── */
+const SCEN_SHAPE = {
+  pin: {
+    lo:28950, hi:29520,
+    path:[29050,29120,29200,29280,29350,29400,29430,29410,29360,29290,
+          29220,29160,29110,29140,29210,29290,29360,29410,29440,29420,
+          29370,29300,29230,29170,29130,29160,29230,29310,29380,29425],
+    wallY:29460, wallLabel:"CW", wallColor:"#26A69A"},
+  brk: {
+    lo:28950, hi:30500,
+    path:[29050,29080,29120,29150,29190,29230,29270,29310,29350,29380,
+          29400,29415,29440,29480,29530,29590,29660,29740,29830,29930,
+          30040,30160,30290,30430],
+    wallY:29400, wallLabel:"CW", wallColor:"#F0B90B", shadeFromIdx:10, shadeColor:"#EF5350"},
+  drift: {
+    lo:29130, hi:29400,
+    path:[29200,29210,29195,29205,29215,29200,29190,29205,29220,29210,
+          29195,29200,29215,29225,29210,29200,29215,29230,29245,29260,
+          29275,29290,29310,29330,29350,29370],
+    shadeFromIdx:18, shadeColor:"#F0B90B"}
+};
+function fluxScenSvg(cfg){
+  const W = 560, H = 150, PAD = 14;
+  const {lo, hi, path} = cfg;
+  const Y = p => PAD + (hi - p) / (hi - lo) * (H - PAD * 2);
+  const stepX = (W - PAD * 2) / (path.length - 1);
+  const pts = path.map((v, i) => `${(PAD + i * stepX).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  let extra = "";
+  if (cfg.shadeFromIdx != null){
+    const x0 = PAD + cfg.shadeFromIdx * stepX;
+    extra += `<rect x="${x0.toFixed(1)}" y="${PAD}" width="${(W - PAD - x0).toFixed(1)}" height="${H - PAD * 2}" fill="${cfg.shadeColor}" opacity=".1"/>`;
+  }
+  if (cfg.wallY != null){
+    const wy = Y(cfg.wallY).toFixed(1);
+    extra += `<line x1="${PAD}" y1="${wy}" x2="${W - PAD}" y2="${wy}" stroke="${cfg.wallColor}"
+                stroke-width="1.4" stroke-dasharray="4 3" opacity=".85"/>
+              <text x="${W - PAD - 4}" y="${+wy - 6}" fill="${cfg.wallColor}" text-anchor="end"
+                font-family="IBM Plex Mono, monospace" font-size="10.5">${cfg.wallLabel}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">
+    ${extra}
+    <polyline points="${pts}" fill="none" stroke="#ECEAE4" stroke-width="1.6"
+      stroke-linejoin="round" opacity=".95"/>
+  </svg>`;
+}
+
+/* ───── contenu, point par point ───── */
+const T = {
+fr: {
+  title:"Guide du Flux", term:"Terminal", dash:"Dashboard", heat:"Heatmap", doc:"Doc",
+  heroT:"Le Flux, du concept à la lecture",
+  heroP:"Pourquoi les dealers déplacent le prix sans la moindre conviction directionnelle — et comment lire ce mouvement mécanique avant qu'il n'arrive, point par point, avec des exemples sur de vrais mouvements de prix.",
+  ctaOpen:"→ Ouvrir le Flux dans le terminal", ctaDoc:"↩ Documentation générale",
+  closerT:"Prêt à le lire en direct ?",
+  closerP:"Le meilleur moyen de retenir tout ça reste de l'ouvrir sur le marché en cours et de suivre la méthode section par section.",
+  toc:"Sommaire",
+  foot:"gexdash · TheHub — contenu fourni à titre éducatif, ne constitue pas un conseil en investissement.",
+  secs:[
+  {id:"principe", t:"Le principe en une phrase", b:[
+    {t:"p", x:"Le plus gros vendeur d'une séance est rarement directionnel : c'est un teneur de marché qui se couvre. Un client achète des puts, le dealer se retrouve long delta, il vend des futures pour rester neutre — et le prix baisse sans qu'aucune conviction ne soit en jeu."},
+    {t:"note", x:"<b>Exemple illustratif.</b> Un client achète 5 000 puts NQ proches de la monnaie. Le dealer qui les lui a vendus se retrouve mécaniquement short gamma sur ce strike : pour rester neutre, il doit vendre des futures NQ à mesure que le prix baisse — et en racheter à mesure qu'il remonte. Ce n'est pas un pari du dealer sur la direction, c'est une obligation de couverture."},
+    {t:"p", x:"La vue Flux projette cette couverture sur une grille prix × temps : si le prix arrivait ici, à telle heure, quel flux les dealers seraient contraints d'exécuter."}]},
+
+  {id:"ecran", t:"Lire l'écran : deux zones, deux natures de données", b:[
+    {t:"p", x:"Le panneau est coupé en deux de part et d'autre de « maintenant ». À <b>gauche</b> : ce qui s'est réellement passé depuis l'ouverture — le prix (ligne blanche) et, bouton <b>Historique</b> activé, l'exposition dealer reconstruite au prix réellement traversé à chaque instant. À <b>droite</b> : la projection — si le prix restait exactement où il est maintenant, comment cette même exposition évoluerait mécaniquement d'ici la clôture."},
+    {t:"note", x:"Ne pas confondre les deux. La gauche dit <b>ce qui est arrivé</b> ; la droite dit <b>ce qui arriverait si rien ne bougeait</b>. Un prix qui casse un mur peut rendre toute la projection obsolète en un tick — elle n'est recalculée qu'au tir de cron suivant, jamais entre deux."}]},
+
+  {id:"degrade", t:"Lire le dégradé de couleur", b:[
+    {t:"p", x:"Chaque cellule de la grille est colorée selon le signe et la magnitude de l'exposition dealer projetée à ce prix et cette heure."},
+    {t:"chips", items:[
+      {c:"t", tag:"Vert · gamma positif", x:"La couverture va CONTRE le mouvement, elle amortit. Compression, pin, ranges. Les zones vertes intenses tiennent."},
+      {c:"r", tag:"Rouge · gamma négatif", x:"La couverture va AVEC le mouvement, elle amplifie. Accélérations, cassures. Les zones rouges intenses lâchent vite."}]}]},
+
+  {id:"exemples", t:"Trois exemples d'application, sur de vrais mouvements", b:[
+    {t:"p", x:"La théorie ci-dessus, vue sur un vrai mouvement de prix. Trois situations qui reviennent chaque séance :"},
+    {t:"scen", items:[
+      {k:"pin", c:"t", tag:"GAMMA POSITIF · LE PRIX PIN",
+       x:"Le prix monte vers le mur, le touche, redescend — trois fois de suite sans jamais casser. Chaque approche est vendue en retour par les dealers qui se couvrent : la mèche se referme au lieu de continuer. Plus le vert est intense à cet endroit sur le dégradé, plus ce rejet a des chances d'être franc."},
+      {k:"brk", c:"r", tag:"GAMMA NÉGATIF · LA CASSURE S'AUTO-ALIMENTE",
+       x:"Le prix approche le même type de niveau, mais cette fois le franchit — et au lieu de ralentir, il ACCÉLÈRE (zone ombrée). Une fois de l'autre côté, les dealers doivent vendre (ou acheter) DANS le sens du mouvement pour rester couverts : la cassure se nourrit elle-même. C'est la signature d'une zone rouge intense sur le dégradé, pas d'une actualité ou d'un gros ordre."},
+      {k:"drift", c:"g", tag:"CHARM/VANNA · LA DÉRIVE SANS CATALYSEUR",
+       x:"Rien ne se passe pendant les trois quarts de la séance (zone claire) — puis une dérive lente et régulière démarre en fin de journée (zone ombrée), sans news, sans volume inhabituel. C'est le rééquilibrage mécanique des dealers à mesure que le temps s'écoule (charm) ou que l'IV bouge (vanna). Le panneau Flux est le seul endroit du terminal qui montre ce mouvement AVANT qu'il n'arrive."}]}]},
+
+  {id:"grecques", t:"Les trois grecques du flux", b:[
+    {t:"p", x:"Trois sélecteurs, trois natures de flux — jamais fondus en un seul chiffre, leurs unités et leur lecture diffèrent."},
+    {t:"codes", items:[
+      {k:"Γ", n:"Gamma", d:"Flux provoqué par le mouvement du prix. C'est l'axe primaire : la seule grecque vérifiable contre le GEX par strike déjà affiché ailleurs dans le terminal."},
+      {k:"V", n:"Vanna", d:"Flux provoqué par une variation d'IV, à prix constant. Confirme ou contredit le biais gamma quand la volatilité bouge en séance."},
+      {k:"Θ", n:"Charm", d:"Flux provoqué par l'écoulement du temps, à prix constant. Explique les dérives de fin de séance sans aucun catalyseur visible."}]},
+    {t:"note", x:"Le charm croît réellement à l'approche de la clôture — la décroissance du delta s'accélère mécaniquement en fin de vie d'une option. Son échelle de couleur est donc recalibrée <b>heure par heure</b> pour rester lisible toute la séance. Gamma et vanna, eux, partagent une échelle commune : leur intensité est directement comparable d'une heure à l'autre — celle du charm ne l'est pas."},
+    {t:"note", x:"<b>Exemple — dérive de fin de séance.</b> 16h : gamma positif, le marché compresse. Le charm est nettement positif sur la colonne de 21h. Traduction : même sans mouvement, les dealers devront acheter en fin de séance. Une dérive haussière lente est probable vers la clôture, sans qu'aucune nouvelle ne l'explique."}]},
+
+  {id:"biais", t:"Construire un biais, étape par étape", b:[
+    {t:"steps", items:[
+      "Regarde le signe du gamma à la colonne « maintenant » : positif, la couverture amortit — attends-toi à un range. Négatif, elle amplifie — attends-toi à de l'accélération sur toute cassure.",
+      "Suis ce même signe vers la droite (projection) : le régime se renforce-t-il, s'inverse-t-il, ou reste-t-il stable jusqu'à la clôture ? Un flip de couleur en cours de journée est le signal le plus actionnable du panneau.",
+      "Vérifie le vanna : si l'IV bouge dans la journée (elle compresse presque toujours en séance calme), un vanna fort confirme ou contredit le biais gamma. Une contradiction nette impose la prudence.",
+      "Vérifie le charm : une dérive mécanique de fin de séance existe indépendamment de tout mouvement de prix — regarde la colonne des dernières heures avant clôture.",
+      "Historique activé : compare la gauche à la projection. Si la réaction réelle de ce matin a été plus violente que ce qu'un gamma « modéré » laissait attendre, le marché se comporte comme si l'exposition était plus fragile que le modèle ne le dit — à prendre au sérieux."]},
+    {t:"p", x:"Le badge de synthèse (section suivante) fait exactement ce calcul pour toi, mais seulement sur la colonne « maintenant » — utile en lecture rapide. La méthode manuelle ci-dessus reste la seule qui montre <b>comment ce biais évolue dans le temps</b>, pas seulement son état à l'instant T."}]},
+
+  {id:"verdict", t:"Le verdict de synthèse", b:[
+    {t:"p", x:"Sous le dégradé, un badge résume la colonne « maintenant » en un mot. Le gamma est toujours l'axe primaire ; vanna et charm ne font que confirmer ou contredire ensuite — jamais moyennés, une contradiction nette bascule directement en DIVERGENCE."},
+    {t:"codes", items:[
+      {k:"■", n:"COMPRESSION", d:"Gamma positif dominant, sans contradiction marquée du vanna ou du charm. La couverture amortit : range, pin sur les murs."},
+      {k:"■", n:"ACCÉLÉRATION", d:"Gamma négatif dominant, sans contradiction marquée. La couverture amplifie : toute cassure a de bonnes chances de s'auto-alimenter."},
+      {k:"■", n:"DÉRIVE", d:"Gamma quasi neutre, mais vanna ou charm significatifs. Un mouvement mécanique reste possible même si le gamma seul ne dit rien."},
+      {k:"■", n:"DIVERGENCE", d:"Le gamma pointe dans un sens, mais vanna ou charm s'y oppose fortement. Signal le plus utile : un régime qui se dégrade, pas la moyenne des trois."}]},
+    {t:"note", x:"<b>Exemple.</b> Gamma positif (la lecture brute donnerait COMPRESSION) mais charm fortement négatif sur les dernières heures : le verdict affiche DIVERGENCE plutôt que de moyenner. Une compression qui se dégrade en fin de séance, à surveiller plus qu'une compression stable."}]},
+
+  {id:"volume", t:"Le contexte volume", b:[
+    {t:"p", x:"L'open interest est figé depuis la veille : le dégradé montre l'exposition héritée. Le volume du jour montre où les positions se construisent <b>maintenant</b>. Un strike dont le volume dépasse l'encours accumulé est un endroit où le hedging naît sous tes yeux."},
+    {t:"note", x:"Réserve : le volume dit <b>où</b> ça bouge, pas dans quel sens. Un gros volume peut être de l'achat ou de la vente client, avec des implications opposées."}]},
+
+  {id:"prise-en-main", t:"Prise en main : les contrôles", b:[
+    {t:"codes", items:[
+      {k:"🖱", n:"Survol", d:"Prix, heure et valeur $ exacte de la cellule sous le curseur — même lecture que le croisillon du chart de prix."},
+      {k:"⚙", n:"Molette", d:"Zoom centré sur le prix survolé, pour isoler une zone étroite sans que les extrêmes n'écrasent l'échelle."},
+      {k:"✋", n:"Glisser", d:"Décale la fenêtre de prix visible sans changer le niveau de zoom."},
+      {k:"⟲", n:"Double-clic", d:"Réinitialise le zoom sur la grille complète."},
+      {k:"🕐", n:"Historique", d:"Affiche, à gauche de « maintenant », l'exposition réellement traversée depuis l'ouverture — reconstruite au prix réel de chaque tir passé, pas une projection."}]},
+    {t:"note", x:"<b>Exemple.</b> Tu veux comparer précisément l'intensité juste avant et juste après « maintenant » : molette pour zoomer entre −0,5σ et +1σ autour du prix courant, puis survole des deux côtés de la frontière — la valeur $ exacte de chaque cellule est bien plus nette qu'à l'œil sur un dégradé plein écran."},
+    {t:"p", x:"Le bouton <b>Strikes</b> superpose les niveaux d'options les plus actifs (volume/OI du jour) au dégradé — trait plein pour un call, pointillé pour un put, opacité proportionnelle au ratio volume/OI. Seuls les plus significatifs restent étiquetés ; le reste est réduit à un point discret en bord de grille pour ne pas noyer les niveaux qui comptent."},
+    {t:"note", x:"Portée et Flux donnent un <b>contexte</b>, pas des signaux. Ils indiquent dans quel régime on se trouve et ce qui reste possible — l'entrée et la sortie restent la méthode du trader."}]},
+
+  {id:"faq", t:"Questions fréquentes", b:[
+    {t:"faq", items:[
+      {q:"La projection à droite est-elle une prédiction de prix ?",
+       a:"Non. C'est un conditionnel : SI le prix restait exactement où il est, comment l'exposition évoluerait mécaniquement. Elle ne dit rien de la probabilité que le prix reste effectivement à cet endroit."},
+      {q:"Pourquoi la projection ne bouge pas alors que le prix vient de casser un niveau ?",
+       a:"Elle n'est recalculée qu'au tir de cron suivant (toutes les 5 à 10 minutes en séance US, resserré à 5 minutes sur la première et la dernière heure), jamais en continu. Une cassure peut la rendre obsolète en un tick, en attendant le prochain recalcul."},
+      {q:"Gamma, Vanna, Charm : lequel regarder en premier ?",
+       a:"Le gamma d'abord — c'est l'axe primaire, le seul directement vérifiable contre le GEX par strike déjà affiché ailleurs. Le vanna ensuite pour confirmer ou contredire si l'IV bouge en séance. Le charm en dernier, pour l'effet mécanique de fin de séance."},
+      {q:"Le badge de synthèse suffit-il, ou faut-il lire le dégradé ?",
+       a:"Le badge résume l'instant présent, utile en lecture rapide. Mais seul le dégradé montre comment ce biais évolue dans le temps — renforcement, flip de régime ou stabilité jusqu'à la clôture — ce que la méthode manuelle (section « Construire un biais ») donne et que le badge seul ne montre pas."},
+      {q:"Le Flux se met-il à jour hors séance US ?",
+       a:"Non. Le calcul tourne uniquement pendant la séance américaine (cron intrajournalier). En dehors — nuit Globex, week-end — le panneau affiche le dernier calcul disponible jusqu'à la réouverture, comme les niveaux GEX eux-mêmes."}]}]}
+]},
+
+en: {
+  title:"Flow guide", term:"Terminal", dash:"Dashboard", heat:"Heatmap", doc:"Doc",
+  heroT:"Flow, from concept to reading",
+  heroP:"Why dealers move price with zero directional conviction — and how to read that mechanical move before it happens, point by point, with examples on real price action.",
+  ctaOpen:"→ Open Flow in the terminal", ctaDoc:"↩ General documentation",
+  closerT:"Ready to read it live?",
+  closerP:"The best way to make this stick is to open it on the live market and follow the method section by section.",
+  toc:"Contents",
+  foot:"gexdash · TheHub — content provided for educational purposes, not investment advice.",
+  secs:[
+  {id:"principe", t:"The principle, in one sentence", b:[
+    {t:"p", x:"The biggest seller in a session is rarely directional: it's a market maker hedging. A client buys puts, the dealer ends up long delta, and sells futures to stay neutral — and price drops without any conviction behind it."},
+    {t:"note", x:"<b>Illustrative example.</b> A client buys 5,000 near-the-money NQ puts. The dealer who sold them ends up mechanically short gamma on that strike: to stay neutral, they must sell NQ futures as price falls — and buy them back as it rallies. This isn't the dealer betting on direction, it's a hedging obligation."},
+    {t:"p", x:"The Flow view projects that hedging onto a price × time grid: if price got there, at that hour, what flow would dealers be forced to execute."}]},
+
+  {id:"ecran", t:"Reading the screen: two zones, two kinds of data", b:[
+    {t:"p", x:"The panel is split in two on either side of \"now\". On the <b>left</b>: what actually happened since the open — price (white line) and, with the <b>History</b> button on, dealer exposure reconstructed at the price actually traded at each moment. On the <b>right</b>: the projection — if price stayed exactly where it is now, how that same exposure would mechanically evolve until the close."},
+    {t:"note", x:"Don't mix the two up. The left says <b>what happened</b>; the right says <b>what would happen if nothing moved</b>. A price breaking through a wall can make the whole projection stale within one tick — it's only recomputed on the next cron run, never in between."}]},
+
+  {id:"degrade", t:"Reading the gradient", b:[
+    {t:"p", x:"Every cell in the grid is coloured by the sign and magnitude of the dealer exposure projected at that price and hour."},
+    {t:"chips", items:[
+      {c:"t", tag:"Green · positive dealer gamma", x:"Hedging goes AGAINST the move, it dampens. Compression, pins, ranges. Intense green zones hold."},
+      {c:"r", tag:"Red · negative dealer gamma", x:"Hedging goes WITH the move, it amplifies. Accelerations, breaks. Intense red zones give way fast."}]}]},
+
+  {id:"exemples", t:"Three examples, on real price moves", b:[
+    {t:"p", x:"The theory above, on an actual price move. Three situations that recur every session:"},
+    {t:"scen", items:[
+      {k:"pin", c:"t", tag:"POSITIVE GAMMA · PRICE PINS",
+       x:"Price rallies into the wall, touches it, drops back — three times in a row without ever breaking. Each approach gets sold back by dealers hedging: the wick closes instead of continuing. The more intense the green at that spot on the gradient, the cleaner that rejection tends to be."},
+      {k:"brk", c:"r", tag:"NEGATIVE GAMMA · THE BREAK FEEDS ITSELF",
+       x:"Price approaches the same kind of level, but this time breaks through it — and instead of slowing down, it ACCELERATES (shaded zone). Once on the other side, dealers must sell (or buy) WITH the move to stay hedged: the break feeds itself. That's the signature of an intense red zone on the gradient, not a headline or a large order."},
+      {k:"drift", c:"g", tag:"CHARM/VANNA · THE DRIFT WITH NO CATALYST",
+       x:"Nothing happens for three quarters of the session (light zone) — then a slow, steady drift kicks in late in the day (shaded zone), with no news, no unusual volume. That's dealers mechanically rebalancing as time passes (charm) or as IV moves (vanna). The Flow panel is the only place on the terminal that shows this move BEFORE it happens."}]}]},
+
+  {id:"grecques", t:"The three greeks of flow", b:[
+    {t:"p", x:"Three selectors, three kinds of flow — never merged into one number, their units and reading differ."},
+    {t:"codes", items:[
+      {k:"Γ", n:"Gamma", d:"Flow triggered by price movement. This is the primary axis: the only greek directly checkable against the per-strike GEX shown elsewhere in the terminal."},
+      {k:"V", n:"Vanna", d:"Flow triggered by a change in IV, at constant price. Confirms or contradicts the gamma bias when volatility moves intraday."},
+      {k:"Θ", n:"Charm", d:"Flow triggered by the passage of time, at constant price. Explains end-of-session drifts with no visible catalyst."}]},
+    {t:"note", x:"Charm genuinely grows as the close approaches — delta decay mechanically accelerates late in an option's life. Its colour scale is therefore recalibrated <b>hour by hour</b> to stay legible all session. Gamma and vanna share a common scale: their intensity IS directly comparable from one hour to the next — charm's isn't."},
+    {t:"note", x:"<b>Example — end-of-session drift.</b> 4pm: positive gamma, the market compresses. Charm is strongly positive in the 9pm column. Translation: even with no move, dealers will have to buy late in the session. A slow bullish drift into the close is likely, with no news to explain it."}]},
+
+  {id:"biais", t:"Building a bias, step by step", b:[
+    {t:"steps", items:[
+      "Check the gamma sign at the \"now\" column: positive, hedging dampens — expect a range. Negative, it amplifies — expect acceleration on any break.",
+      "Follow that same sign to the right (projection): does the regime strengthen, flip, or stay stable into the close? A colour flip during the day is the panel's single most actionable signal.",
+      "Check vanna: if IV moves during the day (it almost always compresses on a quiet session), a strong vanna confirms or contradicts the gamma bias. A clear contradiction calls for caution.",
+      "Check charm: a mechanical end-of-session drift exists independently of any price move — look at the last hours' column before the close.",
+      "With History on: compare the left side to the projection. If this morning's real reaction was sharper than a \"moderate\" gamma reading suggested, the market is behaving as if exposure were more fragile than the model says — worth taking seriously."]},
+    {t:"p", x:"The summary badge (next section) does exactly this calculation for you, but only on the \"now\" column — useful for a quick read. The manual method above is the only one that shows <b>how this bias evolves over time</b>, not just its state at this instant."}]},
+
+  {id:"verdict", t:"The summary verdict", b:[
+    {t:"p", x:"Below the gradient, a badge sums up the \"now\" column in one word. Gamma is always the primary axis; vanna and charm only confirm or contradict afterwards — never averaged, a clear contradiction switches straight to DIVERGENCE."},
+    {t:"codes", items:[
+      {k:"■", n:"COMPRESSION", d:"Dominant positive gamma, no strong contradiction from vanna or charm. Hedging dampens: range, pinning against walls."},
+      {k:"■", n:"ACCELERATION", d:"Dominant negative gamma, no strong contradiction. Hedging amplifies: any break has good odds of feeding itself."},
+      {k:"■", n:"DRIFT", d:"Gamma near neutral, but vanna or charm significant. A mechanical move remains possible even when gamma alone says nothing."},
+      {k:"■", n:"DIVERGENCE", d:"Gamma points one way, but vanna or charm strongly opposes it. The most useful signal: a regime that's degrading, not the average of the three."}]},
+    {t:"note", x:"<b>Example.</b> Positive gamma (the raw reading would give COMPRESSION) but strongly negative charm over the last hours: the verdict shows DIVERGENCE instead of averaging it out. A compression that's degrading into the close, worth watching more than a stable one."}]},
+
+  {id:"volume", t:"Volume context", b:[
+    {t:"p", x:"Open interest is frozen from the prior day: the gradient shows inherited exposure. Today's volume shows where positions are being built <b>right now</b>. A strike whose volume exceeds accumulated open interest is a place where hedging is being born in front of you."},
+    {t:"note", x:"Caveat: volume tells you <b>where</b> it's moving, not which direction. Heavy volume can be client buying or selling, with opposite implications."}]},
+
+  {id:"prise-en-main", t:"Getting started: the controls", b:[
+    {t:"codes", items:[
+      {k:"🖱", n:"Hover", d:"Price, time and the exact $ value of the cell under the cursor — same reading as the price chart's crosshair."},
+      {k:"⚙", n:"Wheel", d:"Zoom centered on the hovered price, to isolate a narrow band without the extremes crushing the scale."},
+      {k:"✋", n:"Drag", d:"Pans the visible price window without changing the zoom level."},
+      {k:"⟲", n:"Double-click", d:"Resets the zoom to the full grid."},
+      {k:"🕐", n:"History", d:"Shows, left of \"now\", the exposure actually traded through since the open — reconstructed at the real price of each past tick, not a projection."}]},
+    {t:"note", x:"<b>Example.</b> You want to compare intensity precisely just before and just after \"now\": wheel-zoom between −0.5σ and +1σ around the current price, then hover both sides of the boundary — the exact $ value of each cell is far clearer than eyeballing a full-panel gradient."},
+    {t:"p", x:"The <b>Strikes</b> button overlays the day's most active option levels (volume/OI) on the gradient — solid line for a call, dashed for a put, opacity scaled to the volume/OI ratio. Only the most significant stay labeled; the rest collapse into a discreet dot at the grid's edge so they don't drown out the levels that matter."},
+    {t:"note", x:"Range and Flow give <b>context</b>, not signals. They show which regime you're in and what's still possible — entry and exit remain the trader's job."}]},
+
+  {id:"faq", t:"FAQ", b:[
+    {t:"faq", items:[
+      {q:"Is the right-hand projection a price prediction?",
+       a:"No. It's conditional: IF price stayed exactly where it is, how exposure would mechanically evolve. It says nothing about the odds of price actually staying there."},
+      {q:"Why doesn't the projection move right after price breaks a level?",
+       a:"It's only recomputed on the next cron run (every 5 to 10 minutes during the US session, tightened to 5 minutes in the first and last hour), never continuously. A break can make it stale within one tick, until the next recompute."},
+      {q:"Gamma, Vanna, Charm: which one to check first?",
+       a:"Gamma first — it's the primary axis, the only one directly checkable against the per-strike GEX shown elsewhere. Vanna next, to confirm or contradict if IV moves intraday. Charm last, for the mechanical end-of-session effect."},
+      {q:"Is the summary badge enough, or do I need to read the gradient?",
+       a:"The badge sums up the current instant, useful for a quick read. But only the gradient shows how that bias evolves over time — strengthening, a regime flip, or stability into the close — which the manual method (\"Building a bias\" section) gives you and the badge alone doesn't."},
+      {q:"Does Flow update outside the US session?",
+       a:"No. It's only computed during the US session (intraday cron). Outside it — overnight Globex, weekends — the panel shows the last available computation until the next open, same as the GEX levels themselves."}]}]}
+]}};
+
+/* ───── rendu des blocs (sous-ensemble de doc.html : uniquement ce qui sert
+   ici — p/h/note/chips/scen/codes/steps/faq) ───── */
+function blockHtml(b){
+  switch (b.t){
+    case "p":  return `<p class="tx">${b.x}</p>`;
+    case "h":  return `<p class="tx" style="color:var(--text);font-weight:600;font-size:12.5px;
+                        letter-spacing:.06em;text-transform:uppercase;margin-top:20px">${b.x}</p>`;
+    case "note": return `<div class="note">${b.x}</div>`;
+    case "chips": return `<div class="chips">${b.items.map(i =>
+      `<div class="chip ${i.c}"><span class="tg">${i.tag}</span><p>${i.x}</p></div>`).join("")}</div>`;
+    case "scen": return `<div class="scen">${b.items.map(i =>
+      `<div class="scen-card ${i.c}"><span class="tg">${i.tag}</span>
+         ${fluxScenSvg(SCEN_SHAPE[i.k])}
+         <p>${i.x}</p></div>`).join("")}</div>`;
+    case "codes": return `<div class="codes">${b.items.map(i =>
+      `<div class="cx"><div class="kk">${i.k}</div><div><div class="nn">${i.n}</div>
+       <div class="dd">${i.d}</div></div></div>`).join("")}</div>`;
+    case "steps": return `<ol class="steps">${b.items.map(i => `<li>${i}</li>`).join("")}</ol>`;
+    case "faq": return `<div class="faq">${b.items.map(i =>
+      `<details><summary>${i.q}</summary><div class="ans">${i.a}</div></details>`).join("")}</div>`;
+    default: return "";
+  }
+}
+
+function render(){
+  const L = T[LANG];
+  document.documentElement.lang = LANG;
+  $("hTitle").textContent = L.title;
+  $("nTerm").textContent = L.term;
+  $("nDash").textContent = L.dash;
+  $("nHeat").textContent = L.heat;
+  $("nDoc").textContent = L.doc;
+  $("eyebrowLink").textContent = "Documentation";
+  $("eyebrowHere").textContent = LANG === "fr" ? "Flux" : "Flow";
+  $("heroT").textContent = L.heroT;
+  $("heroP").textContent = L.heroP;
+  $("ctaOpen").textContent = L.ctaOpen;
+  $("ctaOpen2").textContent = L.ctaOpen;
+  $("ctaDoc").textContent = L.ctaDoc;
+  $("closerT").textContent = L.closerT;
+  $("closerP").textContent = L.closerP;
+  $("foot").textContent = L.foot;
+  $("bFr").className = LANG === "fr" ? "on" : "";
+  $("bEn").className = LANG === "en" ? "on" : "";
+
+  $("toc").innerHTML = `<div class="lbl">${L.toc}</div>` + L.secs.map((s, i) =>
+    `<a href="#${s.id}" data-s="${s.id}"><i>${String(i + 1).padStart(2, "0")}</i>${s.t}</a>`).join("");
+  $("body").innerHTML = L.secs.map((s, i) =>
+    `<section id="${s.id}"><div class="shead"><i>${String(i + 1).padStart(2, "0")}</i>
+       <h3>${s.t}</h3></div><div class="sbody">${s.b.map(blockHtml).join("")}</div></section>`).join("");
+
+  syncToc();
+}
+/* Surlignage du sommaire calculé au scroll -- IntersectionObserver ne
+   déclenchait jamais pour les dernières sections (cf. doc.html, même fix). */
+function syncToc(){
+  const secs = [...document.querySelectorAll("main section")];
+  if (!secs.length) return;
+  const bottom = window.innerHeight + window.scrollY >=
+                 document.documentElement.scrollHeight - 4;
+  let active = secs[0].id;
+  if (bottom){
+    active = secs[secs.length - 1].id;
+  } else {
+    for (const s of secs) if (s.getBoundingClientRect().top <= 110) active = s.id;
+  }
+  document.querySelectorAll("#toc a").forEach(a =>
+    a.classList.toggle("on", a.dataset.s === active));
+}
+window.addEventListener("scroll", syncToc, {passive:true});
+window.addEventListener("resize", syncToc);
+
+function setLang(l){
+  LANG = l;
+  try{ localStorage.setItem("gexLang", l); }catch(_){}
+  render();
+}
+$("bFr").onclick = () => setLang("fr");
+$("bEn").onclick = () => setLang("en");
+render();
+</script>
+</body>
+</html>

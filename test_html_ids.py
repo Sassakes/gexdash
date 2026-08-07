@@ -12,7 +12,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 
-PAGES = ["index.html", "dash.html", "heatmap.html", "news.html", "doc.html", "admin.html"]
+PAGES = ["index.html", "dash.html", "heatmap.html", "news.html", "doc.html", "admin.html", "flux.html"]
 
 
 class IdCollector(HTMLParser):

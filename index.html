@@ -166,8 +166,9 @@
 
   /* ============ bouton FLUX : détaché des onglets marchés — il ne
      sélectionne pas un marché, il bascule le panneau central ============ */
+  .fluxToggleWrap{position:relative; display:inline-flex; margin:0 0 16px 14px}
   .fluxToggle{
-    position:relative; display:inline-flex; align-items:center; margin:0 0 16px 14px;
+    position:relative; display:inline-flex; align-items:center; margin:0;
     background:var(--surface2); color:var(--muted); border:1px solid var(--line-strong);
     padding:8px 22px; font-size:12.5px; font-weight:600; letter-spacing:.08em;
     cursor:pointer; transition:color .22s ease, background .22s ease, border-color .22s ease;
@@ -178,6 +179,19 @@
   .fluxToggle:hover{color:var(--text); border-color:rgba(240,185,11,.35)}
   .fluxToggle.on{color:var(--gold); background:var(--gold-soft); border-color:rgba(240,185,11,.5)}
   .fluxToggle:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+  /* badge d'aide ancré sur le coin du bouton FLUX — discret, ne participe pas
+     au flex de la ctxbar (position absolue dans le wrapper), donc jamais de
+     réagencement à ajouter quand la barre passe en scroll horizontal mobile */
+  .fluxGuideBtn{
+    position:absolute; top:-7px; right:-7px; z-index:2;
+    display:flex; align-items:center; justify-content:center;
+    width:18px; height:18px; border-radius:50%;
+    background:var(--surface2); border:1px solid var(--line-strong);
+    color:var(--faint); font-size:10.5px; font-weight:700; text-decoration:none;
+    transition:color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .fluxGuideBtn:hover{color:var(--gold); border-color:var(--gold); background:var(--gold-soft)}
+  .fluxGuideBtn:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   /* bascule au clic : 220ms, sobre — un aller-retour d'échelle/opacité, pas
      un effet appuyé */
   .fluxToggle.swap{animation:fluxSwap .22s ease-out}
@@ -487,7 +501,8 @@
     /* cibles tactiles confortables + pas de zoom auto iOS sur les champs */
     .chips button, .ivs button, .tabs button, .fluxToggle, #tzTop{min-height:40px}
     .chips button{padding:8px 13px; font-size:11.5px}
-    .fluxToggle{width:100%; margin:2px 0 16px; justify-content:center}
+    .fluxToggleWrap{width:100%; margin:2px 0 16px}
+    .fluxToggle{width:100%; margin:0; justify-content:center}
     .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
     /* le sélecteur de fuseau et la langue passent à la ligne proprement */
@@ -882,8 +897,11 @@
     <button data-t="SPX" role="tab">SPX</button>
     <button data-t="GC" role="tab">GOLD</button>
   </div>
-  <button id="fluxBtn" type="button" class="fluxToggle"
-          title="Flux gamma dealer · projection prix × temps">FLUX</button>
+  <span class="fluxToggleWrap">
+    <button id="fluxBtn" type="button" class="fluxToggle"
+            title="Flux gamma dealer · projection prix × temps">FLUX</button>
+    <a id="fluxGuideBtn" href="/flux" class="fluxGuideBtn" title="Guide complet du Flux">?</a>
+  </span>
   <div class="goldsel" id="goldSel" hidden role="group" aria-label="Échelle de l'or">
     <button data-g="GC" type="button">GC</button>
     <button data-g="XAU" type="button">XAUUSD</button>
@@ -1026,6 +1044,7 @@ const T = {
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
+    fluxGuideTip:"Guide complet du Flux · concept, lecture, exemples",
     fluxWait:"En attente du prochain calcul intrajournalier",
     fluxReady:h=>"Calculé "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
@@ -1091,6 +1110,7 @@ const T = {
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
+    fluxGuideTip:"Full Flow guide · concept, reading, examples",
     fluxWait:"Waiting for the next intraday computation",
     fluxReady:h=>"Computed "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
@@ -1430,6 +1450,7 @@ function applyLang(){
   // la vue courante — "FLUX" sur le chart, "CHART" une fois dans le flux
   const fb = $("fluxBtn");
   if (fb){ fb.textContent = FLUX_ON ? "CHART" : "FLUX"; fb.title = FLUX_ON ? t("chart") : t("fluxTip"); }
+  const fgb = $("fluxGuideBtn"); if (fgb) fgb.title = t("fluxGuideTip");
   renderFluxLegend();
   const fsl = $("fluxStrikesLbl"); if (fsl) fsl.textContent = t("fluxStrikesChip");
   const fsb = $("fluxStrikesBtn"); if (fsb) fsb.title = t("fluxStrikesTip");
@@ -1499,7 +1520,10 @@ async function load(){
   loadLinks();
   await loadTarget();
   loadDark();
-  if (FLUX_ON) setFluxView(true);      // restaure la vue Flux mémorisée
+  // Lien direct depuis le guide Flux (/flux) : ?flux=1 ouvre la vue tout de
+  // suite, sans attendre que l'utilisateur retrouve le bouton lui-même.
+  const wantsFlux = FLUX_ON || new URL(location.href).searchParams.get("flux") === "1";
+  if (wantsFlux) setFluxView(true);
 }
 
 /* ---- filtres de familles de niveaux (persistés) ---- */
