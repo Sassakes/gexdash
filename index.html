@@ -2908,12 +2908,22 @@ function drawFluxBg(cv, d, mat, lay){
 // prix DE CE TIR-LÀ), jamais rééchantillonné en bitmap uniforme comme le
 // dégradé de projection -- chaque entrée a sa PROPRE price_grid (recentrée
 // sur le spot de ce moment-là), impossible à empiler dans une grille
-// commune. ~45 tirs/jour x 25 bacs = peu de rectangles, tracés directement
-// sans coût notable. Référence de normalisation propre à cette série (pas
-// celle de la projection : nature différente, cf. commentaire fluxBuildGradient
-// sur le charm -- ici chaque entrée est un "maintenant" réel, pas de plancher
-// temporel artificiel, donc pas besoin de normaliser par colonne). ----
+// commune. ~45 tirs/jour x 25 bacs = peu de rectangles. Référence de
+// normalisation propre à cette série (pas celle de la projection : nature
+// différente, cf. commentaire fluxBuildGradient sur le charm -- ici chaque
+// entrée est un "maintenant" réel, pas de plancher temporel artificiel, donc
+// pas besoin de normaliser par colonne).
+//
+// Rendu : rectangles nets dans un tampon dédié (FLUX_HIST_OFF, réutilisé,
+// dimensionné au DPR), puis composité sur cvBg avec un flou léger --
+// contrairement au dégradé de projection (bitmap suréchantillonné, lissage
+// natif du navigateur), un tracé direct au pixel donnait de gros aplats
+// carrés très visibles en tout début de séance (peu d'entrées => cellules
+// larges). Le flou adoucit le rendu SANS toucher aux positions temps/prix,
+// qui restent exactes -- seule l'esthétique change. Coupé net à la bordure
+// "maintenant" par le clip (pas de bavure sur la projection). ----
 const FLUX_HIST_FIELD = {gamma: "gamma0", vanna: "vanna0", charm: "charm0"};
+let FLUX_HIST_OFF = null;   // tampon des cellules nettes, avant flou
 function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const hd = FLUX_HIST_ON && FLUX_HIST_DATA && FLUX_HIST_DATA.target === TARGET ? FLUX_HIST_DATA : null;
   const entries = hd && hd.entries;
@@ -2928,12 +2938,21 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const ref = fluxPercentile(absVals, 0.95) || 1;
   const ref99 = fluxPercentile(absVals, 0.99) || ref;
 
-  const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
-  const xForT = th => histX0 + histW * (th / Math.max(1e-6, elapsedH));
+  // coordonnées LOCALES au tampon (histX0/padT soustraits -- réappliqués au
+  // moment du drawImage final).
+  const yFor = p => gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
+  const xForT = th => histW * (th / Math.max(1e-6, elapsedH));
   const ths = entries.map(e => (tzShift(Math.floor(new Date(e.t).getTime() / 1000)) - histOpenShifted) / 3600);
 
-  ctx.save();
-  ctx.beginPath(); ctx.rect(histX0, padT, histW, gh); ctx.clip();
+  const dpr = FLUX_SIZE.dpr || 1;
+  const bw = Math.max(1, Math.round(histW)), bh = Math.max(1, Math.round(gh));
+  if (!FLUX_HIST_OFF) FLUX_HIST_OFF = document.createElement("canvas");
+  const off = FLUX_HIST_OFF;
+  off.width = Math.round(bw * dpr); off.height = Math.round(bh * dpr);
+  const octx = off.getContext("2d");
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, bw, bh);
+
   for (let i = 0; i < entries.length; i++){
     const e = entries[i], grid = e.price_grid, vals = e[field];
     if (!grid || !vals) continue;
@@ -2946,10 +2965,16 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
       const step = pi < nP - 1 ? grid[pi + 1] - grid[pi] : (grid[pi] - grid[pi - 1]);
       const y0 = yFor(grid[pi] + step / 2), y1 = yFor(grid[pi] - step / 2);
       const [r, g, b, a] = fluxShade(vals[pi], ref, ref99);
-      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
-      ctx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
+      octx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      octx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
     }
   }
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(histX0, padT, histW, gh); ctx.clip();
+  ctx.filter = "blur(7px)";
+  ctx.drawImage(off, 0, 0, off.width, off.height, histX0, padT, bw, bh);
+  ctx.filter = "none";
   ctx.restore();
 }
 
