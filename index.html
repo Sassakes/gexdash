@@ -268,7 +268,8 @@
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
      news.html (.verdict/.reads) ---- */
-  .fluxsynth{padding:10px 16px 12px; border-bottom:1px solid var(--line); flex:none}
+  .fluxsynth{padding:10px 16px 12px; border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line); flex:none}
   .fluxsynth .verdict{display:flex; align-items:baseline; gap:10px; margin-bottom:9px}
   .fluxsynth .vlab{font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--faint)}
   .fluxsynth .vval{font-family:var(--mono); font-size:15px; font-weight:700; letter-spacing:.04em}
@@ -915,8 +916,6 @@
     </div>
     <div class="chartbox" id="chartBox"></div>
     <div class="fluxbox" id="fluxBox" hidden>
-      <div class="fluxsynth" id="fluxSynth" hidden></div>
-      <div class="fluxvolctx" id="fluxVolCtx" hidden></div>
       <div class="fluxbar">
         <span class="fluxleft">
           <span class="note" id="fluxNote"></span>
@@ -940,6 +939,8 @@
         <canvas id="fluxCvMain"></canvas>
         <canvas id="fluxCvCursor"></canvas>
       </div>
+      <div class="fluxsynth" id="fluxSynth" hidden></div>
+      <div class="fluxvolctx" id="fluxVolCtx" hidden></div>
     </div>
   </section>
 
