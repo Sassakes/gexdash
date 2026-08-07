@@ -145,7 +145,9 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 `FINNHUB_API_KEY`, `KV_*` / `UPSTASH_*`.
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
-de secours, `0 15` / `0 17` / `0 19` intrajournaliers (`?intraday=1`).
+de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques,
+recalculent uniquement le flux) toutes les 10 min de 14h30 à 19h00, toutes
+les 5 min de 19h00 à 20h00 (dernière heure de séance) — cf. `vercel.json`.
 QStash : 00h11 daily, 15h25 publication. GitHub Actions : niveaux et macro.
 
 **Garde de fraîcheur `/api/cron`.** Une cible dont le payload publié date

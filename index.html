@@ -2262,12 +2262,20 @@ function renderPine(d){
    docs/BRIEF-flux.md) ═══════════════════════════════════════════════════
    Panneau dédié plutôt qu'une couche sur le chart de prix : axes et lecture
    sont différents (même raison que les deux boutons EM). Le calcul vit
-   entièrement côté serveur (cron intrajournalier, 3x/jour) ; ce module ne
-   fait que lire /api/flow et dessiner sur un canvas 2D — aucune dépendance
-   à lightweight-charts. */
+   entièrement côté serveur (cron intrajournalier, 10 min en séance / 5 min
+   sur la dernière heure, cf. vercel.json) ; ce module ne fait que lire
+   /api/flow et dessiner sur un canvas 2D — aucune dépendance à
+   lightweight-charts. */
 let FLUX_ON = false;
 try{ FLUX_ON = localStorage.getItem("gexFluxOn") === "1"; }catch(_){}
 let FLUX_DATA = null;      // dernière matrice reçue (ou null si pas encore prête)
+// Transition douce (~1s) entre deux tirs de cron consécutifs : le cron
+// tournant désormais toutes les 5-10 min en séance, un remplacement brut de
+// la matrice deviendrait un saut visible plutôt qu'une évolution. Purement
+// cosmétique côté dégradé -- FLUX_DATA (tooltips, synthèse, repères) passe à
+// la nouvelle valeur immédiatement, cf. fluxDisplayData().
+const FLUX_ANIM_MS = 1000;
+let FLUX_ANIM = null;   // {from:{gamma,vanna,charm}, to:{...}, t0} ou null hors transition
 let FLUX_POLL = null;
 let FLUX_RESIZE_WIRED = false;
 // Bascule des repères de strikes actifs sur le dégradé -- séparée du dégradé
@@ -2387,6 +2395,18 @@ function fluxBuildContours(mat, nH, nP, priceGrid, ref){
     }
     out[thr] = {pos: posPts, neg: negPts};
   });
+  // Une transition franche entre deux bacs de prix voisins (concentration
+  // sur un strike, cf. flow_gamma_matrix côté serveur) peut faire tomber les
+  // seuils 0.33 et 0.66 dans le même pas de grille : les deux tracés se
+  // superposent alors quasi exactement, et l'alpha des deux traits s'additionne
+  // en une ligne visuellement plus dense qu'aucun des deux seuils pris seul.
+  // Le seuil intérieur (0.33) s'efface dans ce cas -- le tracé 0.66 seul
+  // reste une frontière lisible sans ce doublement.
+  const near = (a, b) => a != null && b != null && Math.abs(a - b) < step;
+  for (let hi = 0; hi < nH; hi++){
+    if (near(out[0.33].pos[hi], out[0.66].pos[hi])) out[0.33].pos[hi] = null;
+    if (near(out[0.33].neg[hi], out[0.66].neg[hi])) out[0.33].neg[hi] = null;
+  }
   return out;
 }
 
@@ -2598,6 +2618,41 @@ function fluxDataKey(d){
   return (d.generated_utc || "") + "|" + FLUX_MODE + "|" + (FLUX_STRIKES_ON ? 1 : 0);
 }
 
+// Même grille (mêmes colonnes de prix, même nombre d'heures) requise pour
+// interpoler cellule à cellule -- change une fois par heure entière écoulée
+// (hours_grid raccourcit), auquel cas la transition suivante saute plutôt
+// que d'interpoler des tableaux de tailles différentes.
+function fluxSameShape(a, b){
+  return !!(a && b && a.price_grid && b.price_grid && a.hours && b.hours
+    && a.price_grid.length === b.price_grid.length
+    && a.hours.length === b.hours.length);
+}
+
+function fluxLerpMat(from, to, t){
+  return to.map((row, hi) => row.map((v, pi) => {
+    const v0 = from[hi] ? from[hi][pi] : v;
+    return v0 + (v - v0) * t;
+  }));
+}
+
+// Retourne l'objet à afficher CE FRAME : FLUX_DATA tel quel hors transition,
+// ou une copie avec gamma/vanna/charm interpolés pendant les ~FLUX_ANIM_MS
+// qui suivent un nouveau tir de cron. La clé generated_utc porte le progrès
+// (t) pour que fluxDataKey/fluxGradient invalident le bitmap en cache à
+// chaque frame de la transition -- seulement pendant elle, jamais après.
+function fluxDisplayData(){
+  if (!FLUX_ANIM || !FLUX_DATA) return FLUX_DATA;
+  const t = Math.min(1, (performance.now() - FLUX_ANIM.t0) / FLUX_ANIM_MS);
+  if (t >= 1){ FLUX_ANIM = null; return FLUX_DATA; }
+  invalidateFlux("bg", "main");   // enchaîne la frame suivante tant que ça anime
+  return Object.assign({}, FLUX_DATA, {
+    generated_utc: FLUX_DATA.generated_utc + "|anim" + t.toFixed(3),
+    gamma: fluxLerpMat(FLUX_ANIM.from.gamma, FLUX_DATA.gamma, t),
+    vanna: fluxLerpMat(FLUX_ANIM.from.vanna, FLUX_DATA.vanna, t),
+    charm: fluxLerpMat(FLUX_ANIM.from.charm, FLUX_DATA.charm, t),
+  });
+}
+
 function invalidateFlux(...layers){
   for (const l of layers) FLUX_DIRTY[l] = true;
   if (FLUX_RAF != null) return;
@@ -2631,7 +2686,7 @@ function flushFluxDirty(){
     return;
   }
 
-  const d = FLUX_DATA, mat = d && d[FLUX_MODE];
+  const d = fluxDisplayData(), mat = d && d[FLUX_MODE];
   const lay = (d && mat && mat.length && d.price_grid && d.price_grid.length)
     ? fluxLayout(d, mat, FLUX_SIZE.w, FLUX_SIZE.h) : null;
 
@@ -2824,16 +2879,23 @@ function drawFluxMain(cv, d, mat, lay){
     ctx.restore();
   }
 
-  // ---- axes : prix en unités sigma (même pas que la grille, 0.5σ), temps
-  // en heures jusqu'à la clôture -- traits arrondis au demi-pixel pour
-  // rester nets à n'importe quel DPR. ----
+  // ---- axes : prix en unités sigma, temps en heures jusqu'à la clôture --
+  // traits arrondis au demi-pixel pour rester nets à n'importe quel DPR.
+  // Le multiple sigma vient de d.unit (même unité que open_grid, publiée
+  // avec la matrice) plutôt que d'un pas de grille supposé en dur -- la
+  // grille prix a changé une fois de résolution déjà (13 -> 25 colonnes,
+  // cf. _flow_grids dans api/gex.py) et un pas figé ici se serait
+  // silencieusement désynchronisé de la vraie valeur envoyée par le serveur.
+  // i += 2 : une étiquette tous les 0.5σ (la grille avance par pas de 0.25σ). ----
   ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
   ctx.font = "10px IBM Plex Mono, monospace";
   ctx.fillStyle = C.faint;
+  const sigUnit = d.unit || null;
   for (let i = 0; i < nP; i += 2){
-    const mult = Math.round((i - (nP - 1) / 2) * 0.5 * 2) / 2;
+    const mult = sigUnit ? Math.round(((d.price_grid[i] - d.spot) / sigUnit) * 2) / 2 : null;
     const y = yFor(d.price_grid[i]), yy = Math.round(y) + 0.5;
     ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + gw, yy); ctx.stroke();
+    if (mult == null) continue;
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     ctx.fillText((mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ", padL - 6, y);
   }
@@ -3260,13 +3322,20 @@ async function loadFlux(){
     if (tgt !== TARGET || !FLUX_ON) return;    // la cible/vue a changé pendant l'attente
     if (!d.ready){
       FLUX_DATA = null;
+      FLUX_ANIM = null;
       FLUX_STATUS = {kind: "wait"};
     } else {
+      const prev = FLUX_DATA;
+      FLUX_ANIM = (prev && prev.target === d.target && prev.generated_utc !== d.generated_utc
+                   && fluxSameShape(prev, d))
+        ? {from: {gamma: prev.gamma, vanna: prev.vanna, charm: prev.charm}, t0: performance.now()}
+        : null;
       FLUX_DATA = d;
       FLUX_STATUS = {kind: "ready", ts: d.generated_utc.slice(11, 16)};
     }
   }catch(e){
     FLUX_DATA = null;
+    FLUX_ANIM = null;
     FLUX_STATUS = {kind: "error", msg: e.message};
   }
   renderFluxNote();
@@ -3277,9 +3346,11 @@ async function loadFlux(){
 
 function armFluxPoll(){
   clearInterval(FLUX_POLL);
-  // le calcul serveur ne tourne que 3x/jour (cron intrajournalier) : pas
-  // besoin d'un rythme de marché ici, 5 min suffit largement
-  if (FLUX_ON) FLUX_POLL = setInterval(loadFlux, 5 * 60 * 1000);
+  // le cron serveur tourne toutes les 10 min en séance (5 min sur la
+  // dernière heure, cf. vercel.json) : 2 min de poll suffit à récupérer
+  // chaque nouveau tir sans tarder, sans non plus interroger à chaque cycle
+  // de cron pile.
+  if (FLUX_ON) FLUX_POLL = setInterval(loadFlux, 2 * 60 * 1000);
 }
 
 function setFluxView(on){

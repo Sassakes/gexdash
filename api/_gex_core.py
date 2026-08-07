@@ -329,13 +329,42 @@ def zero_gamma_flip(opts, lo, hi, n=300):
 # ═══════════════════ FLUX — projection prix x temps (ETAPE 1 : gamma) ═══════
 #
 # Meme recalcul Black-Scholes que zero_gamma_flip ci-dessus (deja valide en
-# production) : c'est ce qui rend le controle de justesse possible. On y
-# reprend a l'identique la convention de signe de per_strike_gex (+1 call /
-# -1 put) et le T = dte/365 (calendaire) de zero_gamma_flip -- PAS le
-# sqrt(252) du module EM, qui sert a une chose differente (convertir une IV
-# annuelle en sigma 1 jour pour le dimensionnement de l'EM, sans rapport avec
-# le T d'une formule BS). sigma = IV par option, sticky strike : chaque
-# strike garde l'IV que CBOE lui a mesuree, inchangee sur toute la grille.
+# production). On y reprend a l'identique la convention de signe de
+# per_strike_gex (+1 call / -1 put) et le T = dte/365 (calendaire) de
+# zero_gamma_flip -- PAS le sqrt(252) du module EM, qui sert a une chose
+# differente (convertir une IV annuelle en sigma 1 jour pour le
+# dimensionnement de l'EM, sans rapport avec le T d'une formule BS). sigma =
+# IV par option, sticky strike : chaque strike garde l'IV que CBOE lui a
+# mesuree, inchangee sur toute la grille.
+#
+# DENSITE LOCALISEE PAR STRIKE, PAS UN RECALCUL PLEIN-CHAINE PAR PRIX
+# CANDIDAT. Version precedente : chaque cellule (heure, prix S) recalculait
+# TOUTE la chaine (~3000 contrats) comme si le spot etait S, puis sommait --
+# exactement l'objet de zero_gamma_flip (une courbe d'exposition totale du
+# book), lisse par construction : la somme de milliers de cloches
+# Black-Scholes qui se chevauchent efface toute trace des concentrations par
+# strike (verifie sur chaine reelle NQ, grille fine 10pts, aucune inflexion
+# visible meme aux strikes a fort OI). Diagnostic donc PAS une question de
+# normalisation percentile ni de grille trop grossiere : la structure est
+# detruite avant que la couleur n'entre en jeu.
+#
+# Nouvelle approche : chaque option est classee UNE fois dans la colonne de
+# grille la plus proche de SON PROPRE strike (echelle indice, K / scale --
+# meme convention que per_strike_gex), pas evaluee a chaque prix candidat.
+# Ca partitionne la chaine (chaque contrat compte dans une seule colonne,
+# jamais zero, jamais deux), ce qui restitue les concentrations deja
+# visibles dans gex_by_strike -- desormais deroulees dans le temps. Ca
+# accelere aussi le calcul : un seul passage vectorise par heure sur
+# l'ensemble des options, au lieu d'un passage par (heure, prix) sur
+# l'ensemble des options.
+#
+# Fenetrage : les options dont le strike tombe hors de la grille affichee
+# (au-dela d'un demi-pas du bord) sont exclues plutot que compressees dans
+# la colonne de bord -- sinon la longue traine de strikes lointains y
+# formerait une valeur extreme isolee qui ecraserait tout le degrade (cf.
+# note percentile de fluxShade cote client). Cas particulier : une grille a
+# UNE seule colonne (utilise par le controle de justesse de _refresh_flow,
+# cf. api/gex.py) ne fenetre jamais -- tout doit y retomber, par construction.
 #
 # 0DTE : dte=0 donne T=0, que bs_gamma plafonne a son plancher anti-division
 # interne (1e-6 an, ~31s) -- une garde numerique, jamais pensee comme une
@@ -350,12 +379,16 @@ ZERO_DTE_T_FLOOR_MIN = 5.0   # plancher mini, en minutes, pour un 0DTE tres proc
 
 
 def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
-    """Matrices dealer $ (gamma, vanna, charm), agregees sur toute la chaine,
-    pour chaque couple (heures depuis maintenant, prix candidat en echelle
+    """Matrices dealer $ (gamma, vanna, charm) par colonne de prix (echelle
     INDICE -- meme convention que zero_gamma_flip/per_strike_gex : S_own =
     S * o.scale pour les options ramenees d'une autre chaine, ex. le blend
-    ETF). Meme signe dealer (+1 call / -1 put), meme T = dte/365 calendaire,
-    meme sticky-strike sigma que le gamma deja valide ci-dessus.
+    ETF) et par heure restante. Chaque option est classee dans la colonne la
+    plus proche de SON PROPRE strike (densite localisee, pas un recalcul
+    plein-chaine par prix candidat -- cf. bloc de commentaires ci-dessus),
+    puis son gamma/vanna/charm est recalcule a S = prix de cette colonne et
+    T = temps restant a cette heure. Meme signe dealer (+1 call / -1 put),
+    meme T = dte/365 calendaire, meme sticky-strike sigma que le gamma deja
+    valide ci-dessus.
 
     today_hours_left : heures reelles restantes avant la cloture cash (16h
     ET) au moment du calcul. Sert de base de temps aux options 0DTE
@@ -374,6 +407,9 @@ def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
     valid = [o for o in opts if o.iv > 0]
     if not valid or not price_grid_idx or not hours_grid:
         return {}
+    grid = np.array(price_grid_idx, dtype=float)
+    n_cols = len(grid)
+
     K = np.array([o.K for o in valid])
     dte = np.array([o.dte for o in valid], dtype=float)
     iv = np.array([o.iv for o in valid])
@@ -381,6 +417,19 @@ def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
     sign = np.array([1.0 if o.is_call else -1.0 for o in valid])
     scale = np.array([o.scale for o in valid])
     base = sign * OI * CONTRACT_MULT
+    k_idx = K / scale
+
+    # fenetrage (cf. note ci-dessus) : desactive pour une grille a 1 colonne,
+    # utilisee telle quelle par le controle de justesse.
+    if n_cols > 1:
+        half_step = (grid[-1] - grid[0]) / (n_cols - 1) / 2.0
+        in_window = (k_idx >= grid[0] - half_step) & (k_idx <= grid[-1] + half_step)
+        if in_window.any():
+            K, dte, iv, OI, sign, scale, base, k_idx = (
+                K[in_window], dte[in_window], iv[in_window], OI[in_window],
+                sign[in_window], scale[in_window], base[in_window], k_idx[in_window])
+
+    col_of = np.abs(k_idx[:, None] - grid[None, :]).argmin(axis=1)
 
     floor_days = ZERO_DTE_T_FLOOR_MIN / 60.0 / 24.0
     is_0dte = dte == 0
@@ -394,18 +443,19 @@ def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
         # long, plancher applique en tout dernier recours.
         days_left = np.maximum(base_days - h / 24.0, floor_days)
         T = days_left / 365.0
-        col_g, col_v, col_c = [], [], []
-        for S in price_grid_idx:
-            S_own = S * scale
-            g = bs_gamma(S_own, K, T, iv)
-            v = bs_vanna(S_own, K, T, iv)
-            c = bs_charm(S_own, K, T, iv)
-            col_g.append(float(np.sum(base * g * S_own * S_own * 0.01)))
-            col_v.append(float(np.sum(base * v * S_own * 0.01)))
-            col_c.append(float(np.sum(base * c * S_own)))
-        rows_gamma.append(col_g)
-        rows_vanna.append(col_v)
-        rows_charm.append(col_c)
+        S_own = grid[col_of] * scale     # chaque option evaluee a SA colonne
+        g = bs_gamma(S_own, K, T, iv)
+        v = bs_vanna(S_own, K, T, iv)
+        c = bs_charm(S_own, K, T, iv)
+        col_g = np.zeros(n_cols)
+        col_v = np.zeros(n_cols)
+        col_c = np.zeros(n_cols)
+        np.add.at(col_g, col_of, base * g * S_own * S_own * 0.01)
+        np.add.at(col_v, col_of, base * v * S_own * 0.01)
+        np.add.at(col_c, col_of, base * c * S_own)
+        rows_gamma.append(col_g.tolist())
+        rows_vanna.append(col_v.tolist())
+        rows_charm.append(col_c.tolist())
     return {"gamma": rows_gamma, "vanna": rows_vanna, "charm": rows_charm}
 
 

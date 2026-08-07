@@ -827,10 +827,16 @@ def _flow_grids(payload):
     """Grille prix (echelle produit), CENTREE SUR LE PRIX COURANT — pas sur
     l'ouverture du jour — pour que la colonne du controle de justesse
     (recalcul a T=maintenant) tombe exactement sur une colonne de la grille,
-    sans interpolation. Pas = 0.5 sigma, meme unite que l'open_grid deja
-    publie (reprise telle quelle, jamais recalculee) : le module Flux se lit
-    avec le meme repere sigma que la grille d'Open deja affichee sur le
-    chart plutot que d'inventer une troisieme echelle.
+    sans interpolation. Meme unite que l'open_grid deja publie (reprise telle
+    quelle, jamais recalculee) : le module Flux se lit avec le meme repere
+    sigma que la grille d'Open deja affichee sur le chart plutot que
+    d'inventer une troisieme echelle. Pas = 0.25 sigma (25 colonnes sur la
+    meme amplitude +/-3 sigma qu'avant, deux fois plus fin) : depuis que
+    flow_gamma_matrix classe chaque option dans SA colonne de strike au lieu
+    de recalculer toute la chaine a chaque prix candidat (cf. commentaire
+    dans _gex_core.py), la resolution de cette grille determine directement
+    a quel point les concentrations par strike restent lisibles plutot que
+    fondues dans une colonne trop large.
     Grille temps : heures pleines de maintenant jusqu'a la cloture cash
     (16h ET), plus le point exact de cloture si ce n'est pas deja un entier —
     l'heure de fin reprend SESSION_END_ET, le meme repere que
@@ -840,7 +846,7 @@ def _flow_grids(payload):
     unit = (payload.get("open_grid") or {}).get("unit")
     if not spot_prod or not unit:
         return None, None, None
-    price_grid = [round(spot_prod + i * 0.5 * unit, 2) for i in range(-6, 7)]
+    price_grid = [round(spot_prod + i * 0.25 * unit, 2) for i in range(-12, 13)]
     now_h = _et_now_minutes() / 60.0
     close_h = SESSION_END_ET[0] + SESSION_END_ET[1] / 60.0
     remaining = close_h - now_h
