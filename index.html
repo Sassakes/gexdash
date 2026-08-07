@@ -511,7 +511,22 @@
     .fluxsynth .fsrows{flex-direction:column; gap:5px}
     .fluxvolctx{padding:8px 10px 10px}
     .fluxvolctx .fvcols{flex-direction:column; gap:8px}
-    .fluxbar{padding:8px 10px; flex-wrap:wrap; row-gap:4px}
+    /* fvcol portait flex:1 1 220px pour le cote-a-cote desktop -- une fois
+       empile en colonne (flex-direction:column ci-dessus), ce 220px devient
+       une hauteur MINIMALE (flex-basis suit l'axe principal, qui bascule en
+       vertical) : un grand vide entre CALLS et PUTS, meme quand les lignes
+       ne remplissent pas 220px de haut. */
+    .fluxvolctx .fvcol{flex:none}
+    /* barre de controles Flux : chaque groupe (note, modes, strikes/histo,
+       legende) sur sa propre ligne pleine largeur plutot qu'un flex-wrap
+       "en vrac" ou l'espacement uniforme (gap) ne distingue pas les groupes
+       -- correspond au constat "aucun sens" en usage reel. */
+    .fluxbar{padding:8px 10px; flex-wrap:wrap; row-gap:8px; align-items:flex-start}
+    .fluxleft{width:100%; gap:8px}
+    .fluxleft .note{width:100%}
+    .fluxleft .chips{width:100%}
+    #fluxModeChips button{flex:1; text-align:center}
+    .fluxlegend{width:100%; justify-content:flex-end; margin-top:2px}
     .cbar{padding:8px 10px}
     .ivs button{padding:8px 12px; min-height:36px}
     thead th, td{padding-left:12px; padding-right:12px}
@@ -3012,10 +3027,11 @@ function drawFluxMain(cv, d, mat, lay){
     return;
   }
   const view = fluxCurrentView(lay);
-  const {padL, padT, gw, gh, nH, nP, histX0, histW, histPoints, elapsedH} = lay;
+  const {padL, padT, gw, gh, nH, nP, histX0, histW, histPoints, elapsedH, histOpenShifted} = lay;
   const priceMin = view.min, priceMax = view.max;
   const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
   const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
+  const xForHist = th => histX0 + histW * (th / Math.max(1e-6, elapsedH));
   const lineX0 = histW > 0 ? histX0 : padL;   // repères/gridlines : traversent aussi la portion historique quand elle existe
 
 
@@ -3049,13 +3065,29 @@ function drawFluxMain(cv, d, mat, lay){
     ctx.fillText(label, x, padT + gh + 4);
   });
 
+  // ---- graduations horaires côté historique : sans ça l'axe reste vide à
+  // gauche de "maintenant" et rien ne dit à quel moment de la séance
+  // correspond un point du tracé. Heures rondes dans le fuseau AFFICHÉ
+  // (histOpenShifted est déjà l'heure d'ouverture "décalée" pour ce fuseau,
+  // cf. fluxSessionHistory) -- même convention que "Calculé HH:MM". ----
+  if (histW > 4 && elapsedH > 0){
+    const openDate = new Date(histOpenShifted * 1000);
+    const openMin = openDate.getUTCHours() * 60 + openDate.getUTCMinutes();
+    let tickMin = Math.ceil(openMin / 60) * 60;
+    while ((tickMin - openMin) / 60 <= elapsedH + 1e-9){
+      const th = (tickMin - openMin) / 60;
+      const hh = Math.floor(tickMin / 60) % 24;
+      ctx.fillText(String(hh).padStart(2, "0") + "h", xForHist(th), padT + gh + 4);
+      tickMin += 60;
+    }
+  }
+
   // ---- prix réalisé depuis l'ouverture cash (9h30 ET) jusqu'à "maintenant" :
   // ligne simple à gauche de la projection, mêmes bougies que le chart de prix
   // (CHART.bars, cf. fluxSessionHistory). Répond au constat "tout est à droite,
   // on ne voit pas ce qui s'est passé pendant la séance" -- la portion
   // dégradé/gamma à droite de "maintenant" reste inchangée. ----
   if (histW > 4 && histPoints.length > 1){
-    const xForHist = th => histX0 + histW * (th / Math.max(1e-6, elapsedH));
     ctx.beginPath();
     histPoints.forEach((p, i) => {
       const x = xForHist(p.t), y = yFor(p.price);
