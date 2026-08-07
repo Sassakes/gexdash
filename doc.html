@@ -99,6 +99,20 @@
   .chip.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
   .chip p{font-size:12.5px; color:var(--muted)}
 
+  /* blocs : scénarios Flux (mini-chart + explication) -- même vocabulaire de
+     badge que .chip, mais empilés (le SVG a besoin de toute la largeur pour
+     rester lisible, contrairement aux chips texte-seul en grille) */
+  .scen{display:flex; flex-direction:column; gap:14px}
+  .scen-card{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
+  .scen-card .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
+                 display:inline-block; margin-bottom:10px}
+  .scen-card.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
+  .scen-card.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .scen-card.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .scen-card svg{width:100%; height:auto; display:block; background:#0C0C0F;
+                 border:1px solid var(--line); margin:0 0 10px}
+  .scen-card p{font-size:12.5px; color:var(--muted)}
+
   /* blocs : sélecteur de familles interactif */
   .fam{border:1px solid var(--line); background:var(--surface2)}
   .famtabs{display:flex; flex-wrap:wrap; gap:0; border-bottom:1px solid var(--line)}
@@ -376,6 +390,15 @@ fr: {
     {t:"chips", items:[
       {c:"t", tag:"Vert · gamma positif", x:"La couverture va CONTRE le mouvement, elle amortit. Compression, pin, ranges. Les zones vertes intenses tiennent."},
       {c:"r", tag:"Rouge · gamma négatif", x:"La couverture va AVEC le mouvement, elle amplifie. Accélérations, cassures. Les zones rouges intenses lâchent vite."}]},
+    {t:"h", x:"L'effet sur le prix, en image"},
+    {t:"p", x:"La théorie ci-dessus, vue sur un vrai mouvement de prix. Trois situations qui reviennent chaque séance :"},
+    {t:"scen", items:[
+      {k:"pin", c:"t", tag:"GAMMA POSITIF · LE PRIX PIN",
+       x:"Le prix monte vers le mur, le touche, redescend — trois fois de suite sans jamais casser. Chaque approche est vendue en retour par les dealers qui se couvrent : la mèche se referme au lieu de continuer. Plus le vert est intense à cet endroit sur le dégradé, plus ce rejet a des chances d'être franc."},
+      {k:"brk", c:"r", tag:"GAMMA NÉGATIF · LA CASSURE S'AUTO-ALIMENTE",
+       x:"Le prix approche le même type de niveau, mais cette fois le franchit — et au lieu de ralentir, il ACCÉLÈRE (zone ombrée). Une fois de l'autre côté, les dealers doivent vendre (ou acheter) DANS le sens du mouvement pour rester couverts : la cassure se nourrit elle-même. C'est la signature d'une zone rouge intense sur le dégradé, pas d'une actualité ou d'un gros ordre."},
+      {k:"drift", c:"g", tag:"CHARM/VANNA · LA DÉRIVE SANS CATALYSEUR",
+       x:"Rien ne se passe pendant les trois quarts de la séance (zone claire) — puis une dérive lente et régulière démarre en fin de journée (zone ombrée), sans news, sans volume inhabituel. C'est le rééquilibrage mécanique des dealers à mesure que le temps s'écoule (charm) ou que l'IV bouge (vanna). Le panneau Flux est le seul endroit du terminal qui montre ce mouvement AVANT qu'il n'arrive."}]},
     {t:"h", x:"Les trois grecques"},
     {t:"codes", items:[
       {k:"Γ", n:"Gamma", d:"Flux provoqué par le mouvement du prix."},
@@ -528,6 +551,15 @@ en: {
     {t:"chips", items:[
       {c:"t", tag:"Green · positive dealer gamma", x:"Hedging goes AGAINST the move, it dampens. Compression, pins, ranges. Intense green zones hold."},
       {c:"r", tag:"Red · negative dealer gamma", x:"Hedging goes WITH the move, it amplifies. Accelerations, breaks. Intense red zones give way fast."}]},
+    {t:"h", x:"The effect on price, in pictures"},
+    {t:"p", x:"The theory above, on an actual price move. Three situations that recur every session:"},
+    {t:"scen", items:[
+      {k:"pin", c:"t", tag:"POSITIVE GAMMA · PRICE PINS",
+       x:"Price rallies into the wall, touches it, drops back — three times in a row without ever breaking. Each approach gets sold back by dealers hedging: the wick closes instead of continuing. The more intense the green at that spot on the gradient, the cleaner that rejection tends to be."},
+      {k:"brk", c:"r", tag:"NEGATIVE GAMMA · THE BREAK FEEDS ITSELF",
+       x:"Price approaches the same kind of level, but this time breaks through it — and instead of slowing down, it ACCELERATES (shaded zone). Once on the other side, dealers must sell (or buy) WITH the move to stay hedged: the break feeds itself. That's the signature of an intense red zone on the gradient, not a headline or a large order."},
+      {k:"drift", c:"g", tag:"CHARM/VANNA · THE DRIFT WITH NO CATALYST",
+       x:"Nothing happens for three quarters of the session (light zone) — then a slow, steady drift kicks in late in the day (shaded zone), with no news, no unusual volume. That's dealers mechanically rebalancing as time passes (charm) or as IV moves (vanna). The Flow panel is the only place on the terminal that shows this move BEFORE it happens."}]},
     {t:"h", x:"The three greeks"},
     {t:"codes", items:[
       {k:"Γ", n:"Gamma", d:"Flow triggered by price movement."},
@@ -641,6 +673,56 @@ function wireFam(root){
 }
 let FAM_DATA = {};
 
+/* ───── scénarios Flux : impact du positionnement dealer sur un mini-chart de
+   prix statique, même langage visuel que famSvg ci-dessus mais plus simple
+   (une seule ligne de niveau, une zone ombrée) -- le but est de RENDRE VISIBLE
+   ce que "gamma positif/négatif" et "charm" font concrètement au prix, pas
+   seulement de le décrire en mots. ───── */
+const SCEN_SHAPE = {
+  pin: {
+    lo:28950, hi:29520,
+    path:[29050,29120,29200,29280,29350,29400,29430,29410,29360,29290,
+          29220,29160,29110,29140,29210,29290,29360,29410,29440,29420,
+          29370,29300,29230,29170,29130,29160,29230,29310,29380,29425],
+    wallY:29460, wallLabel:"CW", wallColor:"#26A69A"},
+  brk: {
+    lo:28950, hi:30500,
+    path:[29050,29080,29120,29150,29190,29230,29270,29310,29350,29380,
+          29400,29415,29440,29480,29530,29590,29660,29740,29830,29930,
+          30040,30160,30290,30430],
+    wallY:29400, wallLabel:"CW", wallColor:"#F0B90B", shadeFromIdx:10, shadeColor:"#EF5350"},
+  drift: {
+    lo:29130, hi:29400,
+    path:[29200,29210,29195,29205,29215,29200,29190,29205,29220,29210,
+          29195,29200,29215,29225,29210,29200,29215,29230,29245,29260,
+          29275,29290,29310,29330,29350,29370],
+    shadeFromIdx:18, shadeColor:"#F0B90B"}
+};
+function fluxScenSvg(cfg){
+  const W = 560, H = 150, PAD = 14;
+  const {lo, hi, path} = cfg;
+  const Y = p => PAD + (hi - p) / (hi - lo) * (H - PAD * 2);
+  const stepX = (W - PAD * 2) / (path.length - 1);
+  const pts = path.map((v, i) => `${(PAD + i * stepX).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  let extra = "";
+  if (cfg.shadeFromIdx != null){
+    const x0 = PAD + cfg.shadeFromIdx * stepX;
+    extra += `<rect x="${x0.toFixed(1)}" y="${PAD}" width="${(W - PAD - x0).toFixed(1)}" height="${H - PAD * 2}" fill="${cfg.shadeColor}" opacity=".1"/>`;
+  }
+  if (cfg.wallY != null){
+    const wy = Y(cfg.wallY).toFixed(1);
+    extra += `<line x1="${PAD}" y1="${wy}" x2="${W - PAD}" y2="${wy}" stroke="${cfg.wallColor}"
+                stroke-width="1.4" stroke-dasharray="4 3" opacity=".85"/>
+              <text x="${W - PAD - 4}" y="${+wy - 6}" fill="${cfg.wallColor}" text-anchor="end"
+                font-family="IBM Plex Mono, monospace" font-size="10.5">${cfg.wallLabel}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">
+    ${extra}
+    <polyline points="${pts}" fill="none" stroke="#ECEAE4" stroke-width="1.6"
+      stroke-linejoin="round" opacity=".95"/>
+  </svg>`;
+}
+
 /* ───── rendu des blocs ───── */
 function blockHtml(b){
   switch (b.t){
@@ -650,6 +732,10 @@ function blockHtml(b){
     case "note": return `<div class="note">${b.x}</div>`;
     case "chips": return `<div class="chips">${b.items.map(i =>
       `<div class="chip ${i.c}"><span class="tg">${i.tag}</span><p>${i.x}</p></div>`).join("")}</div>`;
+    case "scen": return `<div class="scen">${b.items.map(i =>
+      `<div class="scen-card ${i.c}"><span class="tg">${i.tag}</span>
+         ${fluxScenSvg(SCEN_SHAPE[i.k])}
+         <p>${i.x}</p></div>`).join("")}</div>`;
     case "families": {
       b.items.forEach(f => { FAM_DATA[f.k] = f; });
       return `<div class="fam" data-fam="1">
