@@ -2361,65 +2361,112 @@ function fluxShade(v, ref, ref99){
   return [Math.round(r), Math.round(g), Math.round(b), 0.20 + 0.80 * x];
 }
 
-// Isoligne : où |valeur|/ref franchit un seuil donné, une frontière par
-// colonne horaire (gamma+ et gamma- traités séparément -- deux surfaces
-// distinctes, jamais fondues). Un dégradé lisse seul rend les zones dures à
-// distinguer une fois saturé ; ces isolignes donnent une frontière lisible,
-// comme les courbes de niveau d'une carte topographique. Une colonne sans
-// franchissement casse le trait plutôt que de sauter par-dessus un trou.
+// Isoligne : où |valeur|/ref franchit un seuil donné, gamma+ et gamma-
+// traités séparément (deux surfaces distinctes, jamais fondues).
+//
+// Marching squares, pas un scan à un point par colonne horaire. Raison :
+// depuis la densité localisée par strike (flow_gamma_matrix, chaque option
+// classée dans la colonne de SON PROPRE strike, cf. api/_gex_core.py), le
+// champ n'est plus lisse en prix -- c'est une partition par strike, deux
+// bacs voisins peuvent appartenir à des strikes sans rapport. Un scan qui
+// cherche "le" franchissement d'une colonne horaire et le relie tel quel à
+// celui de la colonne suivante peut sauter d'un strike à un autre totalement
+// différent d'une heure à l'autre (leurs vitesses de décroissance diffèrent)
+// -- le trait obtenu ressemble à un niveau qui dérive dans le temps alors
+// qu'il ne s'est rien passé de continu. Marching squares ne relie que des
+// cellules de grille adjacentes qui appartiennent réellement à la même
+// frontière ; deux zones chaudes non contiguës ne produisent jamais un
+// même trait.
 //
 // Calculée sur la plage COMPLETE de prix (pas la fenêtre de vue courante) et
 // mise en cache au même titre que le bitmap du dégradé (cf. fluxGradient) :
-// un pan/zoom ne fait que filtrer/mapper ces points déjà connus, jamais
+// un pan/zoom ne fait que filtrer/mapper ces segments déjà connus, jamais
 // refaire la boucle nH x nP.
-function fluxBuildContours(mat, nH, nP, priceGrid, ref){
-  const fullMin = priceGrid[0];
-  const step = (priceGrid[nP - 1] - fullMin) / Math.max(1, nP - 1);
-  const out = {};
-  [0.33, 0.66].forEach(thr => {
-    const posPts = new Array(nH).fill(null), negPts = new Array(nH).fill(null);
-    for (let hi = 0; hi < nH; hi++){
-      const col = mat[hi];
-      for (let pi = 0; pi < nP - 1; pi++){
-        const v0 = col[pi], v1 = col[pi + 1];
-        if (v0 >= 0 && v1 >= 0){
-          const a0 = v0 / ref, a1 = v1 / ref;
-          if ((a0 < thr) !== (a1 < thr))
-            posPts[hi] = fullMin + (pi + (thr - a0) / (a1 - a0 || 1e-9)) * step;
-        } else if (v0 < 0 && v1 < 0){
-          const a0 = Math.abs(v0) / ref, a1 = Math.abs(v1) / ref;
-          if ((a0 < thr) !== (a1 < thr))
-            negPts[hi] = fullMin + (pi + (thr - a0) / (a1 - a0 || 1e-9)) * step;
-        }
+function fluxFieldSide(mat, nH, nP, ref, wantPos){
+  const field = new Array(nH);
+  for (let hi = 0; hi < nH; hi++){
+    const row = new Array(nP), src = mat[hi];
+    for (let pi = 0; pi < nP; pi++){
+      const v = src[pi];
+      row[pi] = (wantPos ? v >= 0 : v < 0) ? Math.abs(v) / ref : -1;   // -1 : jamais "dedans", quel que soit le seuil (>=0)
+    }
+    field[hi] = row;
+  }
+  return field;
+}
+
+// Segments en coordonnées grille : {hi, price} -- hi éventuellement
+// fractionnaire (franchissement entre deux colonnes horaires), price déjà en
+// unité réelle (les lignes horizontales d'une cellule tombent pile sur une
+// ligne de priceGrid, aucune interpolation de prix nécessaire sur ces bords).
+function fluxMarchSquares(field, nH, nP, priceGrid, thr){
+  const segs = [];
+  const top = (hi, pi) => {   // bord haut de la cellule (hi,pi) : franchissement le long de hi, à prix priceGrid[pi] fixe
+    const v0 = field[hi][pi], v1 = field[hi + 1][pi];
+    const f = Math.max(0, Math.min(1, (thr - v0) / ((v1 - v0) || 1e-9)));
+    return {hi: hi + f, price: priceGrid[pi]};
+  };
+  const side = (hi, pi) => {   // bord latéral de la cellule (hi,pi) : franchissement le long de pi, à colonne hi fixe
+    const v0 = field[hi][pi], v1 = field[hi][pi + 1];
+    const f = Math.max(0, Math.min(1, (thr - v0) / ((v1 - v0) || 1e-9)));
+    return {hi, price: priceGrid[pi] + f * (priceGrid[pi + 1] - priceGrid[pi])};
+  };
+  for (let hi = 0; hi < nH - 1; hi++){
+    for (let pi = 0; pi < nP - 1; pi++){
+      const tl = field[hi][pi], tr = field[hi + 1][pi];
+      const br = field[hi + 1][pi + 1], bl = field[hi][pi + 1];
+      const code = (tl >= thr ? 8 : 0) | (tr >= thr ? 4 : 0) | (br >= thr ? 2 : 0) | (bl >= thr ? 1 : 0);
+      if (code === 0 || code === 15) continue;
+      const T = () => top(hi, pi), B = () => top(hi, pi + 1);
+      const L = () => side(hi, pi), R = () => side(hi + 1, pi);
+      const push = (p0, p1) => segs.push([p0, p1]);
+      const avg = (tl + tr + br + bl) / 4;
+      switch (code){
+        case 1: push(L(), B()); break;
+        case 2: push(B(), R()); break;
+        case 3: push(L(), R()); break;
+        case 4: push(T(), R()); break;
+        // 5/10 : coins opposés "dedans" (cellule en diagonale) -- ambigu, deux
+        // pairages possibles. Résolu par la valeur moyenne des 4 coins : sous
+        // le seuil, les deux coins "dedans" sont des bosses isolées (chacun
+        // coupé par ses deux bords propres) ; au-dessus, ce sont les deux
+        // coins "dehors" qui deviennent les poches isolées.
+        case 5: if (avg >= thr){ push(T(), L()); push(R(), B()); } else { push(T(), R()); push(L(), B()); } break;
+        case 6: push(T(), B()); break;
+        case 7: push(T(), L()); break;
+        case 8: push(T(), L()); break;
+        case 9: push(T(), B()); break;
+        case 10: if (avg >= thr){ push(T(), R()); push(L(), B()); } else { push(T(), L()); push(R(), B()); } break;
+        case 11: push(T(), R()); break;
+        case 12: push(L(), R()); break;
+        case 13: push(R(), B()); break;
+        case 14: push(L(), B()); break;
       }
     }
-    out[thr] = {pos: posPts, neg: negPts};
-  });
-  // Une transition franche entre deux bacs de prix voisins (concentration
-  // sur un strike, cf. flow_gamma_matrix côté serveur) peut faire tomber les
-  // seuils 0.33 et 0.66 dans le même pas de grille : les deux tracés se
-  // superposent alors quasi exactement, et l'alpha des deux traits s'additionne
-  // en une ligne visuellement plus dense qu'aucun des deux seuils pris seul.
-  // Le seuil intérieur (0.33) s'efface dans ce cas -- le tracé 0.66 seul
-  // reste une frontière lisible sans ce doublement.
-  const near = (a, b) => a != null && b != null && Math.abs(a - b) < step;
-  for (let hi = 0; hi < nH; hi++){
-    if (near(out[0.33].pos[hi], out[0.66].pos[hi])) out[0.33].pos[hi] = null;
-    if (near(out[0.33].neg[hi], out[0.66].neg[hi])) out[0.33].neg[hi] = null;
   }
+  return segs;
+}
+
+function fluxBuildContours(mat, nH, nP, priceGrid, ref){
+  const out = {};
+  const posField = fluxFieldSide(mat, nH, nP, ref, true);
+  const negField = fluxFieldSide(mat, nH, nP, ref, false);
+  [0.33, 0.66].forEach(thr => {
+    out[thr] = {
+      pos: fluxMarchSquares(posField, nH, nP, priceGrid, thr),
+      neg: fluxMarchSquares(negField, nH, nP, priceGrid, thr),
+    };
+  });
   return out;
 }
 
-function drawFluxContourFromPoints(ctx, pts, nH, priceMin, priceMax, xFor, yFor, color){
+function drawFluxSegments(ctx, segs, xFor, yFor, color){
+  if (!segs || !segs.length) return;
   ctx.strokeStyle = color; ctx.lineWidth = 1;
   ctx.beginPath();
-  let started = false;
-  for (let hi = 0; hi < nH; hi++){
-    const p = pts[hi];
-    if (p == null || p < priceMin || p > priceMax){ started = false; continue; }
-    const x = xFor(hi), y = yFor(p);
-    if (!started){ ctx.moveTo(x, y); started = true; }
-    else ctx.lineTo(x, y);
+  for (const [p0, p1] of segs){
+    ctx.moveTo(xFor(p0.hi), yFor(p0.price));
+    ctx.lineTo(xFor(p1.hi), yFor(p1.price));
   }
   ctx.stroke();
 }
@@ -2866,15 +2913,16 @@ function drawFluxMain(cv, d, mat, lay){
 
   // ---- isolignes : où le dégradé franchit 33 % / 66 % de sa valeur de
   // référence, séparément côté gamma+ et gamma- -- une frontière lisible,
-  // comme des courbes de niveau. Points déjà calculés (fluxBuildContours),
-  // ici seulement mappés à l'écran selon la vue courante. ----
+  // comme des courbes de niveau. Segments déjà calculés en marching squares
+  // (fluxBuildContours), ici seulement mappés à l'écran selon la vue
+  // courante. ----
   if (FLUX_CONTOURS){
     ctx.save();
     ctx.beginPath(); ctx.rect(padL, padT, gw, gh); ctx.clip();
     [0.33, 0.66].forEach(thr => {
       const c = FLUX_CONTOURS[thr];
-      drawFluxContourFromPoints(ctx, c.pos, nH, priceMin, priceMax, xFor, yFor, `rgba(38,166,154,${0.25 + thr * 0.35})`);
-      drawFluxContourFromPoints(ctx, c.neg, nH, priceMin, priceMax, xFor, yFor, `rgba(239,83,80,${0.25 + thr * 0.35})`);
+      drawFluxSegments(ctx, c.pos, xFor, yFor, `rgba(38,166,154,${0.25 + thr * 0.35})`);
+      drawFluxSegments(ctx, c.neg, xFor, yFor, `rgba(239,83,80,${0.25 + thr * 0.35})`);
     });
     ctx.restore();
   }
