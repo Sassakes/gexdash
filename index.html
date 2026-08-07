@@ -1590,6 +1590,7 @@ async function loadBars(){
     if (_b.clientWidth) { CHART._boxW = _b.clientWidth; CHART._boxH = _b.clientHeight; }
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
+    CHART.bars = bars;   // ré-utilisé par le panneau Flux pour tracer le prix réalisé depuis l'ouverture (cf. fluxSessionHistory)
     // outils de dessin : dessins propres à CE marché (persistés par navigateur)
     if (!CHART.draw)
       CHART.draw = attachDrawTools($("chartBox"), CHART.chart, CHART.series,
@@ -2361,116 +2362,6 @@ function fluxShade(v, ref, ref99){
   return [Math.round(r), Math.round(g), Math.round(b), 0.20 + 0.80 * x];
 }
 
-// Isoligne : où |valeur|/ref franchit un seuil donné, gamma+ et gamma-
-// traités séparément (deux surfaces distinctes, jamais fondues).
-//
-// Marching squares, pas un scan à un point par colonne horaire. Raison :
-// depuis la densité localisée par strike (flow_gamma_matrix, chaque option
-// classée dans la colonne de SON PROPRE strike, cf. api/_gex_core.py), le
-// champ n'est plus lisse en prix -- c'est une partition par strike, deux
-// bacs voisins peuvent appartenir à des strikes sans rapport. Un scan qui
-// cherche "le" franchissement d'une colonne horaire et le relie tel quel à
-// celui de la colonne suivante peut sauter d'un strike à un autre totalement
-// différent d'une heure à l'autre (leurs vitesses de décroissance diffèrent)
-// -- le trait obtenu ressemble à un niveau qui dérive dans le temps alors
-// qu'il ne s'est rien passé de continu. Marching squares ne relie que des
-// cellules de grille adjacentes qui appartiennent réellement à la même
-// frontière ; deux zones chaudes non contiguës ne produisent jamais un
-// même trait.
-//
-// Calculée sur la plage COMPLETE de prix (pas la fenêtre de vue courante) et
-// mise en cache au même titre que le bitmap du dégradé (cf. fluxGradient) :
-// un pan/zoom ne fait que filtrer/mapper ces segments déjà connus, jamais
-// refaire la boucle nH x nP.
-function fluxFieldSide(mat, nH, nP, ref, wantPos){
-  const field = new Array(nH);
-  for (let hi = 0; hi < nH; hi++){
-    const row = new Array(nP), src = mat[hi];
-    for (let pi = 0; pi < nP; pi++){
-      const v = src[pi];
-      row[pi] = (wantPos ? v >= 0 : v < 0) ? Math.abs(v) / ref : -1;   // -1 : jamais "dedans", quel que soit le seuil (>=0)
-    }
-    field[hi] = row;
-  }
-  return field;
-}
-
-// Segments en coordonnées grille : {hi, price} -- hi éventuellement
-// fractionnaire (franchissement entre deux colonnes horaires), price déjà en
-// unité réelle (les lignes horizontales d'une cellule tombent pile sur une
-// ligne de priceGrid, aucune interpolation de prix nécessaire sur ces bords).
-function fluxMarchSquares(field, nH, nP, priceGrid, thr){
-  const segs = [];
-  const top = (hi, pi) => {   // bord haut de la cellule (hi,pi) : franchissement le long de hi, à prix priceGrid[pi] fixe
-    const v0 = field[hi][pi], v1 = field[hi + 1][pi];
-    const f = Math.max(0, Math.min(1, (thr - v0) / ((v1 - v0) || 1e-9)));
-    return {hi: hi + f, price: priceGrid[pi]};
-  };
-  const side = (hi, pi) => {   // bord latéral de la cellule (hi,pi) : franchissement le long de pi, à colonne hi fixe
-    const v0 = field[hi][pi], v1 = field[hi][pi + 1];
-    const f = Math.max(0, Math.min(1, (thr - v0) / ((v1 - v0) || 1e-9)));
-    return {hi, price: priceGrid[pi] + f * (priceGrid[pi + 1] - priceGrid[pi])};
-  };
-  for (let hi = 0; hi < nH - 1; hi++){
-    for (let pi = 0; pi < nP - 1; pi++){
-      const tl = field[hi][pi], tr = field[hi + 1][pi];
-      const br = field[hi + 1][pi + 1], bl = field[hi][pi + 1];
-      const code = (tl >= thr ? 8 : 0) | (tr >= thr ? 4 : 0) | (br >= thr ? 2 : 0) | (bl >= thr ? 1 : 0);
-      if (code === 0 || code === 15) continue;
-      const T = () => top(hi, pi), B = () => top(hi, pi + 1);
-      const L = () => side(hi, pi), R = () => side(hi + 1, pi);
-      const push = (p0, p1) => segs.push([p0, p1]);
-      const avg = (tl + tr + br + bl) / 4;
-      switch (code){
-        case 1: push(L(), B()); break;
-        case 2: push(B(), R()); break;
-        case 3: push(L(), R()); break;
-        case 4: push(T(), R()); break;
-        // 5/10 : coins opposés "dedans" (cellule en diagonale) -- ambigu, deux
-        // pairages possibles. Résolu par la valeur moyenne des 4 coins : sous
-        // le seuil, les deux coins "dedans" sont des bosses isolées (chacun
-        // coupé par ses deux bords propres) ; au-dessus, ce sont les deux
-        // coins "dehors" qui deviennent les poches isolées.
-        case 5: if (avg >= thr){ push(T(), L()); push(R(), B()); } else { push(T(), R()); push(L(), B()); } break;
-        case 6: push(T(), B()); break;
-        case 7: push(T(), L()); break;
-        case 8: push(T(), L()); break;
-        case 9: push(T(), B()); break;
-        case 10: if (avg >= thr){ push(T(), R()); push(L(), B()); } else { push(T(), L()); push(R(), B()); } break;
-        case 11: push(T(), R()); break;
-        case 12: push(L(), R()); break;
-        case 13: push(R(), B()); break;
-        case 14: push(L(), B()); break;
-      }
-    }
-  }
-  return segs;
-}
-
-function fluxBuildContours(mat, nH, nP, priceGrid, ref){
-  const out = {};
-  const posField = fluxFieldSide(mat, nH, nP, ref, true);
-  const negField = fluxFieldSide(mat, nH, nP, ref, false);
-  [0.33, 0.66].forEach(thr => {
-    out[thr] = {
-      pos: fluxMarchSquares(posField, nH, nP, priceGrid, thr),
-      neg: fluxMarchSquares(negField, nH, nP, priceGrid, thr),
-    };
-  });
-  return out;
-}
-
-function drawFluxSegments(ctx, segs, xFor, yFor, color){
-  if (!segs || !segs.length) return;
-  ctx.strokeStyle = color; ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (const [p0, p1] of segs){
-    ctx.moveTo(xFor(p0.hi), yFor(p0.price));
-    ctx.lineTo(xFor(p1.hi), yFor(p1.price));
-  }
-  ctx.stroke();
-}
-
 // $ bruts, jamais moyennes entre grecques (unites differentes, cf. BRIEF-flux.md) :
 // simple mise a l'echelle M/Md pour la lisibilite, le signe reprend la convention
 // dealer de gex_by_strike (deja appliquee dans flow_gamma_matrix cote serveur).
@@ -2659,7 +2550,6 @@ let FLUX_CURSOR = null;   // {mx, my} en coordonnées CSS du canevas, ou null si
 // bitmap du dégradé, alloué une seule fois et redimensionné seulement si
 // nécessaire (jamais recréé dans la boucle de dessin, req. zéro allocation)
 let FLUX_OFF = null, FLUX_STAGES = [], FLUX_GRAD_SRC = null, FLUX_GRAD_META = null, FLUX_GRAD_KEY = null;
-let FLUX_CONTOURS = null;   // isolignes, même cycle de vie que le bitmap ci-dessus
 
 function fluxDataKey(d){
   return (d.generated_utc || "") + "|" + FLUX_MODE + "|" + (FLUX_STRIKES_ON ? 1 : 0);
@@ -2746,32 +2636,94 @@ function drawFlux(){
   invalidateFlux("bg", "main", "cursor");
 }
 
+// Epoch UTC réel de l'ouverture cash (9h30 ET) du jour courant. Re-mesure
+// l'offset ET à chaque appel (Intl.DateTimeFormat, cf. marketPollMs dans
+// ui.js) plutôt que de supposer -4h/-5h en dur -- correct des deux côtés
+// d'un changement d'heure d'été sans cas particulier à coder.
+function etCashOpenEpoch(){
+  const P = tSec => new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false})
+    .formatToParts(new Date(tSec * 1000)).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const now = Math.floor(Date.now() / 1000);
+  const p = P(now);
+  const guess = Date.UTC(+p.year, +p.month - 1, +p.day, 9, 30, 0) / 1000;
+  const pg = P(guess);
+  const diffMin = (9 * 60 + 30) - ((+pg.hour % 24) * 60 + (+pg.minute));
+  return guess + diffMin * 60;
+}
+
+// Prix réalisé depuis l'ouverture cash jusqu'à maintenant, à partir des
+// bougies DÉJÀ chargées pour le chart de prix (CHART.bars, cf. loadBars) --
+// aucun appel réseau supplémentaire. Mêmes timestamps décalés (tzShift) que
+// ce chart, directement comparables sans nouvelle conversion. elapsedH sert
+// à dimensionner la portion "historique" du panneau Flux par rapport à la
+// portion "projection" (cf. fluxLayout).
+function fluxSessionHistory(){
+  const bars = CHART.bars;
+  if (!bars || !bars.length) return {points: [], elapsedH: 0};
+  const openShifted = tzShift(etCashOpenEpoch());
+  const nowShifted = tzShift(Math.floor(Date.now() / 1000));
+  const elapsedH = Math.max(0, (nowShifted - openShifted) / 3600);
+  if (elapsedH <= 0.02) return {points: [], elapsedH: 0};   // séance qui vient d'ouvrir : rien à tracer
+  const points = bars
+    .filter(b => b.time >= openShifted && b.time <= nowShifted)
+    .map(b => ({t: (b.time - openShifted) / 3600, price: b.close}));
+  return {points, elapsedH};
+}
+
 // ---- disposition : padding, marge droite (suit le texte le plus long parmi
 // les repères candidats) et liste de repères. Calculée sur la plage COMPLETE
 // de prix (fullMin/fullMax), jamais la fenêtre de vue courante -- sinon gw
 // bougerait à chaque pan/zoom et invaliderait le bitmap en cache à chaque
-// frame, l'exact inverse de ce que ce cache doit apporter. ----
+// frame, l'exact inverse de ce que ce cache doit apporter.
+//
+// Le panneau est scindé en deux : une portion "historique" (prix réalisé
+// depuis l'ouverture cash, ligne simple) à gauche de "maintenant", une
+// portion "projection" (dégradé gamma/vanna/charm, INCHANGÉE -- même
+// indexation par colonne qu'avant) à droite. Largeurs proportionnelles aux
+// heures écoulées / restantes, pour que l'échelle temporelle reste continue
+// de part et d'autre de "maintenant" plutôt que deux échelles arbitraires
+// recollées. padL/gw (donc le dégradé, le survol, les repères) ne
+// désignent QUE la portion projection -- toute la logique existante qui en
+// dépend reste valide telle quelle, seule sa position de départ se décale
+// pour laisser la place à l'historique. ----
 function fluxLayout(d, mat, w, h){
-  const padL = 46, padT = 8, padB = 20;
+  const padL0 = 46, padT = 8, padB = 20;
   const gh = Math.max(1, h - padT - padB);
   const nH = mat.length, nP = d.price_grid.length;
+  // fullMin/fullMax : EXACTEMENT l'étendue de price_grid, jamais élargie --
+  // c'est le repère dont dépend le recadrage du bitmap dégradé dans
+  // drawFluxBg (le bitmap ne couvre QUE cette plage-là, quoi qu'il arrive).
+  // viewMin/viewMax : vue par défaut élargie pour inclure le prix réalisé
+  // depuis l'ouverture (peut sortir de la bande ±3σ courante après un
+  // mouvement de séance) -- utilisée par fluxCurrentView/le filtrage des
+  // repères, jamais par le recadrage du bitmap.
   const fullMin = d.price_grid[0], fullMax = d.price_grid[nP - 1];
+  let viewMin = fullMin, viewMax = fullMax;
 
   const LVL_FONT = "11px IBM Plex Mono, monospace", STRIKE_FONT = "9.5px IBM Plex Mono, monospace";
   const markers = [];
   const spot = CHART.lastBar ? CHART.lastBar.close
              : ((LAST_D && LAST_D.nq_price != null) ? LAST_D.nq_price : d.spot);
-  if (spot != null && spot >= fullMin && spot <= fullMax){
+
+  const hist = fluxSessionHistory();
+  if (spot != null && hist.points.length) hist.points.push({t: hist.elapsedH, price: spot});
+  for (const p of hist.points){
+    if (p.price < viewMin) viewMin = p.price;
+    if (p.price > viewMax) viewMax = p.price;
+  }
+
+  if (spot != null && spot >= viewMin && spot <= viewMax){
     markers.push({price: spot, tier: 0, text: fmt(spot, 0), color: C.text, textColor: C.text,
                   dash: [4, 3], lw: 1, font: LVL_FONT});
   }
   fluxLevelMarkers().forEach(m => {
-    if (m.price == null || m.price < fullMin || m.price > fullMax) return;
+    if (m.price == null || m.price < viewMin || m.price > viewMax) return;
     markers.push({price: m.price, tier: 1, text: m.label, full: m.full, color: m.color, textColor: m.color,
                   dash: [2, 3], lw: 1, font: LVL_FONT});
   });
   if (FLUX_STRIKES_ON) fluxStrikeMarkers().forEach(m => {
-    if (m.strike == null || m.strike < fullMin || m.strike > fullMax) return;
+    if (m.strike == null || m.strike < viewMin || m.strike > viewMax) return;
     const ratio = m.vol_oi_ratio;
     const k = Math.max(0, Math.min(1, (ratio || 0) / 2));   // ratio >= 2 sature l'échelle visuelle
     const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
@@ -2792,9 +2744,21 @@ function fluxLayout(d, mat, w, h){
   const padR = markers.length
     ? Math.min(Math.max(maxTextW + 16, 50), Math.max(60, w * 0.42))
     : 40;
+
+  const remainH = d.hours[d.hours.length - 1] || 0;
+  const totalH = hist.elapsedH + remainH;
+  const availW = Math.max(1, w - padL0 - padR);
+  const gap = 10;
+  let histW = (hist.elapsedH > 0 && totalH > 0)
+    ? Math.max(0, Math.round(availW * hist.elapsedH / totalH) - gap)
+    : 0;
+  if (histW <= 4) histW = 0;   // portion trop étroite pour être lisible : pas de marge réservée pour rien
+  const histX0 = padL0;
+  const padL = padL0 + (histW > 0 ? histW + gap : 0);
   const gw = Math.max(1, w - padL - padR);
 
-  return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, markers, spot};
+  return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, viewMin, viewMax, markers, spot,
+          histX0, histW, histPoints: hist.points, elapsedH: hist.elapsedH};
 }
 
 // ---- bitmap du dégradé : grille native (nH x nP) construite dans un canevas
@@ -2843,24 +2807,25 @@ function fluxBuildGradient(mat, nH, nP, gw, gh){
   FLUX_GRAD_META = {ref, ref99, sw, sh};
 }
 
-// Reconstruit le bitmap (+ les isolignes) seulement si les données, le mode,
-// la bascule strikes ou la taille du canevas ont changé depuis le dernier
-// appel -- sinon ne fait rien, réutilise FLUX_GRAD_SRC / FLUX_CONTOURS tels
-// quels (req. 1 : pan/zoom = simple drawImage).
+// Reconstruit le bitmap seulement si les données, le mode, la bascule
+// strikes ou la taille du canevas ont changé depuis le dernier appel --
+// sinon ne fait rien, réutilise FLUX_GRAD_SRC tel quel (req. 1 : pan/zoom =
+// simple drawImage).
 function fluxGradient(d, mat, lay){
   const key = fluxDataKey(d) + "|" + lay.gw + "|" + lay.gh;
   if (FLUX_GRAD_KEY !== key){
     fluxBuildGradient(mat, lay.nH, lay.nP, lay.gw, lay.gh);
-    FLUX_CONTOURS = fluxBuildContours(mat, lay.nH, lay.nP, d.price_grid, FLUX_GRAD_META.ref);
     FLUX_GRAD_KEY = key;
   }
 }
 
-function fluxCurrentView(d){
-  const nP = d.price_grid.length;
-  const fullMin = d.price_grid[0], fullMax = d.price_grid[nP - 1];
-  if (!FLUX_VIEW || FLUX_VIEW.max <= fullMin || FLUX_VIEW.min >= fullMax){
-    FLUX_VIEW = {min: fullMin, max: fullMax};
+// Vue par défaut = viewMin/viewMax (élargie à l'historique, cf. fluxLayout) --
+// PAS fullMin/fullMax, qui reste l'étendue stricte de price_grid pour le
+// recadrage du bitmap dans drawFluxBg.
+function fluxCurrentView(lay){
+  const {viewMin, viewMax} = lay;
+  if (!FLUX_VIEW || FLUX_VIEW.max <= viewMin || FLUX_VIEW.min >= viewMax){
+    FLUX_VIEW = {min: viewMin, max: viewMax};
   }
   return FLUX_VIEW;
 }
@@ -2875,7 +2840,7 @@ function drawFluxBg(cv, d, mat, lay){
   ctx.clearRect(0, 0, w, h);
   if (!lay) return;
   fluxGradient(d, mat, lay);
-  const view = fluxCurrentView(d);
+  const view = fluxCurrentView(lay);
   const {sw, sh} = FLUX_GRAD_META;
   const cropTop = (lay.fullMax - view.max) / (lay.fullMax - lay.fullMin || 1) * sh;
   const cropH = (view.max - view.min) / (lay.fullMax - lay.fullMin || 1) * sh;
@@ -2887,9 +2852,9 @@ function drawFluxBg(cv, d, mat, lay){
   ctx.restore();
 }
 
-// ---- cvMain : isolignes (cachées, cf. fluxGradient), grille, axes, repères
-// et étiquettes. Redessinée en vecteur à chaque pan/zoom (coordonnées écran
-// dépendantes de la vue) mais SANS jamais retoucher au bitmap du dégradé ----
+// ---- cvMain : grille, axes, repères et étiquettes. Redessinée en vecteur à
+// chaque pan/zoom (coordonnées écran dépendantes de la vue) mais SANS jamais
+// retoucher au bitmap du dégradé ----
 function drawFluxMain(cv, d, mat, lay){
   const ctx = cv.getContext("2d");
   const {w, h, dpr} = FLUX_SIZE;
@@ -2903,29 +2868,13 @@ function drawFluxMain(cv, d, mat, lay){
     FLUX_LAYOUT = null;
     return;
   }
-  fluxGradient(d, mat, lay);   // garantit FLUX_CONTOURS même si cvBg n'a pas encore tourné cette frame
-
-  const view = fluxCurrentView(d);
-  const {padL, padT, gw, gh, nH, nP, fullMin, fullMax} = lay;
+  const view = fluxCurrentView(lay);
+  const {padL, padT, gw, gh, nH, nP, histX0, histW, histPoints, elapsedH} = lay;
   const priceMin = view.min, priceMax = view.max;
   const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
   const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
+  const lineX0 = histW > 0 ? histX0 : padL;   // repères/gridlines : traversent aussi la portion historique quand elle existe
 
-  // ---- isolignes : où le dégradé franchit 33 % / 66 % de sa valeur de
-  // référence, séparément côté gamma+ et gamma- -- une frontière lisible,
-  // comme des courbes de niveau. Segments déjà calculés en marching squares
-  // (fluxBuildContours), ici seulement mappés à l'écran selon la vue
-  // courante. ----
-  if (FLUX_CONTOURS){
-    ctx.save();
-    ctx.beginPath(); ctx.rect(padL, padT, gw, gh); ctx.clip();
-    [0.33, 0.66].forEach(thr => {
-      const c = FLUX_CONTOURS[thr];
-      drawFluxSegments(ctx, c.pos, xFor, yFor, `rgba(38,166,154,${0.25 + thr * 0.35})`);
-      drawFluxSegments(ctx, c.neg, xFor, yFor, `rgba(239,83,80,${0.25 + thr * 0.35})`);
-    });
-    ctx.restore();
-  }
 
   // ---- axes : prix en unités sigma, temps en heures jusqu'à la clôture --
   // traits arrondis au demi-pixel pour rester nets à n'importe quel DPR.
@@ -2942,7 +2891,7 @@ function drawFluxMain(cv, d, mat, lay){
   for (let i = 0; i < nP; i += 2){
     const mult = sigUnit ? Math.round(((d.price_grid[i] - d.spot) / sigUnit) * 2) / 2 : null;
     const y = yFor(d.price_grid[i]), yy = Math.round(y) + 0.5;
-    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + gw, yy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lineX0, yy); ctx.lineTo(padL + gw, yy); ctx.stroke();
     if (mult == null) continue;
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
     ctx.fillText((mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ", padL - 6, y);
@@ -2956,6 +2905,27 @@ function drawFluxMain(cv, d, mat, lay){
                 : "+" + Math.round(hVal) + "h";
     ctx.fillText(label, x, padT + gh + 4);
   });
+
+  // ---- prix réalisé depuis l'ouverture cash (9h30 ET) jusqu'à "maintenant" :
+  // ligne simple à gauche de la projection, mêmes bougies que le chart de prix
+  // (CHART.bars, cf. fluxSessionHistory). Répond au constat "tout est à droite,
+  // on ne voit pas ce qui s'est passé pendant la séance" -- la portion
+  // dégradé/gamma à droite de "maintenant" reste inchangée. ----
+  if (histW > 4 && histPoints.length > 1){
+    const xForHist = th => histX0 + histW * (th / Math.max(1e-6, elapsedH));
+    ctx.beginPath();
+    histPoints.forEach((p, i) => {
+      const x = xForHist(p.t), y = yFor(p.price);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(236,234,228,.55)"; ctx.lineWidth = 1.25;
+    ctx.stroke();
+
+    const nowX = Math.round(padL) + 0.5;   // séparation "maintenant" : la projection démarre pile après
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(255,255,255,.15)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(nowX, padT); ctx.lineTo(nowX, padT + gh); ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // ---- repères : ligne toujours tracée, étiquette en pastille (fond sombre
   // + liseré coloré, même traitement que les niveaux du chart de prix) posée
@@ -2982,8 +2952,13 @@ function drawFluxMain(cv, d, mat, lay){
       continue;
     }
     const my2 = Math.round(m.y) + 0.5;
+    // tier 0/1 (prix courant, CW/PW/Flip) traversent aussi l'historique --
+    // ces niveaux étaient déjà "vrais" pendant la séance. Tier 2 (strikes,
+    // nombreux) reste confiné à la projection pour ne pas surcharger la
+    // portion historique.
+    const mx0 = m.tier < 2 ? lineX0 : padL;
     ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
-    ctx.beginPath(); ctx.moveTo(padL, my2); ctx.lineTo(padL + gw, my2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx0, my2); ctx.lineTo(padL + gw, my2); ctx.stroke();
     ctx.setLineDash([]);
 
     placedYs.push(m.y);
@@ -3005,7 +2980,7 @@ function drawFluxMain(cv, d, mat, lay){
   // survol des niveaux/strikes, jamais un recalcul du dégradé ou un second
   // passage sur cvMain pour une simple hover.
   FLUX_LAYOUT = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours: d.hours, rows: mat,
-                 spot: lay.spot, markers: order};
+                 spot: lay.spot, markers: order, viewMin: lay.viewMin, viewMax: lay.viewMax};
 }
 
 // "maint." / "+1.3h" / "clôture" : même vocabulaire que les graduations de
@@ -3179,13 +3154,23 @@ function drawFluxCursorLayer(cv){
   }
 }
 
-// ---- pan/zoom : clampe toujours au span minimal et à [fullMin, fullMax] --
-// il n'y a pas de donnée à révéler hors de la grille reçue, contrairement à
-// un vrai historique. Partagée par la molette, le pincement tactile et
+// Bornes externes du pan/zoom : viewMin/viewMax du dernier fluxLayout (élargi
+// à l'historique de séance, cf. fluxLayout) plutôt que price_grid brut --
+// sinon la toute première interaction (molette, glisser) recadrerait
+// immédiatement sur la seule bande ±3σ et couperait la portion historique
+// visible jusque-là. Repli sur price_grid si aucun layout n'a encore tourné.
+function fluxOuterBounds(){
+  const L = FLUX_LAYOUT, d = FLUX_DATA;
+  if (L) return {min: L.viewMin, max: L.viewMax};
+  return {min: d.price_grid[0], max: d.price_grid[d.price_grid.length - 1]};
+}
+
+// ---- pan/zoom : clampe toujours au span minimal et aux bornes externes --
+// il n'y a pas de donnée à révéler au-delà, contrairement à un vrai
+// historique de chart. Partagée par la molette, le pincement tactile et
 // fluxZoomAt. ----
 function fluxClampView(newMin, newMax){
-  const d = FLUX_DATA;
-  const fullMin = d.price_grid[0], fullMax = d.price_grid[d.price_grid.length - 1];
+  const {min: fullMin, max: fullMax} = fluxOuterBounds();
   const minSpan = (fullMax - fullMin) * 0.04;      // pas de zoom infini sur une grille de 13 bandes
   if (newMax - newMin < minSpan){
     const mid = (newMin + newMax) / 2;
@@ -3202,8 +3187,7 @@ function fluxZoomAt(price, factor){
   if (!FLUX_LAYOUT || !FLUX_DATA) return;
   const d = FLUX_DATA;
   if (!d.price_grid || !d.price_grid.length) return;
-  const fullMin = d.price_grid[0], fullMax = d.price_grid[d.price_grid.length - 1];
-  const cur = FLUX_VIEW || {min: fullMin, max: fullMax};
+  const cur = FLUX_VIEW || fluxOuterBounds();
   const newMin = price - (price - cur.min) * factor;
   const newMax = price + (cur.max - price) * factor;
   FLUX_VIEW = fluxClampView(newMin, newMax);
@@ -3248,8 +3232,7 @@ function bindFluxHover(){
     // dans le sens opposé au mouvement.
     const dy = my - drag.startY;
     const priceDelta = (dy / L.gh) * (drag.view0.max - drag.view0.min);
-    const d = FLUX_DATA;
-    const fullMin = d.price_grid[0], fullMax = d.price_grid[d.price_grid.length - 1];
+    const {min: fullMin, max: fullMax} = fluxOuterBounds();
     let newMin = drag.view0.min + priceDelta, newMax = drag.view0.max + priceDelta;
     if (newMin < fullMin){ newMax += fullMin - newMin; newMin = fullMin; }
     if (newMax > fullMax){ newMin -= newMax - fullMax; newMax = fullMax; }
