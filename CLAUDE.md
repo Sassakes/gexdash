@@ -146,8 +146,13 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
 de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques,
-recalculent uniquement le flux) toutes les 10 min de 14h30 à 19h00, toutes
-les 5 min de 19h00 à 20h00 (dernière heure de séance) — cf. `vercel.json`.
+recalculent uniquement le flux) toutes les 10 min de 13h30 (ouverture cash US,
+9h30 ET) à 19h00, toutes les 5 min de 19h00 à 20h00 (dernière heure de
+séance) — cf. `vercel.json`. Démarrer à l'ouverture réelle, pas une heure
+après : un décalage ici laisse le panneau Flux figé toute la première heure
+de séance sans que rien ne le signale (bug vu en prod le 2026-08-07, faux
+diagnostic possible si on suppose la séance déjà avancée sans revérifier
+l'heure d'ouverture produit/ET).
 QStash : 00h11 daily, 15h25 publication. GitHub Actions : niveaux et macro.
 
 **Garde de fraîcheur `/api/cron`.** Une cible dont le payload publié date

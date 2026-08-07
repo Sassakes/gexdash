@@ -16,11 +16,11 @@
     },
     {
       "path": "/api/cron?intraday=1&flowforce=1",
-      "schedule": "30,40,50 14 * * 1-5"
+      "schedule": "30,40,50 13 * * 1-5"
     },
     {
       "path": "/api/cron?intraday=1&flowforce=1",
-      "schedule": "*/10 15-18 * * 1-5"
+      "schedule": "*/10 14-18 * * 1-5"
     },
     {
       "path": "/api/cron?intraday=1&flowforce=1",
