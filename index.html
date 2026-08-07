@@ -1011,7 +1011,7 @@ const T = {
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
     fluxTitle:"Flux · gamma dealer projeté", fluxTip:"Flux gamma dealer · projection prix × temps",
     fluxWait:"En attente du prochain calcul intrajournalier",
-    fluxReady:h=>"Calculé "+h+" UTC",
+    fluxReady:h=>"Calculé "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"maint.", fluxClose:"clôture", fluxNeg:"−", fluxPos:"+",
     fsVerdict:"Synthèse flux", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCÉLÉRATION",
     fsV_derive:"DÉRIVE", fsV_divergence:"DIVERGENCE",
@@ -1076,7 +1076,7 @@ const T = {
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
     fluxTitle:"Flux · projected dealer gamma", fluxTip:"Dealer gamma flow · price × time projection",
     fluxWait:"Waiting for the next intraday computation",
-    fluxReady:h=>"Computed "+h+" UTC",
+    fluxReady:h=>"Computed "+h+" "+(TZ_CITY[PREFS.tz]||PREFS.tz),
     fluxNow:"now", fluxClose:"close", fluxNeg:"−", fluxPos:"+",
     fsVerdict:"Flux synthesis", fsV_compression:"COMPRESSION", fsV_acceleration:"ACCELERATION",
     fsV_derive:"DRIFT", fsV_divergence:"DIVERGENCE",
@@ -1555,7 +1555,11 @@ function ensureChart(){
   });
   const tzTop = $("tzTop");
   tzTop.value = PREFS.tz;
-  tzTop.onchange = () => { PREFS.tz = tzTop.value; savePrefs(); loadBars(); };
+  tzTop.onchange = () => {
+    PREFS.tz = tzTop.value; savePrefs(); loadBars();
+    if (LAST_D) show(LAST_D);      // reformate immediatement "Calcule a HH:MM" (fmtTzHM) sans attendre le prochain poll
+    if (FLUX_ON) renderFluxNote();
+  };
   enhanceAllSelects();          // liste déroulante thémée (le natif est rendu par l'OS)
   buildGearMenu($("gearHolder"), {
     applyColors: () => CHART.series.applyOptions({
@@ -1914,6 +1918,18 @@ function fmtPx(p){
   return Math.round(p).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
 }
 
+// HH:MM d'un timestamp ISO UTC, converti dans le fuseau choisi par l'utilisateur
+// (PREFS.tz, cf. tzShiftAs dans ui.js) -- jamais fige en UTC. Sert partout ou
+// un "Calcule a HH:MM" est affiche (statut principal, panneau Flux).
+function fmtTzHM(isoUtc){
+  if (!isoUtc) return "--:--";
+  const epoch = Math.floor(new Date(isoUtc).getTime() / 1000);
+  if (!isFinite(epoch)) return "--:--";
+  const shifted = tzShiftAs(PREFS.tz, epoch);
+  const d = new Date(shifted * 1000);
+  return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+}
+
 function drawIdxSessions(){
   const cv = CHART.sessCv, box = $("chartBox");
   if (!cv || !CHART.chart) return;
@@ -2161,7 +2177,8 @@ function show(d){
   const live = d.mode === "live";
   const pill = $("statusPill");
   pill.classList.toggle("live", live);
-  $("statusTxt").textContent = (live ? "LIVE " : "SNAPSHOT ") + d.generated_utc.slice(11,16) + " UTC"
+  $("statusTxt").textContent = (live ? "LIVE " : "SNAPSHOT ") + fmtTzHM(d.generated_utc)
+    + " " + (TZ_CITY[PREFS.tz] || PREFS.tz)
     + (d.published === false ? t("notPub") : "");
 
   const stats = [
@@ -3492,7 +3509,7 @@ async function loadFlux(){
         ? {from: {gamma: prev.gamma, vanna: prev.vanna, charm: prev.charm}, t0: performance.now()}
         : null;
       FLUX_DATA = d;
-      FLUX_STATUS = {kind: "ready", ts: d.generated_utc.slice(11, 16)};
+      FLUX_STATUS = {kind: "ready", ts: fmtTzHM(d.generated_utc)};
     }
     if (rh){
       const dh = await rh.json();

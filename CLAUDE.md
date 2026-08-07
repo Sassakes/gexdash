@@ -146,9 +146,13 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
 de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques,
-recalculent uniquement le flux) toutes les 10 min de 13h30 (ouverture cash US,
-9h30 ET) à 19h00, toutes les 5 min de 19h00 à 20h00 (dernière heure de
-séance) — cf. `vercel.json`. Démarrer à l'ouverture réelle, pas une heure
+recalculent uniquement le flux) toutes les 5 min de 13h30 (ouverture cash US,
+9h30 ET) à 14h30 (première heure) et de 19h00 à 20h00 (dernière heure),
+toutes les 10 min entre les deux — cf. `vercel.json`. Symétrique : les deux
+bornes de séance (ouverture, clôture) sont les moments où l'historique du
+panneau Flux (cf. section ci-dessous) et le flux lui-même bougent le plus
+vite, resserrer ailleurs coûterait un fetch CBOE en plus par tir pour un
+gain de lisibilité marginal. Démarrer à l'ouverture réelle, pas une heure
 après : un décalage ici laisse le panneau Flux figé toute la première heure
 de séance sans que rien ne le signale (bug vu en prod le 2026-08-07, faux
 diagnostic possible si on suppose la séance déjà avancée sans revérifier
