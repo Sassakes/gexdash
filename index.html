@@ -912,6 +912,7 @@
           </span>
           <span class="chips">
             <button id="fluxStrikesBtn" type="button" class="on"><i class="led"></i><span id="fluxStrikesLbl"></span></button>
+            <button id="fluxHistBtn" type="button"><i class="led"></i><span id="fluxHistLbl"></span></button>
           </span>
         </span>
         <span class="fluxlegend">
@@ -1025,6 +1026,7 @@ const T = {
     fvRatioHi:"vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
     fluxOiLbl:"OI",
     fluxStrikesChip:"Strikes", fluxStrikesTip:"Repères des strikes actifs (volume/OI du jour) sur le dégradé",
+    fluxHistChip:"Historique", fluxHistTip:"Exposition dealer réelle (prix réel, temps réel) sur la portion de séance déjà écoulée",
     em:"Expected move", emNone:"Straddle indisponible.", emStale:" · quotes indicatives (hors séance)", emModel:" · modèle IV (quotes hors séance)",
     emDaily:"EM daily · 0.8σ ancré Daily O", emAnchor:"Daily O", emMarket:"straddle marché (move restant) :", emStaleShort:" · indicatif",
     emIn:"dedans", emTouch:"touch", emClose:"clôture dedans", emSide:"touch/côté",
@@ -1089,6 +1091,7 @@ const T = {
     fvRatioHi:"vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
     fluxOiLbl:"OI",
     fluxStrikesChip:"Strikes", fluxStrikesTip:"Today's active strike markers (volume/OI) on the gradient",
+    fluxHistChip:"History", fluxHistTip:"Real dealer exposure (real price, real time) over the elapsed part of the session",
     em:"Expected move", emNone:"Straddle unavailable.", emStale:" · indicative quotes (off-session)", emModel:" · IV model (off-session quotes)",
     emDaily:"Daily EM · 0.8σ anchored at Daily O", emAnchor:"Daily O", emMarket:"market straddle (remaining move):", emStaleShort:" · indicative",
     emIn:"inside", emTouch:"touch", emClose:"closes inside", emSide:"touch/side",
@@ -1414,6 +1417,8 @@ function applyLang(){
   renderFluxLegend();
   const fsl = $("fluxStrikesLbl"); if (fsl) fsl.textContent = t("fluxStrikesChip");
   const fsb = $("fluxStrikesBtn"); if (fsb) fsb.title = t("fluxStrikesTip");
+  const fhl = $("fluxHistLbl"); if (fhl) fhl.textContent = t("fluxHistChip");
+  const fhb = $("fluxHistBtn"); if (fhb) fhb.title = t("fluxHistTip");
   if (FLUX_ON){ renderFluxNote(); renderFluxSynth(); renderFluxVolCtx(); drawFlux(); }   // relabel note + axes (maint./now, clôture/close)
   $("emTitle").textContent = t("em");
   $("pineTitle").textContent = t("pine");
@@ -1473,6 +1478,7 @@ async function load(){
   // sélecteur gamma / vanna / charm — gamma par défaut, cf. bindFluxMode()
   bindFluxMode();
   bindFluxStrikesToggle();
+  bindFluxHistToggle();
   bindChips();
   loadLinks();
   await loadTarget();
@@ -2295,6 +2301,29 @@ function bindFluxStrikesToggle(){
     drawFlux();
   };
 }
+
+// Historique de séance : reconstitue l'exposition dealer RÉELLE (prix réel,
+// temps réel) sur la portion déjà écoulée, à partir de la colonne "maintenant"
+// que chaque tir de cron a déjà calculée (cf. _refresh_flow côté serveur,
+// endpoint /api/flow?hist=1). Récupéré une fois à l'activation puis à chaque
+// poll normal (loadFlux) tant que la bascule est active -- jamais tant
+// qu'elle est désactivée, pour ne pas faire l'appel réseau pour rien.
+let FLUX_HIST_ON = false;
+try{ FLUX_HIST_ON = localStorage.getItem("gexFluxHistOn") === "1"; }catch(_){}
+let FLUX_HIST_DATA = null;   // {target, entries:[...]} ou null
+
+function bindFluxHistToggle(){
+  const b = $("fluxHistBtn");
+  if (!b) return;
+  b.classList.toggle("on", FLUX_HIST_ON);
+  b.onclick = () => {
+    FLUX_HIST_ON = !FLUX_HIST_ON;
+    try{ localStorage.setItem("gexFluxHistOn", FLUX_HIST_ON ? "1" : "0"); }catch(_){}
+    b.classList.toggle("on", FLUX_HIST_ON);
+    if (FLUX_HIST_ON) loadFlux(); else { FLUX_HIST_DATA = null; drawFlux(); }
+  };
+}
+
 // Étape 2 : gamma / vanna / charm, affichés SÉPARÉMENT (jamais fondus en un
 // agrégat unique — unités et interprétations diffèrent, cf. BRIEF-flux.md).
 // Gamma par défaut à chaque chargement de page, pas persisté.
@@ -2659,16 +2688,16 @@ function etCashOpenEpoch(){
 // à dimensionner la portion "historique" du panneau Flux par rapport à la
 // portion "projection" (cf. fluxLayout).
 function fluxSessionHistory(){
-  const bars = CHART.bars;
-  if (!bars || !bars.length) return {points: [], elapsedH: 0};
   const openShifted = tzShift(etCashOpenEpoch());
+  const bars = CHART.bars;
+  if (!bars || !bars.length) return {points: [], elapsedH: 0, openShifted};
   const nowShifted = tzShift(Math.floor(Date.now() / 1000));
   const elapsedH = Math.max(0, (nowShifted - openShifted) / 3600);
-  if (elapsedH <= 0.02) return {points: [], elapsedH: 0};   // séance qui vient d'ouvrir : rien à tracer
+  if (elapsedH <= 0.02) return {points: [], elapsedH: 0, openShifted};   // séance qui vient d'ouvrir : rien à tracer
   const points = bars
     .filter(b => b.time >= openShifted && b.time <= nowShifted)
     .map(b => ({t: (b.time - openShifted) / 3600, price: b.close}));
-  return {points, elapsedH};
+  return {points, elapsedH, openShifted};
 }
 
 // ---- disposition : padding, marge droite (suit le texte le plus long parmi
@@ -2758,7 +2787,7 @@ function fluxLayout(d, mat, w, h){
   const gw = Math.max(1, w - padL - padR);
 
   return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, viewMin, viewMax, markers, spot,
-          histX0, histW, histPoints: hist.points, elapsedH: hist.elapsedH};
+          histX0, histW, histPoints: hist.points, elapsedH: hist.elapsedH, histOpenShifted: hist.openShifted};
 }
 
 // ---- bitmap du dégradé : grille native (nH x nP) construite dans un canevas
@@ -2767,11 +2796,33 @@ function fluxLayout(d, mat, w, h){
 // canevas dans cette fonction après le tout premier appel. Indépendante de
 // FLUX_VIEW : couvre toujours [fullMin, fullMax] en entier. ----
 function fluxBuildGradient(mat, nH, nP, gw, gh){
-  const absVals = [];
-  for (const row of mat) for (const v of row) absVals.push(Math.abs(v));
-  absVals.sort((a, b) => a - b);
-  const ref = fluxPercentile(absVals, 0.95) || 1;
-  const ref99 = fluxPercentile(absVals, 0.99) || ref;
+  // Référence(s) de normalisation : GLOBALE (toute la matrice) pour
+  // gamma/vanna -- déjà validée contre gex_by_strike, ne pas y toucher. PAR
+  // COLONNE HORAIRE pour le charm -- il croît réellement de ~3 à 8x entre le
+  // début de séance et la clôture (la décroissance du delta s'accélère
+  // mécaniquement en fin de vie de l'option, cf. bs_charm), donc une
+  // référence commune tire `ref` vers la dernière heure et écrase la
+  // structure par strike de toutes les autres. Par colonne, chaque heure
+  // retrouve sa propre dynamique de prix -- on perd la comparaison "la
+  // clôture est objectivement plus intense" mais le charm redevient lisible
+  // sur toute la séance, ce qui est le but du panneau.
+  const perColumn = FLUX_MODE === "charm";
+  let refArr, ref99Arr;
+  if (perColumn){
+    refArr = new Array(nH); ref99Arr = new Array(nH);
+    for (let hi = 0; hi < nH; hi++){
+      const col = mat[hi].map(Math.abs).sort((a, b) => a - b);
+      refArr[hi] = fluxPercentile(col, 0.95) || 1;
+      ref99Arr[hi] = fluxPercentile(col, 0.99) || refArr[hi];
+    }
+  } else {
+    const absVals = [];
+    for (const row of mat) for (const v of row) absVals.push(Math.abs(v));
+    absVals.sort((a, b) => a - b);
+    const ref = fluxPercentile(absVals, 0.95) || 1;
+    const ref99 = fluxPercentile(absVals, 0.99) || ref;
+    refArr = new Array(nH).fill(ref); ref99Arr = new Array(nH).fill(ref99);
+  }
 
   if (!FLUX_OFF) FLUX_OFF = document.createElement("canvas");
   FLUX_OFF.width = nH; FLUX_OFF.height = nP;
@@ -2780,7 +2831,7 @@ function fluxBuildGradient(mat, nH, nP, gw, gh){
   for (let pi = 0; pi < nP; pi++){
     const rowY = nP - 1 - pi;            // prix haut en haut de l'image
     for (let hi = 0; hi < nH; hi++){
-      const [r, g, b, a] = fluxShade(mat[hi][pi], ref, ref99);
+      const [r, g, b, a] = fluxShade(mat[hi][pi], refArr[hi], ref99Arr[hi]);
       const idx = (rowY * nH + hi) * 4;
       img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = b;
       img.data[idx + 3] = Math.round(255 * a);
@@ -2804,7 +2855,7 @@ function fluxBuildGradient(mat, nH, nP, gw, gh){
     src = stage; sw = nw; sh = nh; stageIdx++;
   }
   FLUX_GRAD_SRC = src;
-  FLUX_GRAD_META = {ref, ref99, sw, sh};
+  FLUX_GRAD_META = {sw, sh};
 }
 
 // Reconstruit le bitmap seulement si les données, le mode, la bascule
@@ -2841,6 +2892,7 @@ function drawFluxBg(cv, d, mat, lay){
   if (!lay) return;
   fluxGradient(d, mat, lay);
   const view = fluxCurrentView(lay);
+  drawFluxHistBg(ctx, lay, view.min, view.max);
   const {sw, sh} = FLUX_GRAD_META;
   const cropTop = (lay.fullMax - view.max) / (lay.fullMax - lay.fullMin || 1) * sh;
   const cropH = (view.max - view.min) / (lay.fullMax - lay.fullMin || 1) * sh;
@@ -2849,6 +2901,55 @@ function drawFluxBg(cv, d, mat, lay){
   ctx.imageSmoothingEnabled = true;
   if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
   ctx.drawImage(FLUX_GRAD_SRC, 0, cropTop, sw, Math.max(1, cropH), lay.padL, lay.padT, lay.gw, lay.gh);
+  ctx.restore();
+}
+
+// ---- historique reconstitué : une cellule par (tir de cron passé × bac de
+// prix DE CE TIR-LÀ), jamais rééchantillonné en bitmap uniforme comme le
+// dégradé de projection -- chaque entrée a sa PROPRE price_grid (recentrée
+// sur le spot de ce moment-là), impossible à empiler dans une grille
+// commune. ~45 tirs/jour x 25 bacs = peu de rectangles, tracés directement
+// sans coût notable. Référence de normalisation propre à cette série (pas
+// celle de la projection : nature différente, cf. commentaire fluxBuildGradient
+// sur le charm -- ici chaque entrée est un "maintenant" réel, pas de plancher
+// temporel artificiel, donc pas besoin de normaliser par colonne). ----
+const FLUX_HIST_FIELD = {gamma: "gamma0", vanna: "vanna0", charm: "charm0"};
+function drawFluxHistBg(ctx, lay, priceMin, priceMax){
+  const hd = FLUX_HIST_ON && FLUX_HIST_DATA && FLUX_HIST_DATA.target === TARGET ? FLUX_HIST_DATA : null;
+  const entries = hd && hd.entries;
+  if (!entries || !entries.length || lay.histW <= 4) return;
+  const field = FLUX_HIST_FIELD[FLUX_MODE];
+  const {histX0, histW, elapsedH, histOpenShifted, padT, gh} = lay;
+
+  const absVals = [];
+  for (const e of entries) for (const v of (e[field] || [])) absVals.push(Math.abs(v));
+  if (!absVals.length) return;
+  absVals.sort((a, b) => a - b);
+  const ref = fluxPercentile(absVals, 0.95) || 1;
+  const ref99 = fluxPercentile(absVals, 0.99) || ref;
+
+  const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
+  const xForT = th => histX0 + histW * (th / Math.max(1e-6, elapsedH));
+  const ths = entries.map(e => (tzShift(Math.floor(new Date(e.t).getTime() / 1000)) - histOpenShifted) / 3600);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(histX0, padT, histW, gh); ctx.clip();
+  for (let i = 0; i < entries.length; i++){
+    const e = entries[i], grid = e.price_grid, vals = e[field];
+    if (!grid || !vals) continue;
+    const th = ths[i];
+    const prevTh = i > 0 ? ths[i - 1] : th - (ths.length > 1 ? (ths[1] - th) : 0.15);
+    const nextTh = i < entries.length - 1 ? ths[i + 1] : elapsedH;
+    const x0 = xForT((prevTh + th) / 2), x1 = xForT((th + nextTh) / 2);
+    const nP = grid.length;
+    for (let pi = 0; pi < nP; pi++){
+      const step = pi < nP - 1 ? grid[pi + 1] - grid[pi] : (grid[pi] - grid[pi - 1]);
+      const y0 = yFor(grid[pi] + step / 2), y1 = yFor(grid[pi] - step / 2);
+      const [r, g, b, a] = fluxShade(vals[pi], ref, ref99);
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
+    }
+  }
   ctx.restore();
 }
 
@@ -3345,10 +3446,14 @@ function renderFluxNote(){
 async function loadFlux(){
   if (!FLUX_ON) return;
   const tgt = TARGET;
+  const wantHist = FLUX_HIST_ON;
   FLUX_STATUS = {kind: "loading"};
   renderFluxNote();
   try{
-    const r = await fetch(`/api/flow?target=${tgt}`);
+    const [r, rh] = await Promise.all([
+      fetch(`/api/flow?target=${tgt}`),
+      wantHist ? fetch(`/api/flow?target=${tgt}&hist=1`) : Promise.resolve(null),
+    ]);
     const d = await r.json();
     if (tgt !== TARGET || !FLUX_ON) return;    // la cible/vue a changé pendant l'attente
     if (!d.ready){
@@ -3363,6 +3468,13 @@ async function loadFlux(){
         : null;
       FLUX_DATA = d;
       FLUX_STATUS = {kind: "ready", ts: d.generated_utc.slice(11, 16)};
+    }
+    if (rh){
+      const dh = await rh.json();
+      FLUX_HIST_DATA = (tgt === TARGET && FLUX_HIST_ON && dh && dh.ready)
+        ? {target: tgt, entries: dh.history} : null;
+    } else if (!wantHist){
+      FLUX_HIST_DATA = null;
     }
   }catch(e){
     FLUX_DATA = null;

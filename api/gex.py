@@ -822,6 +822,20 @@ def _read_intraday(tgt):
 FLOW_KEY = "gex:flow:{t}:{d}"
 FLOW_CHECK_TOL_PCT = 20.0   # ecart au-dela duquel on journalise une alerte
 
+# Historique intrajournalier de la colonne "maintenant" (rang 0 de flow_gamma_
+# matrix, deja calculee pour chaque tir -- aucun calcul supplementaire). Sert
+# a reconstituer, cote client, l'exposition dealer REELLE (prix reel, temps
+# reel) sur la portion de seance deja ecoulee, a cote de la ligne de prix
+# realise (cf. panneau Flux, bouton historique). Cle separee de FLOW_KEY :
+# ne doit jamais interferer avec le payload/matrice de projection courants.
+# TTL volontairement court (~26h, pas les 2 jours de FLOW_KEY) : l'historique
+# de la veille ne sert plus une fois la nouvelle seance ouverte, pas besoin
+# d'un cron de nettoyage dedie. FLOW_HIST_MAX borne la taille meme en cas
+# d'appels hors cadence normale (flowforce manuel, etc.).
+FLOW_HIST_KEY = "gex:flowhist:{t}:{d}"
+FLOW_HIST_TTL = 26 * 3600
+FLOW_HIST_MAX = 150
+
 
 def _flow_grids(payload):
     """Grille prix (echelle produit), CENTREE SUR LE PRIX COURANT — pas sur
@@ -941,6 +955,27 @@ def _refresh_flow(target, payload, capture):
     # matrice + check ecrits en KV meme si check est None (check_reason
     # explique pourquoi) : seule la matrice compte pour le panneau Flux, le
     # check n'est qu'un controle de justesse secondaire.
+
+    # Historique : colonne "maintenant" (rang 0, deja calculee ci-dessus,
+    # aucun recalcul) ajoutee a la serie du jour. Best-effort : une panne de
+    # lecture/ecriture ici ne doit jamais faire echouer le tir de flux
+    # principal (deja publie juste au-dessus).
+    try:
+        hist_key = FLOW_HIST_KEY.format(t=target, d=out["date"])
+        raw = kv_get(hist_key)
+        hist = json.loads(raw) if raw else []
+        if not isinstance(hist, list):
+            hist = []
+        hist.append({
+            "t": out["generated_utc"], "spot": out["spot"], "price_grid": price_grid,
+            "gamma0": mats["gamma"][0], "vanna0": mats["vanna"][0], "charm0": mats["charm"][0],
+        })
+        if len(hist) > FLOW_HIST_MAX:
+            hist = hist[-FLOW_HIST_MAX:]
+        kv_set(hist_key, json.dumps(hist), ex=FLOW_HIST_TTL)
+    except Exception:
+        pass
+
     return check, check_reason
 
 
@@ -2164,6 +2199,24 @@ class handler(BaseHTTPRequestHandler):
             if target not in TARGETS:
                 self._send(400, json.dumps({"error": "target inconnu"}).encode(),
                            "application/json")
+                return
+            # ?hist=1 : serie du jour (colonne "maintenant" de chaque tir,
+            # cf. _refresh_flow) pour reconstituer l'expo dealer reelle sur la
+            # portion de seance ecoulee -- reponse separee et legere, jamais
+            # mêlee au payload de projection normal (recupere une seule fois
+            # par le panneau, pas a chaque poll de 2 min).
+            if (qs.get("hist", ["0"])[0] or "0") == "1":
+                try:
+                    hist = json.loads(kv_get(
+                        FLOW_HIST_KEY.format(t=target, d=et_today().isoformat())) or "null")
+                except Exception:
+                    hist = None
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "public, s-maxage=60, "
+                                                  "stale-while-revalidate=60")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ready": bool(hist), "history": hist or []}).encode())
                 return
             try:
                 cached = json.loads(kv_get(
