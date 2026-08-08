@@ -19,8 +19,10 @@ permanent : le lire avant toute modification.
 
 Fichiers : `api/gex.py` (routes, crons), `api/_gex_core.py` (moteur de calcul),
 `index.html` (terminal), `dash.html`, `heatmap.html`, `news.html`, `doc.html`,
-`admin.html`, `ui.js` (partagé), `gex_levels.pine` (indicateur TradingView),
-`quantower/` (indicateur C#).
+`admin.html`, `ui.js` (partagé), `flux-panel.js` (module Flux du terminal,
+extrait de `index.html` — cf. section dédiée plus bas), `gex_levels.pine`
+(indicateur TradingView), `quantower/` (indicateur C#), `widget/`
+(widget Flux embarquable, cf. section dédiée plus bas).
 
 ---
 
@@ -180,6 +182,67 @@ programmé. Réservé admin (même clé que le reste de `/api/cron`). Ne passe
 jamais par `_upstash_set` : le payload construit pour ce recalcul est
 transitoire, jamais publié — niveaux et Pine ne peuvent pas bouger, quel que
 soit l'état du verrou GEX.
+
+---
+
+## Widget Flux embarquable
+
+**Deux copies distinctes du moteur Flux existent, volontairement.**
+`flux-panel.js` (module complet du terminal : historique, niveaux CW/PW/
+Flip, strikes, synthèse, contexte volume — simple extraction de ce qui
+vivait avant inline dans `index.html`, mêmes globals `FLUX_*`, mêmes
+fonctions) et `widget/flux-widget.js` (composant embarquable public,
+périmètre volontairement réduit à la projection seule, état par instance
+`this.state`/`this.gfx`/`this.dom`). Les deux ne sont **pas** encore
+unifiées — un bug corrigé dans l'un ne l'est pas automatiquement dans
+l'autre, à garder en tête tant qu'une fusion n'a pas été faite.
+`flux-panel.js` est chargé par `<script src>` dans le `<head>` de
+`index.html`, juste après `ui.js` et avant le script inline principal qui
+définit `$`/`T`/`CHART`/`TARGET`/`C`/`fmt` — ça ne pose pas de problème
+d'ordre car toutes les références de `flux-panel.js` à ces globals sont à
+l'intérieur de corps de fonction (résolues à l'appel, jamais au
+chargement).
+
+`widget/flux-widget.js` — panneau Flux (projection seule, v1 : pas
+d'historique/niveaux/strikes) extrait en composant autonome, embarquable sur
+un site tiers via `<script>` + `new TheHubFluxWidget(el, {key, ...})`. Chaque
+instance porte son propre état (`this.state`/`this.gfx`/`this.dom`), pas de
+globals `FLUX_*` partagés — plusieurs widgets peuvent coexister sur une même
+page hôte.
+
+**`/api/embed/flow` lit le même cache `FLOW_KEY` que `/api/flow`, en lecture
+seule.** Aucun calcul n'est jamais déclenché sur ce chemin — même règle que
+`/api/flow` lui-même. Ne pas y ajouter de logique qui recalculerait quoi que
+ce soit : le module Flux (`docs/BRIEF-flux.md`) reste calculé uniquement par
+le cron intrajournalier.
+
+**La clé est en query param (`?key=...`), jamais en header `x-gex-key`.**
+Ce fichier n'a aucun handler `do_OPTIONS`. Un header custom cross-origin
+déclenche un preflight CORS que le serveur ne sait pas répondre aujourd'hui
+(tombe sur le 501 par défaut de `BaseHTTPRequestHandler`) ; un `GET
+?key=...` reste une requête CORS "simple", sans préflight. Ne pas migrer
+vers un header sans ajouter `do_OPTIONS` d'abord.
+
+**La clé n'est pas un secret à protéger** — `/api/flow` n'a lui-même aucune
+authentification, la matrice gamma/vanna/charm n'est pas confidentielle.
+C'est un contrôle de distribution/attribution/coût (qui a le droit
+d'embarquer le widget en direct, et peut-on le lui retirer), d'où un blob
+JSON en clair (`EMBED_KEYS_KEY`, même forme que `WEBHOOKS_KEY`) plutôt qu'un
+schéma cryptographique — ne pas complexifier ce stockage sans une vraie
+raison de protéger une donnée qui ne l'est pas.
+
+**Délai de révocation ~60s, pas instantané.** `Cache-Control: s-maxage=60`
+sur `/api/embed/flow` veut dire que l'edge Vercel peut resservir un 200 déjà
+en cache sans repasser par la fonction Python — une clé tout juste révoquée
+(`POST /api/embed-keys {"action":"revoke",...}`) peut donc continuer à
+répondre jusqu'à une minute après. Attendu, pas un bug à corriger.
+
+Pas de panel de gestion pour l'instant : `/api/embed-keys` (POST
+create/revoke, GET liste masquée) est le seul point d'entrée, gardé par
+`_auth_key()` comme `/api/webhooks`. Un futur panel n'aura qu'à l'habiller
+d'une UI, aucune migration de données à prévoir.
+
+---
 
 Utilisateur sous Git Bash / Windows : fournir des chemins Unix et des commandes
 git **une par bloc**.

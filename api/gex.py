@@ -36,7 +36,8 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
-                           flow_gamma_matrix, flow_volume_context)
+                           flow_gamma_matrix, flow_volume_context,
+                           fetch_embed_keys, save_embed_keys)
 
 CRON_LOG_KEY = "gex:cron:log"
 FINNHUB_CACHE_S = 2.5
@@ -836,6 +837,40 @@ FLOW_HIST_KEY = "gex:flowhist:{t}:{d}"
 FLOW_HIST_TTL = 26 * 3600
 FLOW_HIST_MAX = 150
 
+# Widget Flux embarquable (/api/embed/flow) : verification de cle + rate-
+# limit, sur le meme chemin de lecture seule que /api/flow (aucun calcul
+# declenche ici, meme cache FLOW_KEY). La cle est un controle de
+# distribution/attribution, pas un secret a proteger -- /api/flow lui-meme
+# n'a aucune authentification aujourd'hui, la matrice n'est pas confidentielle
+# -- d'ou une lecture simple du blob EMBED_KEYS_KEY, mise en cache memoire
+# courte (_news_cached, deja utilise pour ce type de lookup) plutot qu'un
+# schema cryptographique disproportionne par rapport a ce qu'il y a
+# reellement a proteger.
+EMBED_RATE_LIMIT = 30   # requetes/minute/cle -- tres au-dessus du polling normal (1/2min)
+
+
+def _check_embed_key(given):
+    if not given:
+        return False, "missing key"
+    keys = _news_cached("embedkeys", 60, fetch_embed_keys)
+    meta = keys.get(given)
+    if not meta or meta.get("revoked"):
+        return False, "invalid key"
+    return True, None
+
+
+def _embed_rate_limited(given):
+    """Non-atomique (lecture puis ecriture separees) -- meme tolerance que le
+    lockout de connexion (gex:lockout:*), pas la peine de faire plus robuste
+    ici qu'ailleurs dans ce fichier pour ce niveau de risque."""
+    bucket = int(time.time() // 60)
+    rl_key = f"gex:embedrl:{given}:{bucket}"
+    count = int(kv_get(rl_key) or 0)
+    if count >= EMBED_RATE_LIMIT:
+        return True
+    kv_set(rl_key, str(count + 1), ex=90)
+    return False
+
 
 def _flow_grids(payload):
     """Grille prix (echelle produit), CENTREE SUR LE PRIX COURANT — pas sur
@@ -1085,12 +1120,14 @@ STATIC = {
     "/flux": ("flux.html", "text/html; charset=utf-8"),
     "/flux.html": ("flux.html", "text/html; charset=utf-8"),
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
+    "/flux-panel.js": ("flux-panel.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
     "/dash.html": ("dash.html", "text/html; charset=utf-8"),
     "/admin.html": ("admin.html", "text/html; charset=utf-8"),
     "/history.json": ("history.json", "application/json"),
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
+    "/widget/flux-widget.js": ("widget/flux-widget.js", "application/javascript; charset=utf-8"),
 }
 
 def _upstash_key(target):
@@ -1646,6 +1683,44 @@ class handler(BaseHTTPRequestHandler):
                 "saved": ok, "changed": changed,
                 "config": {k: _mask(v) for k, v in cfg.items()},
             }).encode(), "application/json")
+            return
+
+        # ── widget Flux embarquable : creation/revocation de cles,
+        # provisoire (pas de panel de gestion pour l'instant) -- scriptable
+        # en curl, meme porte admin que /api/webhooks. Le futur panel
+        # n'aura qu'a habiller cet endpoint d'une UI, aucune migration a
+        # prevoir. ──
+        if path == "/api/embed-keys":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            body = self._read_json()
+            action = (body.get("action") or "").strip()
+            keys = fetch_embed_keys()
+            if action == "create":
+                label = (body.get("label") or "").strip()
+                new_key = secrets.token_urlsafe(24)
+                keys[new_key] = {
+                    "label": label,
+                    "created": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    "revoked": False,
+                }
+                ok = save_embed_keys(keys)
+                self._send(200 if ok else 500, json.dumps({
+                    "saved": ok, "key": new_key, "label": label,
+                }).encode(), "application/json")
+                return
+            if action == "revoke":
+                given = (body.get("key") or "").strip()
+                if given not in keys:
+                    self._send(404, json.dumps({"error": "unknown key"}).encode(), "application/json")
+                    return
+                keys[given]["revoked"] = True
+                ok = save_embed_keys(keys)
+                self._send(200 if ok else 500, json.dumps({"saved": ok}).encode(), "application/json")
+                return
+            self._send(400, json.dumps({"error": "action must be create or revoke"}).encode(),
+                       "application/json")
             return
 
         if path == "/api/links":
@@ -2237,6 +2312,61 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(dict(cached, ready=True)).encode())
             return
 
+        # ── widget Flux embarquable : meme cache FLOW_KEY que /api/flow,
+        # lecture seule, jamais de calcul ici. Cle en query param (pas un
+        # header custom type x-gex-key) : ce fichier n'a AUCUN handler
+        # do_OPTIONS, un header custom cross-origin declencherait un
+        # preflight OPTIONS que le serveur ne sait pas repondre aujourd'hui.
+        # Un GET ?key=... reste une requete CORS "simple", sans preflight.
+        # CORS pose sur CHAQUE branche (200/400/401/429), erreurs incluses --
+        # sans ca un 401 sans le header est silencieusement illisible par le
+        # JS de la page hote (le navigateur masque le corps), ce qui se
+        # presenterait au site tiers comme "le widget reste bloque", pas
+        # "cle invalide". ──
+        if path == "/api/embed/flow":
+            qs = parse_qs(parsed.query)
+            given_key = qs.get("key", [None])[0] or ""
+            ok, err = _check_embed_key(given_key)
+            if not ok:
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": err}).encode())
+                return
+            if _embed_rate_limited(given_key):
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "rate limited"}).encode())
+                return
+            target = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if target not in TARGETS:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "target inconnu"}).encode())
+                return
+            try:
+                cached = json.loads(kv_get(
+                    FLOW_KEY.format(t=target, d=et_today().isoformat())) or "null")
+            except Exception:
+                cached = None
+            body = json.dumps(dict(cached, ready=True) if cached else {"ready": False}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "public, s-maxage=60, "
+                                              "stale-while-revalidate=60")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         # ── diagnostic des prix de reference (admin) ──
         # Un marche qui reste « en attente de refresh » vient presque toujours
         # d'un symbole de reference muet : ce point d'entree dit lequel repond.
@@ -2780,6 +2910,18 @@ class handler(BaseHTTPRequestHandler):
                 "config": {k: _mask(v) for k, v in cfg.items()},
                 "env_fallback": bool(os.environ.get("DISCORD_WEBHOOK_URL")),
             }).encode(), "application/json")
+            return
+
+        # ---- admin: liste des cles du widget Flux embarquable (masquees) ----
+        if path == "/api/embed-keys":
+            qs0 = parse_qs(parsed.query)
+            if not self._auth_key(qs0):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            keys = fetch_embed_keys()
+            out = [{"key": _mask(k), "label": m.get("label"), "created": m.get("created"),
+                    "revoked": bool(m.get("revoked"))} for k, m in keys.items()]
+            self._send(200, json.dumps({"keys": out}).encode(), "application/json")
             return
 
         # ---- CRON: QStash (POST) / navigateur / filet Vercel (GET) ----

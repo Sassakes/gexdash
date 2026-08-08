@@ -868,6 +868,36 @@ def save_webhooks(cfg):
 
 
 # --------------------------------------------------------------------------- #
+# Widget Flux embarquable -- clés d'accès pour /api/embed/flow                #
+# --------------------------------------------------------------------------- #
+# /api/flow (donc /api/embed/flow, qui lit le meme cache) n'a aucune donnee
+# confidentielle a proteger -- la matrice gamma/vanna/charm est deja publique
+# sans cle. Cette cle est un controle de distribution/attribution/cout (qui a
+# le droit d'embarquer le widget en direct sur son site, et peut-on le lui
+# retirer), pas un secret cryptographique -- d'ou un blob JSON en clair,
+# meme forme que WEBHOOKS_KEY, plutot qu'un schema signe qui rendrait la
+# revocation impossible.
+EMBED_KEYS_KEY = "gex:embedkeys"
+
+
+def fetch_embed_keys():
+    """{"<cle>": {"label": str, "created": iso str, "revoked": bool}, ...}.
+    Dict vide si absent/illisible."""
+    v = kv_get(EMBED_KEYS_KEY)
+    if not v:
+        return {}
+    try:
+        d = json.loads(v)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_embed_keys(cfg):
+    return kv_set(EMBED_KEYS_KEY, json.dumps(cfg))
+
+
+# --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
 def discord_send(url, payload, note=None,

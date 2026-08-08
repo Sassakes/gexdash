@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TheHub Flux Widget — dev harness</title>
+<meta name="robots" content="noindex">
+<style>
+  body{background:#0A0A0C;color:#ECEAE4;font-family:system-ui,sans-serif;padding:24px;max-width:1100px;margin:0 auto}
+  h1{font-size:15px;letter-spacing:.05em;text-transform:uppercase;color:#8A8A94;margin-bottom:4px}
+  p.note{color:#5C5C66;font-size:12.5px;margin-bottom:20px}
+  .row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+  .row label{font-size:11px;color:#8A8A94;display:flex;align-items:center;gap:6px}
+  .row button{background:#16161A;color:#ECEAE4;border:1px solid #212127;padding:6px 12px;
+    font-size:11px;cursor:pointer}
+  .row button:hover{border-color:#F0B90B}
+  .charts{display:flex;gap:16px;flex-wrap:wrap}
+  .charts > div{width:520px}
+  .charts h3{font-size:11px;color:#5C5C66;margin-bottom:6px;font-weight:400}
+</style>
+</head>
+<body>
+<h1>TheHub Flux Widget — dev harness</h1>
+<p class="note">
+  Local test page, never served in production, never registered in <code>STATIC</code>.
+  "Synthetic data" mode intercepts <code>fetch</code> for <code>/api/embed/flow</code> and
+  serves a fabricated <code>/api/flow</code>-shaped payload, so the widget's real
+  <code>load()</code> code path (fetch → parse → render) is exercised without needing a
+  real key or backend. Uncheck it to hit the real endpoint with a real key.
+</p>
+
+<div class="row">
+  <label><input type="checkbox" id="synthetic" checked> Synthetic data (no backend needed)</label>
+  <label>Key <input type="text" id="key" value="dev" size="10"></label>
+  <label>API base <input type="text" id="apiBase" value="" size="30" placeholder="https://gexdash.wealthbuilders.group"></label>
+  <button id="reload">Reload widgets</button>
+</div>
+<div class="row">
+  <button data-act="mode-gamma">set mode: gamma</button>
+  <button data-act="mode-vanna">set mode: vanna</button>
+  <button data-act="mode-charm">set mode: charm</button>
+  <button data-act="target-es">set target: ES</button>
+  <button data-act="target-nq">set target: NQ</button>
+  <button data-act="lang-fr">lang: fr</button>
+  <button data-act="lang-en">lang: en</button>
+  <button data-act="destroy-b">destroy() widget B</button>
+</div>
+
+<div class="charts">
+  <div><h3>Widget A — NQ</h3><div id="chartA"></div></div>
+  <div><h3>Widget B — ES (verifies two live instances on one page)</h3><div id="chartB"></div></div>
+</div>
+
+<script src="./flux-widget.js"></script>
+<script>
+"use strict";
+
+// ── générateur de payload synthétique, même forme que /api/flow ──
+function priceGridFor(center, unit){
+  return Array.from({length: 25}, (_, i) => Math.round(center + (i - 12) * 0.25 * unit));
+}
+function makeMat(nH, nP, seedFn){
+  return Array.from({length: nH}, (_, hi) => Array.from({length: nP}, (_, pi) => seedFn(hi, pi)));
+}
+function syntheticPayload(target){
+  const spot = target === "ES" ? 6450 : 21500 + (Date.now() / 30000 % 40 - 20);
+  const unit = target === "ES" ? 25 : 100;
+  const hours = [0, 1, 2, 3, 4, 5, 6, 7, 7.5];
+  const nP = 25;
+  return {
+    ready: true, target, generated_utc: new Date().toISOString(), spot, unit,
+    price_grid: priceGridFor(spot, unit), hours,
+    gamma: makeMat(hours.length, nP, (hi, pi) => Math.sin((pi - 12) / 3) * 8e6 * (1 + hi * 0.08)),
+    vanna: makeMat(hours.length, nP, (hi, pi) => Math.cos((pi - 12) / 4) * 3e6),
+    charm: makeMat(hours.length, nP, (hi, pi) => Math.sin((pi - 12) / 5) * 2e6 * (1 + hi * 0.25)),
+  };
+}
+
+let widgets = {};
+
+function build(){
+  Object.values(widgets).forEach(w => { try{ w.destroy(); }catch(_){} });
+  document.getElementById("chartA").innerHTML = "";
+  document.getElementById("chartB").innerHTML = "";
+
+  const synthetic = document.getElementById("synthetic").checked;
+  const key = document.getElementById("key").value || "dev";
+  const apiBase = document.getElementById("apiBase").value || location.origin;
+
+  if (synthetic){
+    const realFetch = window.fetch;
+    window.fetch = function(url, opts){
+      if (typeof url === "string" && url.includes("/api/embed/flow")){
+        const target = new URL(url, location.href).searchParams.get("target") || "NQ";
+        return Promise.resolve(new Response(JSON.stringify(syntheticPayload(target)),
+          {status: 200, headers: {"Content-Type": "application/json"}}));
+      }
+      return realFetch(url, opts);
+    };
+  }
+
+  widgets.a = new TheHubFluxWidget(document.getElementById("chartA"),
+    {key, apiBase, target: "NQ", mode: "gamma", lang: "en", pollMs: 15000});
+  widgets.b = new TheHubFluxWidget(document.getElementById("chartB"),
+    {key, apiBase, target: "ES", mode: "gamma", lang: "en", pollMs: 15000});
+}
+
+document.getElementById("reload").onclick = build;
+document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+  const [action, val] = b.dataset.act.split("-");
+  if (action === "mode") { widgets.a.setMode(val); widgets.b.setMode(val); }
+  if (action === "target") widgets.a.setTarget(val.toUpperCase());
+  if (action === "lang") { widgets.a.setLang(val); widgets.b.setLang(val); }
+  if (action === "destroy") widgets.b.destroy();
+});
+
+build();
+</script>
+</body>
+</html>
