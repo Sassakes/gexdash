@@ -2997,16 +2997,22 @@ function drawFluxBg(cv, d, mat, lay){
 // entrée est un "maintenant" réel, pas de plancher temporel artificiel, donc
 // pas besoin de normaliser par colonne).
 //
-// Rendu : rectangles nets dans un tampon dédié (FLUX_HIST_OFF, réutilisé,
-// dimensionné au DPR), puis composité sur cvBg avec un flou léger --
-// contrairement au dégradé de projection (bitmap suréchantillonné, lissage
-// natif du navigateur), un tracé direct au pixel donnait de gros aplats
-// carrés très visibles en tout début de séance (peu d'entrées => cellules
-// larges). Le flou adoucit le rendu SANS toucher aux positions temps/prix,
-// qui restent exactes -- seule l'esthétique change. Coupé net à la bordure
+// Rendu : MÊME technique que fluxBuildGradient pour le dégradé de
+// projection -- rectangles nets dans un tampon BASSE résolution (FLUX_HIST_
+// OFF, réutilisé), puis montée en résolution PROGRESSIVE (x3 par étage,
+// imageSmoothingQuality "high", étages réutilisés dans FLUX_HIST_STAGES).
+// Un ancien essai composait un tracé déjà plein format avec un flou à rayon
+// fixe (`filter:blur()`) : incohérent visuellement, puisque les rectangles
+// n'ont pas tous la même taille (larges en tout début de séance, peu
+// d'entrées ; étroits ensuite) -- le flou adoucissait les uns et laissait
+// les autres presque anguleux. La montée progressive lisse tout le monde
+// pareil, quelle que soit la taille d'origine de la cellule, pour un rendu
+// aussi propre que la projection des deux côtés de "maintenant". Les
+// positions temps/prix restent exactes (dérivées des vrais x0/x1/y0/y1),
+// seule la résolution du tampon de départ change. Coupé net à la bordure
 // "maintenant" par le clip (pas de bavure sur la projection). ----
 const FLUX_HIST_FIELD = {gamma: "gamma0", vanna: "vanna0", charm: "charm0"};
-let FLUX_HIST_OFF = null;   // tampon des cellules nettes, avant flou
+let FLUX_HIST_OFF = null, FLUX_HIST_STAGES = [];
 function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const hd = FLUX_HIST_ON && FLUX_HIST_DATA && FLUX_HIST_DATA.target === TARGET ? FLUX_HIST_DATA : null;
   const entries = hd && hd.entries;
@@ -3021,20 +3027,20 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const ref = fluxPercentile(absVals, 0.95) || 1;
   const ref99 = fluxPercentile(absVals, 0.99) || ref;
 
-  // coordonnées LOCALES au tampon (histX0/padT soustraits -- réappliqués au
-  // moment du drawImage final).
-  const yFor = p => gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
-  const xForT = th => histW * (th / Math.max(1e-6, elapsedH));
+  // Tampon de départ BASSE résolution (un quart de la taille d'affichage,
+  // borné) -- coordonnées LOCALES au tampon (histX0/padT soustraits,
+  // réappliqués au moment du drawImage final).
+  const bw0 = Math.max(8, Math.min(140, Math.round(histW / 4)));
+  const bh0 = Math.max(8, Math.min(90, Math.round(gh / 4)));
+  const yFor = p => bh0 * (1 - (p - priceMin) / (priceMax - priceMin || 1));
+  const xForT = th => bw0 * (th / Math.max(1e-6, elapsedH));
   const ths = entries.map(e => (tzShift(Math.floor(new Date(e.t).getTime() / 1000)) - histOpenShifted) / 3600);
 
-  const dpr = FLUX_SIZE.dpr || 1;
-  const bw = Math.max(1, Math.round(histW)), bh = Math.max(1, Math.round(gh));
   if (!FLUX_HIST_OFF) FLUX_HIST_OFF = document.createElement("canvas");
   const off = FLUX_HIST_OFF;
-  off.width = Math.round(bw * dpr); off.height = Math.round(bh * dpr);
+  off.width = bw0; off.height = bh0;
   const octx = off.getContext("2d");
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  octx.clearRect(0, 0, bw, bh);
+  octx.clearRect(0, 0, bw0, bh0);
 
   for (let i = 0; i < entries.length; i++){
     const e = entries[i], grid = e.price_grid, vals = e[field];
@@ -3053,11 +3059,27 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
     }
   }
 
+  // montée en résolution progressive jusqu'à la taille d'affichage réelle
+  // (CSS px -- le ctx cible est déjà mis à l'échelle DPR par l'appelant,
+  // cf. drawFluxBg).
+  let src = off, sw = bw0, sh = bh0, stageIdx = 0;
+  while (sw < histW / 3 && sh < gh / 3 && sw < 480){
+    const nw = Math.min(histW, sw * 3), nh = Math.min(gh, sh * 3);
+    if (!FLUX_HIST_STAGES[stageIdx]) FLUX_HIST_STAGES[stageIdx] = document.createElement("canvas");
+    const stage = FLUX_HIST_STAGES[stageIdx];
+    stage.width = nw; stage.height = nh;
+    const sctx = stage.getContext("2d");
+    sctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in sctx) sctx.imageSmoothingQuality = "high";
+    sctx.drawImage(src, 0, 0, nw, nh);
+    src = stage; sw = nw; sh = nh; stageIdx++;
+  }
+
   ctx.save();
   ctx.beginPath(); ctx.rect(histX0, padT, histW, gh); ctx.clip();
-  ctx.filter = "blur(7px)";
-  ctx.drawImage(off, 0, 0, off.width, off.height, histX0, padT, bw, bh);
-  ctx.filter = "none";
+  ctx.imageSmoothingEnabled = true;
+  if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, 0, 0, sw, sh, histX0, padT, histW, gh);
   ctx.restore();
 }
 

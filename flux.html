@@ -306,7 +306,12 @@ fr: {
     {t:"p", x:"Chaque cellule de la grille est colorée selon le signe et la magnitude de l'exposition dealer projetée à ce prix et cette heure."},
     {t:"chips", items:[
       {c:"t", tag:"Vert · gamma positif", x:"La couverture va CONTRE le mouvement, elle amortit. Compression, pin, ranges. Les zones vertes intenses tiennent."},
-      {c:"r", tag:"Rouge · gamma négatif", x:"La couverture va AVEC le mouvement, elle amplifie. Accélérations, cassures. Les zones rouges intenses lâchent vite."}]}]},
+      {c:"r", tag:"Rouge · gamma négatif", x:"La couverture va AVEC le mouvement, elle amplifie. Accélérations, cassures. Les zones rouges intenses lâchent vite."}]},
+    {t:"h", x:"Et l'intensité, entre deux zones franches ?"},
+    {t:"p", x:"La couleur donne le SENS (vert = amortit, rouge = amplifie). Son INTENSITÉ — saturée, ou au contraire pâle et sombre — donne la FORCE de ce mécanisme à ce prix précis, à cette heure précise. Elle est mesurée par rapport au reste de la matrice affichée (percentile 95 de la séance en cours) : une échelle relative, pas un seuil absolu."},
+    {t:"note", x:"<b>Un creux (zone pâle) entre deux murs n'est pas une zone \"calme\" au sens général — c'est un endroit où il n'y a PAS grand-chose à couvrir.</b> Peu d'open interest concentré à ce prix, donc peu de flux dealer mécanique, ni amortissant ni amplificateur. Rien n'y retient le prix, mais rien ne l'y pousse non plus : il tend à traverser cette zone plus vite qu'une zone intense, jusqu'au prochain mur — vert ou rouge — qui, lui, a vraiment quelque chose à défendre."},
+    {t:"p", x:"Concrètement : repère d'abord les deux zones les plus intenses de part et d'autre du prix courant. Le creux entre les deux n'est pas une cible en soi — c'est l'espace que le prix peut parcourir sans grande friction avant d'atteindre l'un ou l'autre."},
+    {t:"note", x:"<b>Cas particulier : le Gamma Flip.</b> Juste autour du Flip (repère pointillé or sur le dégradé), l'intensité peut aussi chuter — normal, c'est là que l'exposition dealer change de signe. Mais ce creux-là est structurel, pas un trou dans le book : au-delà du Flip, on change carrément de régime (vert → rouge ou l'inverse). Un creux ordinaire entre deux murs de même sens n'annonce aucun changement de régime, juste un passage à faible friction."}]},
 
   {id:"exemples", t:"Trois exemples d'application, sur de vrais mouvements", b:[
     {t:"p", x:"La théorie ci-dessus, vue sur un vrai mouvement de prix. Trois situations qui reviennent chaque séance :"},
@@ -397,7 +402,12 @@ en: {
     {t:"p", x:"Every cell in the grid is coloured by the sign and magnitude of the dealer exposure projected at that price and hour."},
     {t:"chips", items:[
       {c:"t", tag:"Green · positive dealer gamma", x:"Hedging goes AGAINST the move, it dampens. Compression, pins, ranges. Intense green zones hold."},
-      {c:"r", tag:"Red · negative dealer gamma", x:"Hedging goes WITH the move, it amplifies. Accelerations, breaks. Intense red zones give way fast."}]}]},
+      {c:"r", tag:"Red · negative dealer gamma", x:"Hedging goes WITH the move, it amplifies. Accelerations, breaks. Intense red zones give way fast."}]},
+    {t:"h", x:"And the intensity, between two clear zones?"},
+    {t:"p", x:"Colour gives you the SIGN (green = dampens, red = amplifies). Its INTENSITY — saturated, or on the contrary pale and dark — gives you the STRENGTH of that mechanism at that exact price and hour. It's measured against the rest of the displayed matrix (95th percentile of the current session): a relative scale, not an absolute threshold."},
+    {t:"note", x:"<b>A trough (pale zone) between two walls isn't a \"calm\" zone in the general sense — it's a place with NOT MUCH to hedge.</b> Little open interest concentrated at that price means little mechanical dealer flow, neither dampening nor amplifying. Nothing holds price back there, but nothing pushes it either: it tends to cross that zone faster than an intense one, on its way to the next wall — green or red — which actually has something to defend."},
+    {t:"p", x:"In practice: spot the two most intense zones on either side of the current price first. The trough between them isn't a target in itself — it's the room price can cover with little friction before reaching one or the other."},
+    {t:"note", x:"<b>Special case: the Gamma Flip.</b> Right around the Flip (gold dashed marker on the gradient), intensity can also drop — normal, that's where dealer exposure switches sign. But that trough is structural, not a hole in the book: past the Flip, the regime genuinely changes (green → red or the reverse). An ordinary trough between two same-sign walls signals no regime change, just a low-friction stretch."}]},
 
   {id:"exemples", t:"Three examples, on real price moves", b:[
     {t:"p", x:"The theory above, on an actual price move. Three situations that recur every session:"},
