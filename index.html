@@ -1312,21 +1312,36 @@ function renderDark(d){
     + `<div class="gc-f">${t("dpExp")(d.sym, TARGET)}</div>`;
 }
 
+// Jeton de course : un clic rapide sur un autre onglet pendant qu'un switch
+// est encore en vol ne doit jamais laisser la réponse la plus LENTE écraser
+// l'affichage après la plus rapide. Chaque loadTarget() capture son propre
+// numéro et vérifie qu'il est toujours le plus récent avant de toucher au DOM.
+let TARGET_SEQ = 0;
+
 async function loadTarget(){
+  const mySeq = ++TARGET_SEQ;
   paintTabs();
   const _t0 = PageLoader.begin($("stage"));
   $("status").style.display = "block";
   $("status").textContent = t("loading") + " " + TARGET + "…";
   $("app").style.display = "none";
   loadEmProfile();     // en parallèle : horloge calibrée, 1x/cible/jour, mise en cache
+  // levels.json et les bougies (/api/chart, /api/quote) sont trois payloads
+  // indépendants -- les enchaîner (comme avant : levels -> chart -> quote)
+  // coûtait 3 allers-retours réseau au switch de marché. Démarrer les
+  // bougies ICI, en parallèle du fetch des niveaux, ramène ça à un seul
+  // aller-retour perçu.
+  const barsFetch = prefetchBars(TARGET, CHART.iv);
   let data;
   try{
     data = await (await fetch("levels.json?target=" + TARGET + "&t=" + Date.now())).json();
   }catch(e){}
-  if (data && !data.error){ await show(data); }
+  if (mySeq !== TARGET_SEQ) return;   // un switch plus récent a pris le relais entre-temps
+  if (data && !data.error){ await show(data, barsFetch); }
   else {
     $("status").textContent = t("noSnap")(TARGET);
   }
+  if (mySeq !== TARGET_SEQ) return;
   // plancher de durée : masque le blanc/texte brut sous le rond de marque,
   // même quand la réponse est déjà en cache et revient quasi instantanément
   await PageLoader.end($("stage"), _t0);
@@ -1618,21 +1633,33 @@ function ensureChart(){
   return true;
 }
 
-async function loadBars(){
+// Bougies + cotation courante : deux fetches indépendants, lancés en
+// parallèle (le second n'a besoin que du prix, pas du résultat du premier).
+// Renvoie une paire {ok, d} pour chacun, jamais un rejet -- loadBars()
+// n'a qu'à lire le résultat, jamais à gérer une exception réseau ici.
+function prefetchBars(target, iv){
+  const chart = fetch(`/api/chart?target=${target}&interval=${iv}`)
+    .then(async r => ({ok: r.ok, d: await r.json()}))
+    .catch(e => ({ok: false, d: {error: e.message}}));
+  const quote = fetch(`/api/quote?target=${target}`)
+    .then(async r => ({ok: r.ok, d: await r.json()}))
+    .catch(() => ({ok: false, d: null}));
+  return Promise.all([chart, quote]);
+}
+
+async function loadBars(prefetch){
   if (!ensureChart()) return;
   try{
-    const r = await fetch(`/api/chart?target=${TARGET}&interval=${CHART.iv}`);
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || r.status);
+    const [{ok, d}, quote] = await (prefetch || prefetchBars(TARGET, CHART.iv));
+    if (!ok || d.error) throw new Error(d.error || "chart");
     let bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
     // La calibration de niveau est faite CÔTÉ SERVEUR (basis dynamique sur le
     // chevauchement future/ETF) — plus de recalage client. On synthétise juste
     // la bougie du bucket ACTUEL si la dernière bougie est en retard (nuit :
     // future différé), pour que l'axe soit toujours à l'heure réelle.
     try{
-      const rq = await fetch(`/api/quote?target=${TARGET}`);
-      const dq = await rq.json();
-      if (rq.ok && dq.price != null && bars.length){
+      const dq = quote && quote.d;
+      if (quote && quote.ok && dq && dq.price != null && bars.length){
         const sec0 = CHART.ivSec[CHART.iv];
         const nowB = Math.floor(tzShift(Date.now() / 1000) / sec0) * sec0;
         const lastB = bars[bars.length - 1];
@@ -2239,7 +2266,7 @@ function updateEmCone(){
   ]);
 }
 
-async function show(d){
+async function show(d, barsFetch){
   $("status").style.display = "none";
   $("app").style.display = "block";
 
@@ -2292,7 +2319,7 @@ async function show(d){
 
   CHART.levels = d.levels;
   CHART.grid = d.open_grid || null;
-  const barsPromise = loadBars();
+  const barsPromise = loadBars(barsFetch);
 
   renderLevels(d);
   renderEM(d);

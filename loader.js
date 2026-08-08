@@ -5,7 +5,10 @@
    visuel que #fluxLoader (flux-panel.js), généralisé et sans le flag
    "une seule fois" : ici chaque appel a sa propre durée plancher. */
 (function(){
-  const MIN_MS = 320;   // sous ce seuil l'oeil perçoit un flash plutôt qu'un chargement
+  const MIN_MS = 140;   // sous ce seuil l'oeil perçoit un flash plutôt qu'un chargement --
+                         // volontairement bas : le terminal sert des switches de marché
+                         // fréquents et rapides, un plancher plus haut se sentirait comme
+                         // du lag ajouté plutôt que comme une transition
 
   function injectCss(){
     if (document.getElementById("pageloader-css")) return;
