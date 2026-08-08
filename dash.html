@@ -11,6 +11,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/ui.js"></script>
+<script src="/loader.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
@@ -802,6 +803,9 @@ async function mountCard(cfg, host){
   }).observe(box);
   buildCardPanel(host, cfg);
 
+  // Rond de marque unifié : masque la grille vide (sans bougies) le temps du
+  // tout premier fetch de la carte, plutôt que de laisser un chart nu.
+  const _t0 = PageLoader.begin(box);
   let lastBar = null;
   try{
     const r = await fetch(`/api/chart?target=${cfg.t}&interval=${cfg.iv}`);
@@ -830,7 +834,7 @@ async function mountCard(cfg, host){
     if (bars.length) host._draw.setBars(bars.map(b => b.time), IVSEC[cfg.iv]);
     host._times = bars.map(b => b.time);
     host._ivSec = IVSEC[cfg.iv];
-  }catch(e){ note.textContent = tx("feedKo"); return; }
+  }catch(e){ note.textContent = tx("feedKo"); await PageLoader.end(box, _t0); return; }
 
   host._pay = await getLevels(cfg.t);
   host._lvMeta = [];
@@ -842,6 +846,7 @@ async function mountCard(cfg, host){
     }
   drawSess(host);
   drawCardLabels(host);
+  await PageLoader.end(box, _t0);
 
   const tick = async () => {
     if (document.hidden || !lastBar) return;

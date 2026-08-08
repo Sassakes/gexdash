@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/ui.js"></script>
+<script src="/loader.js"></script>
 <script src="/flux-panel.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
@@ -904,6 +905,7 @@
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
 </div>
 
+<div id="stage" style="position:relative">
 <div id="status">Chargement…</div>
 
 <div id="app" style="display:none">
@@ -1017,6 +1019,7 @@
       </table>
     </section>
   </div>
+</div>
 </div>
 
 <footer>
@@ -1311,6 +1314,7 @@ function renderDark(d){
 
 async function loadTarget(){
   paintTabs();
+  const _t0 = PageLoader.begin($("stage"));
   $("status").style.display = "block";
   $("status").textContent = t("loading") + " " + TARGET + "…";
   $("app").style.display = "none";
@@ -1319,10 +1323,13 @@ async function loadTarget(){
   try{
     data = await (await fetch("levels.json?target=" + TARGET + "&t=" + Date.now())).json();
   }catch(e){}
-  if (data && !data.error){ show(data); }
+  if (data && !data.error){ await show(data); }
   else {
     $("status").textContent = t("noSnap")(TARGET);
   }
+  // plancher de durée : masque le blanc/texte brut sous le rond de marque,
+  // même quand la réponse est déjà en cache et revient quasi instantanément
+  await PageLoader.end($("stage"), _t0);
 }
 
 /* ═══ ACCÈS MEMBRE ══════════════════════════════════════════════════════
@@ -1587,7 +1594,7 @@ function ensureChart(){
   document.querySelectorAll("#ivs button").forEach(b => b.onclick = () => {
     CHART.iv = b.dataset.iv;
     document.querySelectorAll("#ivs button").forEach(x => x.classList.toggle("on", x === b));
-    loadBars();
+    PageLoader.run($("chartBox"), loadBars);
   });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) pollQuote();
@@ -1595,7 +1602,7 @@ function ensureChart(){
   const tzTop = $("tzTop");
   tzTop.value = PREFS.tz;
   tzTop.onchange = () => {
-    PREFS.tz = tzTop.value; savePrefs(); loadBars();
+    PREFS.tz = tzTop.value; savePrefs(); PageLoader.run($("chartBox"), loadBars);
     if (LAST_D) show(LAST_D);      // reformate immediatement "Calcule a HH:MM" (fmtTzHM) sans attendre le prochain poll
     if (FLUX_ON) renderFluxNote();
   };
@@ -2232,7 +2239,7 @@ function updateEmCone(){
   ]);
 }
 
-function show(d){
+async function show(d){
   $("status").style.display = "none";
   $("app").style.display = "block";
 
@@ -2285,7 +2292,7 @@ function show(d){
 
   CHART.levels = d.levels;
   CHART.grid = d.open_grid || null;
-  loadBars();
+  const barsPromise = loadBars();
 
   renderLevels(d);
   renderEM(d);
@@ -2295,6 +2302,11 @@ function show(d){
   // à chaque payload frais plutôt que d'attendre le prochain calcul serveur
   // (qui ne tourne que 3x/jour, cf. docs/BRIEF-flux.md)
   if (FLUX_ON) drawFlux();
+  // le chart (loadBars) est le dernier morceau à arriver : tant qu'il n'est
+  // pas fini, l'ancien symbole resterait affiché en dessous du rond de
+  // chargement -- on attend qu'il finisse (succès ou échec) avant de rendre
+  // la main à loadTarget(), qui masque alors l'overlay.
+  await barsPromise;
 }
 
 function renderLevels(d){

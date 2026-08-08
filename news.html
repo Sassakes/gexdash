@@ -25,7 +25,7 @@
     --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
   }
   *{box-sizing:border-box; margin:0}
-  body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden; position:relative}
 
   header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
   header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
@@ -246,6 +246,7 @@
     .chead{padding:11px 13px}
   }
 </style>
+<script src="/loader.js"></script>
 </head>
 <body>
 <header>
@@ -759,7 +760,15 @@ function applyLang(){
 $$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
 
 applyLang();
-loadMacro(); loadFeed(); loadNews(); loadCal(); loadMag();
+// Rond de marque unifié : masque les placeholders "…" par colonne tant que
+// les fetches initiaux (parallèles, indépendants) n'ont pas tous résolu,
+// plutôt que de laisser chaque section se peupler séparément et de manière
+// visible à l'écran.
+{
+  const _t0 = PageLoader.begin(document.body);
+  Promise.all([loadMacro(), loadFeed(), loadNews(), loadCal(), loadMag()])
+    .finally(() => PageLoader.end(document.body, _t0));
+}
 /* Rythmes de rafraîchissement. Deux garde-fous :
    • rien ne tourne quand l'onglet est en arrière-plan — le navigateur bride
      déjà les minuteurs, mais on évite surtout la rafale au retour ;
