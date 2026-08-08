@@ -1620,6 +1620,16 @@ async function loadBars(){
     CHART.series.setData(bars);
     CHART.lastBar = bars[bars.length - 1] || null;
     CHART.bars = bars;   // ré-utilisé par le panneau Flux pour tracer le prix réalisé depuis l'ouverture (cf. fluxSessionHistory)
+    // Ce fetch (bougies) et celui du panneau Flux (/api/flow) tournent en
+    // parallèle sans dépendance -- si Flux gagne la course, son premier
+    // rendu tombe alors que CHART.bars est encore vide : fluxSessionHistory
+    // renvoie elapsedH=0 (à raison, à cet instant précis) et la portion
+    // "historique" reste figée à largeur nulle, RIEN ne la redessinant
+    // ensuite tant que l'utilisateur n'interagit pas avec le panneau
+    // (symptôme observé : chart Flux qui semble figée/vide à l'arrivée sur
+    // la page). Un simple redessin ici, maintenant que les bougies sont
+    // là, referme cette fenêtre de course.
+    if (FLUX_ON) drawFlux();
     // outils de dessin : dessins propres à CE marché (persistés par navigateur)
     if (!CHART.draw)
       CHART.draw = attachDrawTools($("chartBox"), CHART.chart, CHART.series,
@@ -2721,18 +2731,32 @@ function fluxEasePadR(lay, w){
   return Object.assign({}, lay, {padR, gw: Math.max(1, w - lay.padL - padR)});
 }
 
+// Nombre de frames consécutives où le conteneur restait à taille 0 -- borne
+// le réessai automatique ci-dessous (cf. FLUX_SIZE_RETRIES) pour ne jamais
+// boucler indéfiniment si la taille reste réellement nulle (bug CSS externe
+// à ce module), sur le même principe que _stabilizeSize pour le chart de
+// prix.
+let FLUX_SIZE_TRIES = 0;
+const FLUX_SIZE_RETRIES = 20;
+
 function flushFluxDirty(){
   FLUX_RAF = null;
   const cvBg = $("fluxCvBg"), cvMain = $("fluxCvMain"), cvCur = $("fluxCvCursor");
   if (!cvBg || !cvMain || !cvCur || cvMain.hidden || cvMain.offsetParent === null){
     FLUX_DIRTY.bg = FLUX_DIRTY.main = FLUX_DIRTY.cursor = false;
+    FLUX_SIZE_TRIES = 0;
     return;
   }
-  if (fluxEnsureSize(cvBg, cvMain, cvCur)){
-    if (!FLUX_SIZE.w || !FLUX_SIZE.h) return;
-  } else {
+  // Conteneur pas encore mesurable (vient d'être rendu visible, layout pas
+  // encore posé) : sans ce réessai, le rendu restait bloqué (dirty=true,
+  // rien de programmé) jusqu'à ce qu'un événement extérieur (survol, clic)
+  // relance invalidateFlux -- symptôme observé : chart figée/vide tant que
+  // la souris ne bouge pas dessus à l'arrivée sur la vue Flux.
+  if (!fluxEnsureSize(cvBg, cvMain, cvCur) || !FLUX_SIZE.w || !FLUX_SIZE.h){
+    if (FLUX_SIZE_TRIES++ < FLUX_SIZE_RETRIES) FLUX_RAF = requestAnimationFrame(flushFluxDirty);
     return;
   }
+  FLUX_SIZE_TRIES = 0;
 
   const d = fluxDisplayData(), mat = d && d[FLUX_MODE];
   let lay = (d && mat && mat.length && d.price_grid && d.price_grid.length)
@@ -3072,8 +3096,17 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const ref99 = fluxPercentile(absVals, 0.99) || ref;
 
   // (1) rééchantillonnage de chaque entrée valide sur l'axe de prix commun.
+  // rowPrice CROISSANT avec r (comme price_grid, qui est trié croissant) --
+  // le pointeur gi n'avance que vers l'avant (recherche par balayage
+  // unique, O(nRows+grid.length)) : le faire croiser un axe DÉCROISSANT
+  // le bloquait dès r=1 sur le dernier bac (celui du prix le plus haut),
+  // collapsant les 24 lignes suivantes sur une seule valeur -- exactement
+  // ce qui donnait des bandes VERTICALES (un aplat par colonne/tir) au lieu
+  // des bandes horizontales attendues (un aplat par ligne/prix). Prix haut
+  // en haut de l'image posé séparément à l'écriture du pixel (rowY),
+  // même partition des responsabilités que fluxBuildGradient.
   const nRows = 25;
-  const rowPrice = r => priceMax - (r + 0.5) / nRows * (priceMax - priceMin || 1);
+  const rowPrice = r => priceMin + (r + 0.5) / nRows * (priceMax - priceMin || 1);
   const rowsByEntry = [], thByEntry = [];
   for (const e of entries){
     const grid = e.price_grid, vals = e[field];
@@ -3113,7 +3146,8 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
     for (let r = 0; r < nRows; r++){
       const v = rowsA[r] + (rowsB[r] - rowsA[r]) * frac;
       const [red, g, b, a] = fluxShade(v, ref, ref99);
-      const idx = (r * nCols + c) * 4;
+      const rowY = nRows - 1 - r;   // prix haut en haut de l'image, cf. fluxBuildGradient
+      const idx = (rowY * nCols + c) * 4;
       img.data[idx] = red; img.data[idx + 1] = g; img.data[idx + 2] = b;
       img.data[idx + 3] = Math.round(255 * a);
     }
