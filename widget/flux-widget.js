@@ -77,9 +77,9 @@ function injectCss(){
 .thub-flux .loader{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   background:#0A0A0C;z-index:5;transition:opacity .25s ease}
 .thub-flux .loader[hidden]{display:none}
-.thub-flux .loader svg{position:absolute}
+.thub-flux .loader svg, .thub-flux .loader-mark{position:absolute}
 .thub-flux .loader-ring{width:52px;height:52px;animation:thub-flux-spin 1.1s linear infinite}
-.thub-flux .loader-mark{width:24px;height:24px}
+.thub-flux .loader-mark{width:34px;height:34px;object-fit:contain;border-radius:50%}
 @keyframes thub-flux-spin{to{transform:rotate(360deg)}}
 `;
   const style = document.createElement("style");
@@ -216,14 +216,7 @@ class TheHubFluxWidget{
             <circle cx="30" cy="30" r="26" fill="none" stroke="#F0B90B" stroke-width="3"
                     stroke-linecap="round" stroke-dasharray="42 200"/>
           </svg>
-          <svg class="loader-mark" viewBox="0 0 100 100" aria-hidden="true">
-            <g stroke="#F0B90B" stroke-width="6" fill="none">
-              <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
-              <line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/>
-              <line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/>
-            </g>
-            <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
-          </svg>
+          <img class="loader-mark" src="${API_BASE_DEFAULT}/thehub-mark.png" alt="" aria-hidden="true">
         </div>
       </div>
       <a class="badge" href="${API_BASE_DEFAULT}/" target="_blank" rel="noopener"></a>

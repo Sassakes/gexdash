@@ -1123,6 +1123,7 @@ STATIC = {
     "/flux-panel.js": ("flux-panel.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
+    "/thehub-mark.png": ("thehub-mark.png", "image/png"),
     "/dash.html": ("dash.html", "text/html; charset=utf-8"),
     "/admin.html": ("admin.html", "text/html; charset=utf-8"),
     "/history.json": ("history.json", "application/json"),

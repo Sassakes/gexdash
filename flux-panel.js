@@ -612,7 +612,20 @@ function fluxLayout(d, mat, w, h){
   const padL = padL0 + (histW > 0 ? histW + gap : 0);
   const gw = Math.max(1, w - padL - padR);
 
-  return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax, viewMin, viewMax, markers, spot,
+  // Largeur RÉELLE que la projection occuperait sans le plancher minGw --
+  // sert UNIQUEMENT au dégradé couleur (drawFluxBg). En fin de séance, gw
+  // est élargi de force pour garder "maint."/"clôture" lisibles, mais le
+  // dégradé ne doit pas s'étirer sur cet espace en trop : sinon quelques
+  // minutes réelles (parfois 1-2 colonnes) se retrouvent lissées sur ~90px
+  // et donnent l'illusion qu'il reste des heures de séance, alors qu'il n'en
+  // reste presque plus. Axes, repères et survol continuent d'utiliser gw
+  // (inchangé) ; seul le bitmap couleur est plafonné à sa part réellement
+  // proportionnelle, le reste de gw affiché vide.
+  const gradW = totalH > 0
+    ? Math.min(gw, Math.max(1, Math.round(availW * remainH / totalH)))
+    : gw;
+
+  return {padL, padT, padB, padR, gw, gradW, gh, nH, nP, fullMin, fullMax, viewMin, viewMax, markers, spot,
           histX0, histW, histPoints: hist.points, elapsedH: hist.elapsedH, histOpenShifted: hist.openShifted};
 }
 
@@ -689,9 +702,9 @@ function fluxBuildGradient(mat, nH, nP, gw, gh){
 // sinon ne fait rien, réutilise FLUX_GRAD_SRC tel quel (req. 1 : pan/zoom =
 // simple drawImage).
 function fluxGradient(d, mat, lay){
-  const key = fluxDataKey(d) + "|" + lay.gw + "|" + lay.gh;
+  const key = fluxDataKey(d) + "|" + lay.gradW + "|" + lay.gh;
   if (FLUX_GRAD_KEY !== key){
-    fluxBuildGradient(mat, lay.nH, lay.nP, lay.gw, lay.gh);
+    fluxBuildGradient(mat, lay.nH, lay.nP, lay.gradW, lay.gh);
     FLUX_GRAD_KEY = key;
   }
 }
@@ -726,7 +739,13 @@ function drawFluxBg(cv, d, mat, lay){
   ctx.beginPath(); ctx.rect(lay.padL, lay.padT, lay.gw, lay.gh); ctx.clip();
   ctx.imageSmoothingEnabled = true;
   if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(FLUX_GRAD_SRC, 0, cropTop, sw, Math.max(1, cropH), lay.padL, lay.padT, lay.gw, lay.gh);
+  // Largeur de destination = gradW (part réellement proportionnelle des
+  // heures restantes), PAS gw (élargi par le plancher minGw de fluxLayout
+  // pour garder les libellés lisibles) -- sinon le dégradé s'étire sur un
+  // espace sans données réelles et fait croire qu'il reste des heures de
+  // séance en fin de journée. Le clip reste sur gw : le reliquat affiche le
+  // fond, pas un vide qui casserait la mise en page.
+  ctx.drawImage(FLUX_GRAD_SRC, 0, cropTop, sw, Math.max(1, cropH), lay.padL, lay.padT, lay.gradW, lay.gh);
   ctx.restore();
 }
 
