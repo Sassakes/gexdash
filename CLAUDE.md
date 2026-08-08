@@ -244,5 +244,59 @@ d'une UI, aucune migration de données à prévoir.
 
 ---
 
+## Chargement unifié (`loader.js`)
+
+Overlay de marque partagé (anneau doré + `thehub-mark.png`, même motif que
+`#fluxLoader`) qui masque les micro-temps de chargement plutôt que de
+laisser voir une zone vide ou un texte brut — switch de marché NQ/ES/SPX/
+GOLD, changement d'intervalle/fuseau du chart, ouverture de `news.html` /
+`heatmap.html` / `dash.html`. Route statique `/loader.js` dans le `STATIC`
+de `api/gex.py`, chargé par ces quatre pages.
+
+API : `PageLoader.begin(container)` → jeton ; `PageLoader.end(container,
+jeton)` → masque, avec un plancher `MIN_MS` (140ms) pour éviter qu'une
+réponse déjà en cache ne fasse un flash au lieu d'une transition ;
+`PageLoader.run(container, fn)` enchaîne les deux autour d'un `fn` async.
+`container` doit être `position:relative` (ou plus) — l'overlay s'y ancre en
+`position:absolute; inset:0`.
+
+**Piège vérifié : un container dont l'`innerHTML` est réécrit après
+`begin()` fait réapparaître le rond juste après l'affichage du contenu.**
+`heatmap.html` reconstruit sa table via `host.innerHTML = html` dans
+`render()`, ce qui détruit l'overlay monté ; `end()` en recrée alors un
+nouveau — qui doit démarrer `hidden` par défaut dans `mount()`, sinon il
+clignote visible une fraction de seconde après le tableau déjà affiché.
+Ne pas retirer ce `hidden` par défaut sans revérifier chaque appelant.
+
+**Par page :**
+- `index.html` : `#stage` (englobe `#status`+`#app`) pour le switch de
+  marché complet ; `#chartBox` seul pour un changement d'intervalle ou de
+  fuseau (ne recouvre pas le reste de l'UI, qui reste valide).
+- `heatmap.html` : un overlay par panneau, **seulement au tout premier
+  chargement** (`LOAD_SHOWN`, un `Set` par cible) — un refresh périodique ne
+  doit jamais recouvrir une table déjà peuplée de données valides.
+- `dash.html` : un overlay par carte, seulement le tout premier fetch de
+  `mountCard()`.
+- `news.html` : overlay plein-page (`document.body`) tant que les fetches
+  initiaux parallèles (macro/feed/news/cal/mag) n'ont pas tous résolu.
+
+**Switch de marché parallélisé.** `levels.json`, `/api/chart` et
+`/api/quote` étaient enchaînés en série (3 allers-retours réseau par clic
+d'onglet) ; `prefetchBars()` (index.html) les lance désormais tous en
+parallèle dès `loadTarget()`, ramenant la latence perçue à un seul
+aller-retour. Le plancher `MIN_MS` a délibérément été baissé de 320 à 140ms
+pour cette raison : un plancher haut au-dessus d'un fetch déjà rapide se
+sent comme du lag ajouté, pas comme une transition.
+
+**Garde anti-course (`TARGET_SEQ`).** Cliquer NQ puis ES très vite peut
+faire revenir la réponse de NQ *après* celle d'ES si le réseau la retarde.
+Chaque `loadTarget()` capture un numéro de séquence et vérifie, avant
+chaque écriture DOM (application des données, fin de l'overlay), qu'aucun
+switch plus récent n'a démarré entre-temps — sinon il abandonne sans
+toucher à l'affichage. Sans cette garde, un switch rapide peut laisser
+l'écran figé sur le mauvais marché après coup.
+
+---
+
 Utilisateur sous Git Bash / Windows : fournir des chemins Unix et des commandes
 git **une par bloc**.
