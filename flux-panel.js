@@ -1368,6 +1368,7 @@ function fluxStrikeMarkers(){
 // changement de langue seul (sans refetch) doit pouvoir le retraduire, cf.
 // renderFluxNote() appelée aussi depuis applyLang().
 let FLUX_STATUS = null;    // {kind:"loading"|"wait"|"ready"|"error", ts, msg}
+let FLUX_EVER_LOADED = false;   // masque #fluxLoader pour de bon après le tout premier loadFlux()
 
 function renderFluxNote(){
   const el = $("fluxNote");
@@ -1421,6 +1422,15 @@ async function loadFlux(){
   renderFluxSynth();
   renderFluxVolCtx();
   drawFlux();
+  // Rond de chargement : ne couvre QUE le tout premier appel -- une fois
+  // qu'on a une réponse (prête, en attente ou en erreur, peu importe), le
+  // statut textuel de #fluxNote suffit ; le remontrer à chaque poll ou
+  // changement de marché serait plus gênant qu'utile.
+  if (!FLUX_EVER_LOADED){
+    FLUX_EVER_LOADED = true;
+    const el = $("fluxLoader");
+    if (el) el.hidden = true;
+  }
 }
 
 // Vrai pendant la dernière fenêtre où armFluxPoll a effectivement armé le

@@ -265,6 +265,17 @@
   /* défaut hors zone de tracé ; "crosshair" (survol) / "grabbing" (glisser)
      appliqués en JS selon la position réelle du pointeur, cf. bindFluxHover */
   #fluxCvCursor{cursor:default; touch-action:none}
+  /* rond de chargement : logo + anneau tournant, posé le temps du tout
+     premier /api/flow (masqué ensuite pour de bon, cf. loadFlux) -- jamais
+     remontré à chaque poll ou changement de marché, où le texte de #fluxNote
+     suffit déjà. */
+  .fluxloader{position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; background:var(--bg); z-index:5}
+  .fluxloader[hidden]{display:none}
+  .fluxloader svg{position:absolute}
+  .fluxloader-ring{width:52px; height:52px; animation:fluxloader-spin 1.1s linear infinite}
+  .fluxloader-mark{width:24px; height:24px}
+  @keyframes fluxloader-spin{to{transform:rotate(360deg)}}
 
   /* ---- fluxsynth : verdict unique + une ligne par grecque, JAMAIS moyennees
      (unites differentes) -- meme traitement que le bloc de lecture MAG7 de
@@ -939,6 +950,21 @@
         <canvas id="fluxCvBg"></canvas>
         <canvas id="fluxCvMain"></canvas>
         <canvas id="fluxCvCursor"></canvas>
+        <div class="fluxloader" id="fluxLoader">
+          <svg class="fluxloader-ring" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(240,185,11,.15)" stroke-width="3"/>
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#F0B90B" stroke-width="3"
+                    stroke-linecap="round" stroke-dasharray="42 200"/>
+          </svg>
+          <svg class="fluxloader-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <g stroke="#F0B90B" stroke-width="6" fill="none">
+              <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
+              <line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/>
+              <line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/>
+            </g>
+            <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
+          </svg>
+        </div>
       </div>
       <div class="fluxsynth" id="fluxSynth" hidden></div>
       <div class="fluxvolctx" id="fluxVolCtx" hidden></div>

@@ -74,6 +74,13 @@ function injectCss(){
   color:rgba(236,234,228,.4);text-decoration:none;padding:2px 6px;background:rgba(10,10,12,.55);
   border:1px solid rgba(255,255,255,.08);pointer-events:auto}
 .thub-flux .badge:hover{color:rgba(236,234,228,.75)}
+.thub-flux .loader{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#0A0A0C;z-index:5;transition:opacity .25s ease}
+.thub-flux .loader[hidden]{display:none}
+.thub-flux .loader svg{position:absolute}
+.thub-flux .loader-ring{width:52px;height:52px;animation:thub-flux-spin 1.1s linear infinite}
+.thub-flux .loader-mark{width:24px;height:24px}
+@keyframes thub-flux-spin{to{transform:rotate(360deg)}}
 `;
   const style = document.createElement("style");
   style.textContent = css;
@@ -163,7 +170,7 @@ class TheHubFluxWidget{
       dirty: {bg: false, main: false, cursor: false}, raf: null,
       size: {w: 0, h: 0, dpr: 0}, padRCur: null, sizeTries: 0,
       status: {kind: "loading"}, poll: null, pollArmed: false, watchWired: false, watch: null,
-      destroyed: false, fatalError: false, resizeObs: null, boundMouseUp: null,
+      destroyed: false, fatalError: false, everLoaded: false, resizeObs: null, boundMouseUp: null,
     };
     this.gfx = {off: null, stages: [], gradSrc: null, gradMeta: null, gradKey: null};
 
@@ -203,6 +210,21 @@ class TheHubFluxWidget{
         <canvas class="bg"></canvas>
         <canvas class="main"></canvas>
         <canvas class="cur"></canvas>
+        <div class="loader">
+          <svg class="loader-ring" viewBox="0 0 60 60">
+            <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(240,185,11,.15)" stroke-width="3"/>
+            <circle cx="30" cy="30" r="26" fill="none" stroke="#F0B90B" stroke-width="3"
+                    stroke-linecap="round" stroke-dasharray="42 200"/>
+          </svg>
+          <svg class="loader-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <g stroke="#F0B90B" stroke-width="6" fill="none">
+              <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
+              <line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/>
+              <line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/>
+            </g>
+            <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
+          </svg>
+        </div>
       </div>
       <a class="badge" href="${API_BASE_DEFAULT}/" target="_blank" rel="noopener"></a>
     `;
@@ -211,6 +233,7 @@ class TheHubFluxWidget{
       root, note: root.querySelector(".note"), wrap: root.querySelector(".wrap"),
       cvBg: root.querySelector("canvas.bg"), cvMain: root.querySelector("canvas.main"),
       cvCur: root.querySelector("canvas.cur"), badge: root.querySelector(".badge"),
+      loader: root.querySelector(".loader"),
       modeBtns: [...root.querySelectorAll(".modes button")],
     };
     this.dom.badge.textContent = this._loc().badge;
@@ -306,6 +329,14 @@ class TheHubFluxWidget{
     }
     this._renderNote();
     this.redrawAll();
+    // Le rond de chargement (logo + anneau) ne couvre QUE le tout premier
+    // appel -- une fois qu'on a une réponse (prête, en attente ou en erreur,
+    // peu importe), le statut textuel existant (#note) suffit ; le re-montrer
+    // à chaque switch de marché serait plus gênant qu'utile.
+    if (!this.state.everLoaded){
+      this.state.everLoaded = true;
+      this.dom.loader.hidden = true;
+    }
   }
 
   armPoll(){
