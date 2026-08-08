@@ -2635,7 +2635,11 @@ let FLUX_CURSOR = null;   // {mx, my} en coordonnées CSS du canevas, ou null si
 let FLUX_OFF = null, FLUX_STAGES = [], FLUX_GRAD_SRC = null, FLUX_GRAD_META = null, FLUX_GRAD_KEY = null;
 
 function fluxDataKey(d){
-  return (d.generated_utc || "") + "|" + FLUX_MODE + "|" + (FLUX_STRIKES_ON ? 1 : 0);
+  // Les strikes (FLUX_STRIKES_ON) n'entrent PAS ici : ce sont des repères
+  // vectoriels dessinés à part sur cvMain (cf. drawFluxMain), jamais une
+  // composante du bitmap couleur -- les y inclure ne faisait que forcer une
+  // reconstruction inutile du dégradé à chaque clic sur le bouton Strikes.
+  return (d.generated_utc || "") + "|" + FLUX_MODE;
 }
 
 // Même grille (mêmes colonnes de prix, même nombre d'heures) requise pour
@@ -2693,6 +2697,30 @@ function fluxEnsureSize(cvBg, cvMain, cvCur){
   return true;
 }
 
+// Lisse la réserve de droite (padR) au lieu de sauter instantanément à sa
+// nouvelle cible -- activer/désactiver Strikes change le texte le plus long
+// à réserver (donc gw), et un saut sec décalait toute la chart d'un coup,
+// vilain et donnait l'impression d'un bug de mise en page ("ça décale la
+// chart"). Rattrape ~30% de l'écart restant par frame rendue tant que ce
+// n'est pas négligeable ; sans état précédent (premier rendu) ou pour un
+// écart trop large (marché/mode changé, pas un simple toggle Strikes),
+// affiche direct la cible -- inutile d'animer une transition qui n'a rien
+// de continu pour l'œil.
+let FLUX_PADR_CUR = null;
+function fluxEasePadR(lay, w){
+  const target = lay.padR;
+  if (FLUX_PADR_CUR == null || Math.abs(target - FLUX_PADR_CUR) > 150){
+    FLUX_PADR_CUR = target;
+    return lay;
+  }
+  let padR = FLUX_PADR_CUR + (target - FLUX_PADR_CUR) * 0.3;
+  if (Math.abs(target - padR) < 0.5) padR = target;
+  FLUX_PADR_CUR = padR;
+  if (padR === target) return lay;
+  invalidateFlux("bg", "main");   // pas encore arrivé : programme la frame suivante
+  return Object.assign({}, lay, {padR, gw: Math.max(1, w - lay.padL - padR)});
+}
+
 function flushFluxDirty(){
   FLUX_RAF = null;
   const cvBg = $("fluxCvBg"), cvMain = $("fluxCvMain"), cvCur = $("fluxCvCursor");
@@ -2707,8 +2735,9 @@ function flushFluxDirty(){
   }
 
   const d = fluxDisplayData(), mat = d && d[FLUX_MODE];
-  const lay = (d && mat && mat.length && d.price_grid && d.price_grid.length)
+  let lay = (d && mat && mat.length && d.price_grid && d.price_grid.length)
     ? fluxLayout(d, mat, FLUX_SIZE.w, FLUX_SIZE.h) : null;
+  if (lay) lay = fluxEasePadR(lay, FLUX_SIZE.w);
 
   if (FLUX_DIRTY.bg){ FLUX_DIRTY.bg = false; drawFluxBg(cvBg, d, mat, lay); }
   if (FLUX_DIRTY.main){ FLUX_DIRTY.main = false; drawFluxMain(cvMain, d, mat, lay); }
@@ -2861,9 +2890,16 @@ function fluxLayout(d, mat, w, h){
   const totalH = hist.elapsedH + remainH;
   const availW = Math.max(1, w - padL0 - padR);
   const gap = 10;
+  // Réserve minimale pour la portion projection : sous ce seuil, les
+  // étiquettes d'heure "maint." et "clôture" (posées aux deux bords de gw)
+  // finissent l'une sur l'autre, illisibles -- ça arrivait en fin de séance,
+  // quand il ne reste presque plus d'heures à projeter et que gw s'effondrait
+  // en faveur de l'historique. 90px suffit aux deux libellés plus une marge.
+  const minGw = 90;
   let histW = (hist.elapsedH > 0 && totalH > 0)
     ? Math.max(0, Math.round(availW * hist.elapsedH / totalH) - gap)
     : 0;
+  histW = Math.min(histW, Math.max(0, availW - minGw - gap));
   if (histW <= 4) histW = 0;   // portion trop étroite pour être lisible : pas de marge réservée pour rien
   const histX0 = padL0;
   const padL = padL0 + (histW > 0 ? histW + gap : 0);
@@ -2987,30 +3023,33 @@ function drawFluxBg(cv, d, mat, lay){
   ctx.restore();
 }
 
-// ---- historique reconstitué : une cellule par (tir de cron passé × bac de
-// prix DE CE TIR-LÀ), jamais rééchantillonné en bitmap uniforme comme le
-// dégradé de projection -- chaque entrée a sa PROPRE price_grid (recentrée
-// sur le spot de ce moment-là), impossible à empiler dans une grille
-// commune. ~45 tirs/jour x 25 bacs = peu de rectangles. Référence de
-// normalisation propre à cette série (pas celle de la projection : nature
-// différente, cf. commentaire fluxBuildGradient sur le charm -- ici chaque
-// entrée est un "maintenant" réel, pas de plancher temporel artificiel, donc
-// pas besoin de normaliser par colonne).
+// ---- historique reconstitué : chaque tir de cron passé est un "maintenant"
+// réel avec sa PROPRE price_grid (recentrée sur le spot de ce moment-là),
+// donc pas empilable tel quel dans une grille commune comme le fait la
+// projection. Deux essais précédents ont raté la cible : un flou à rayon
+// fixe sur des rectangles déjà nets (incohérent -- rectangles très inégaux
+// en taille, un même flou n'adoucit pas pareil un large bloc de tout début
+// de séance et une colonne étroite de fin de séance) ; puis des cellules
+// nettes avec liseré (correct mais "en escalier", jamais aussi lisse que la
+// projection).
 //
-// Rendu : MÊME technique que fluxBuildGradient pour le dégradé de
-// projection -- rectangles nets dans un tampon BASSE résolution (FLUX_HIST_
-// OFF, réutilisé), puis montée en résolution PROGRESSIVE (x3 par étage,
-// imageSmoothingQuality "high", étages réutilisés dans FLUX_HIST_STAGES).
-// Un ancien essai composait un tracé déjà plein format avec un flou à rayon
-// fixe (`filter:blur()`) : incohérent visuellement, puisque les rectangles
-// n'ont pas tous la même taille (larges en tout début de séance, peu
-// d'entrées ; étroits ensuite) -- le flou adoucissait les uns et laissait
-// les autres presque anguleux. La montée progressive lisse tout le monde
-// pareil, quelle que soit la taille d'origine de la cellule, pour un rendu
-// aussi propre que la projection des deux côtés de "maintenant". Les
-// positions temps/prix restent exactes (dérivées des vrais x0/x1/y0/y1),
-// seule la résolution du tampon de départ change. Coupé net à la bordure
-// "maintenant" par le clip (pas de bavure sur la projection). ----
+// Ici : VRAIE interpolation, pas un artifice visuel. (1) Chaque entrée est
+// rééchantillonnée sur un axe de prix COMMUN (nRows lignes couvrant
+// [priceMin, priceMax]) en prenant le bac le plus proche dans SA propre
+// grille -- aligne les entrées entre elles sans jamais recalculer une
+// valeur. (2) Pour chaque colonne temporelle cible, interpolation LINÉAIRE
+// entre les deux tirs réels qui l'encadrent (un book de gamma dealer évolue
+// bel et bien de façon continue entre deux tirs, on ne fait qu'estimer ce
+// qu'on n'a pas mesuré). (3) Le champ ainsi obtenu est un vrai continu, donc
+// la même montée en résolution progressive que fluxBuildGradient (x3/étage,
+// imageSmoothingQuality "high") s'y applique légitimement -- résultat : même
+// pipeline de rendu final que la projection, donc même qualité perçue.
+// Avec 1 seule entrée (tout début de séance), aucun encadrement possible :
+// le rendu tombe naturellement sur un dégradé vertical uni (le vrai gamma
+// par strike de ce tir, sans variation temporelle -- il n'y a réellement
+// rien de plus à montrer avant le tir suivant), jamais un bloc flou. Coupé
+// net à la bordure "maintenant" par le clip (pas de bavure sur la
+// projection). ----
 const FLUX_HIST_FIELD = {gamma: "gamma0", vanna: "vanna0", charm: "charm0"};
 let FLUX_HIST_OFF = null, FLUX_HIST_STAGES = [];
 function drawFluxHistBg(ctx, lay, priceMin, priceMax){
@@ -3020,6 +3059,11 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const field = FLUX_HIST_FIELD[FLUX_MODE];
   const {histX0, histW, elapsedH, histOpenShifted, padT, gh} = lay;
 
+  // Référence de normalisation sur les valeurs BRUTES de la série (pas
+  // rééchantillonnées) -- nature différente de la projection (cf.
+  // commentaire fluxBuildGradient sur le charm) : chaque entrée est un
+  // "maintenant" réel, pas de plancher temporel artificiel, donc pas besoin
+  // de normaliser par colonne.
   const absVals = [];
   for (const e of entries) for (const v of (e[field] || [])) absVals.push(Math.abs(v));
   if (!absVals.length) return;
@@ -3027,42 +3071,59 @@ function drawFluxHistBg(ctx, lay, priceMin, priceMax){
   const ref = fluxPercentile(absVals, 0.95) || 1;
   const ref99 = fluxPercentile(absVals, 0.99) || ref;
 
-  // Tampon de départ BASSE résolution (un quart de la taille d'affichage,
-  // borné) -- coordonnées LOCALES au tampon (histX0/padT soustraits,
-  // réappliqués au moment du drawImage final).
-  const bw0 = Math.max(8, Math.min(140, Math.round(histW / 4)));
-  const bh0 = Math.max(8, Math.min(90, Math.round(gh / 4)));
-  const yFor = p => bh0 * (1 - (p - priceMin) / (priceMax - priceMin || 1));
-  const xForT = th => bw0 * (th / Math.max(1e-6, elapsedH));
-  const ths = entries.map(e => (tzShift(Math.floor(new Date(e.t).getTime() / 1000)) - histOpenShifted) / 3600);
+  // (1) rééchantillonnage de chaque entrée valide sur l'axe de prix commun.
+  const nRows = 25;
+  const rowPrice = r => priceMax - (r + 0.5) / nRows * (priceMax - priceMin || 1);
+  const rowsByEntry = [], thByEntry = [];
+  for (const e of entries){
+    const grid = e.price_grid, vals = e[field];
+    if (!grid || !vals || !grid.length) continue;
+    const row = new Array(nRows);
+    let gi = 0;
+    for (let r = 0; r < nRows; r++){
+      const p = rowPrice(r);
+      while (gi < grid.length - 1 && Math.abs(grid[gi + 1] - p) <= Math.abs(grid[gi] - p)) gi++;
+      row[r] = vals[gi];
+    }
+    rowsByEntry.push(row);
+    thByEntry.push((tzShift(Math.floor(new Date(e.t).getTime() / 1000)) - histOpenShifted) / 3600);
+  }
+  if (!rowsByEntry.length) return;
 
+  // (2) interpolation temporelle sur un tampon natif basse résolution --
+  // nCols borné, la netteté vient ensuite de la montée en résolution.
+  const nCols = Math.max(2, Math.min(180, Math.round(histW)));
   if (!FLUX_HIST_OFF) FLUX_HIST_OFF = document.createElement("canvas");
   const off = FLUX_HIST_OFF;
-  off.width = bw0; off.height = bh0;
+  off.width = nCols; off.height = nRows;
   const octx = off.getContext("2d");
-  octx.clearRect(0, 0, bw0, bh0);
+  const img = octx.createImageData(nCols, nRows);
 
-  for (let i = 0; i < entries.length; i++){
-    const e = entries[i], grid = e.price_grid, vals = e[field];
-    if (!grid || !vals) continue;
-    const th = ths[i];
-    const prevTh = i > 0 ? ths[i - 1] : th - (ths.length > 1 ? (ths[1] - th) : 0.15);
-    const nextTh = i < entries.length - 1 ? ths[i + 1] : elapsedH;
-    const x0 = xForT((prevTh + th) / 2), x1 = xForT((th + nextTh) / 2);
-    const nP = grid.length;
-    for (let pi = 0; pi < nP; pi++){
-      const step = pi < nP - 1 ? grid[pi + 1] - grid[pi] : (grid[pi] - grid[pi - 1]);
-      const y0 = yFor(grid[pi] + step / 2), y1 = yFor(grid[pi] - step / 2);
-      const [r, g, b, a] = fluxShade(vals[pi], ref, ref99);
-      octx.fillStyle = `rgba(${r},${g},${b},${a})`;
-      octx.fillRect(Math.floor(x0), Math.floor(y0), Math.ceil(x1 - x0) + 1, Math.ceil(y1 - y0) + 1);
+  let ei = 0;
+  for (let c = 0; c < nCols; c++){
+    const t = nCols === 1 ? elapsedH : (c / (nCols - 1)) * elapsedH;
+    while (ei < thByEntry.length - 2 && thByEntry[ei + 1] < t) ei++;
+    const rowsA = rowsByEntry[ei];
+    let frac = 0, rowsB = rowsA;
+    if (ei < thByEntry.length - 1){
+      const span = thByEntry[ei + 1] - thByEntry[ei];
+      frac = span > 1e-6 ? Math.min(1, Math.max(0, (t - thByEntry[ei]) / span)) : 0;
+      rowsB = rowsByEntry[ei + 1];
+    }
+    for (let r = 0; r < nRows; r++){
+      const v = rowsA[r] + (rowsB[r] - rowsA[r]) * frac;
+      const [red, g, b, a] = fluxShade(v, ref, ref99);
+      const idx = (r * nCols + c) * 4;
+      img.data[idx] = red; img.data[idx + 1] = g; img.data[idx + 2] = b;
+      img.data[idx + 3] = Math.round(255 * a);
     }
   }
+  octx.putImageData(img, 0, 0);
 
-  // montée en résolution progressive jusqu'à la taille d'affichage réelle
-  // (CSS px -- le ctx cible est déjà mis à l'échelle DPR par l'appelant,
-  // cf. drawFluxBg).
-  let src = off, sw = bw0, sh = bh0, stageIdx = 0;
+  // (3) montée en résolution progressive jusqu'à la taille d'affichage
+  // réelle (CSS px -- le ctx cible est déjà mis à l'échelle DPR par
+  // l'appelant, cf. drawFluxBg).
+  let src = off, sw = nCols, sh = nRows, stageIdx = 0;
   while (sw < histW / 3 && sh < gh / 3 && sw < 480){
     const nw = Math.min(histW, sw * 3), nh = Math.min(gh, sh * 3);
     if (!FLUX_HIST_STAGES[stageIdx]) FLUX_HIST_STAGES[stageIdx] = document.createElement("canvas");
@@ -3142,15 +3203,26 @@ function drawFluxMain(cv, d, mat, lay){
   // gauche de "maintenant" et rien ne dit à quel moment de la séance
   // correspond un point du tracé. Heures rondes dans le fuseau AFFICHÉ
   // (histOpenShifted est déjà l'heure d'ouverture "décalée" pour ce fuseau,
-  // cf. fluxSessionHistory) -- même convention que "Calculé HH:MM". ----
-  if (histW > 4 && elapsedH > 0){
+  // cf. fluxSessionHistory) -- même convention que "Calculé HH:MM". Portion
+  // trop étroite (tout début OU tout en fin de séance, où le dernier tick
+  // rond tombe juste avant "maintenant") : un seuil de marge fixe ne
+  // suffisait pas à empêcher le chevauchement ("07hmaint." illisible, repéré
+  // en testant l'historique avec peu et avec beaucoup d'entrées) -- la
+  // largeur réelle des libellés dépend de la langue (fluxNow FR "maint." vs
+  // EN "now"), mesurée ici plutôt que devinée. ----
+  if (histW > 60 && elapsedH > 0){
     const openDate = new Date(histOpenShifted * 1000);
     const openMin = openDate.getUTCHours() * 60 + openDate.getUTCMinutes();
     let tickMin = Math.ceil(openMin / 60) * 60;
+    const nowHalfW = ctx.measureText(t("fluxNow")).width / 2;
     while ((tickMin - openMin) / 60 <= elapsedH + 1e-9){
       const th = (tickMin - openMin) / 60;
-      const hh = Math.floor(tickMin / 60) % 24;
-      ctx.fillText(String(hh).padStart(2, "0") + "h", xForHist(th), padT + gh + 4);
+      const x = xForHist(th);
+      const label = String(Math.floor(tickMin / 60) % 24).padStart(2, "0") + "h";
+      const labelHalfW = ctx.measureText(label).width / 2;
+      if (padL - x > nowHalfW + labelHalfW + 6){
+        ctx.fillText(label, x, padT + gh + 4);
+      }
       tickMin += 60;
     }
   }
