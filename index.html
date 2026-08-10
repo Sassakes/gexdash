@@ -357,6 +357,18 @@
   #dpCtx .gc-b{font-size:12.5px; line-height:1.5; color:var(--text)}
   #dpCtx .gc-f{font-size:9.5px; letter-spacing:.06em; color:var(--faint);
     text-transform:uppercase; margin-top:7px}
+  /* Carte de contexte gamma (régime court/long) — même patron que #dpCtx,
+     couleurs distinctes (ambre/bleu) pour ne pas se confondre visuellement
+     avec la carte dark pool (teal/rouge) quand les deux sont dépliées. */
+  #gammaCtx{border:1px solid var(--line-strong); border-radius:10px; padding:13px 16px; margin-bottom:14px}
+  #gammaCtx.short{border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.06)}
+  #gammaCtx.long{border-color:rgba(76,141,255,.45); background:rgba(76,141,255,.06)}
+  #gammaCtx .gc-h{font-size:14px; font-weight:600; margin-bottom:5px}
+  #gammaCtx.short .gc-h{color:#F59E0B}
+  #gammaCtx.long .gc-h{color:#4C8DFF}
+  #gammaCtx .gc-b{font-size:12.5px; line-height:1.5; color:var(--text)}
+  #gammaCtx .gc-f{font-size:9.5px; letter-spacing:.06em; color:var(--faint);
+    text-transform:uppercase; margin-top:7px}
   .cbar{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     padding:8px 12px; border-bottom:1px solid var(--line);
@@ -968,6 +980,13 @@
 
   <div class="stats" id="badges"></div>
 
+  <div class="gtog" id="gammaToggle">
+    <span class="gline"></span>
+    <button id="gammaBtn" type="button"><span id="gammaLbl">Contexte</span><span class="arw">▾</span></button>
+    <span class="gline"></span>
+  </div>
+  <div id="gammaCtx" hidden></div>
+
   <section class="panel" id="dpPanel">
     <h2>Dark Pool <span class="note" id="dpNoteTxt">FINRA off-exchange · publié J-1</span></h2>
     <div class="pad dp">
@@ -1090,6 +1109,10 @@ const T = {
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — outil éducatif, pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
     tipCone:"Cône EM restant : prix courant ± EM restant, se resserre en séance",
+    gShortT:"Gamma Court · Expansion", gLongT:"Gamma Long · Compression",
+    gShortB:"Les dealers vendent la faiblesse / achètent la force → amplification de la tendance. Les cassures tiennent souvent ; privilégier le momentum et la continuation, élargir les stops. Les mouvements peuvent accélérer.",
+    gLongB:"Les dealers vendent la force / achètent la faiblesse → retour à la moyenne. Fader les extrêmes vers le flip ; prudence sur les cassures. Le call wall plafonne, le put wall soutient.",
+    gFoot:"Snapshot OI quotidien — les flux intraday / 0DTE peuvent primer. Contexte, pas un signal.", gCtxLbl:"Contexte",
     dpNote:"FINRA off-exchange · publié J-1",
     dpBuild:"historique en construction — première donnée au prochain jour ouvré",
     dpUnavail:"indisponible", dpAvg:"moy. 20j",
@@ -1155,6 +1178,10 @@ const T = {
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — educational tool, not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
     tipCone:"Remaining EM cone: current price ± remaining EM, narrows through the session",
+    gShortT:"Short Gamma · Expansion", gLongT:"Long Gamma · Compression",
+    gShortB:"Dealers sell weakness / buy strength → trend amplification. Breakouts tend to hold; favor momentum & continuation, widen stops. Moves can accelerate.",
+    gLongB:"Dealers sell strength / buy weakness → mean-reversion. Fade extremes back toward the flip; be cautious chasing breakouts. Call wall caps, put wall floors.",
+    gFoot:"Daily OI snapshot — intraday / 0DTE flows can override. Context, not a trigger.", gCtxLbl:"Context",
     dpNote:"FINRA off-exchange · published T-1",
     dpBuild:"history building — first data next trading day",
     dpUnavail:"unavailable", dpAvg:"20d avg",
@@ -1294,6 +1321,22 @@ function darkMetrics(d){
   const pct = hi > lo ? Math.round((d.last.r - lo) / (hi - lo) * 100) : 50;
   const regime = dd >= band ? "up" : dd <= -band ? "dn" : "mid";
   return {r: d.last.r, dd, z, band, sd, streak, d5, pct, regime};
+}
+
+/* gamma-regime context (collapsible, no price distances).
+   Short gamma when price sits below the gamma flip — as the latest snapshot read it. */
+function gammaShort(d){
+  const flip = (d.levels || []).find(l => l.kind === "flip");
+  if (flip && d.nq_price != null) return d.nq_price < flip.price_nq;
+  return d.regime === "negative";
+}
+function renderGamma(d){
+  const el = $("gammaCtx"); if (!el || !d) return;   // updates content only; the toggle controls visibility
+  const short = gammaShort(d);
+  el.className = short ? "short" : "long";
+  el.innerHTML = `<div class="gc-h">${short ? t("gShortT") : t("gLongT")}</div>`
+    + `<div class="gc-b">${short ? t("gShortB") : t("gLongB")}</div>`
+    + `<div class="gc-f">${t("gFoot")}</div>`;
 }
 
 function renderDark(d){
@@ -1452,6 +1495,18 @@ async function authSubmit(){
   });
 })();
 
+(function wireGammaToggle(){
+  const btn = document.getElementById("gammaBtn");
+  if (!btn || btn._wired) return;
+  btn._wired = true;
+  btn.addEventListener("click", () => {
+    const el = document.getElementById("gammaCtx"), willOpen = el.hidden;
+    if (willOpen && LAST_D) renderGamma(LAST_D);      // refresh from the latest snapshot on open
+    el.hidden = !willOpen;
+    document.getElementById("gammaToggle").classList.toggle("open", willOpen);
+  });
+})();
+
 (function wireDarkToggle(){
   const btn = document.getElementById("darkBtn");
   if (!btn || btn._wired) return;
@@ -1485,6 +1540,8 @@ function applyLang(){
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
   $("dashLbl").textContent = t("dash");
+  const gl = $("gammaLbl"); if (gl) gl.textContent = t("gCtxLbl");
+  if (LAST_D && !$("gammaCtx").hidden) renderGamma(LAST_D);   // re-rend en FR/EN
   const dl = $("darkLbl"); if (dl) dl.textContent = t("dCtxLbl");
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
   $("docLbl").textContent = t("doc");
@@ -2274,6 +2331,7 @@ async function show(d, barsFetch){
   const tgt = d.target || "NQ";
   $("hdrDate").textContent = d.date + " · " + tgt + " (" + d.symbol + ")";
   $("levelsTitle").textContent = t("levels")(tgt);
+  renderGamma(d);
 
   const live = d.mode === "live";
   const pill = $("statusPill");
