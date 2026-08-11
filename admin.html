@@ -536,17 +536,29 @@ async function load(){
         `<td class="mut">${l.q ? "?" + l.q : "—"}</td>` +
         `<td class="${outcomeClass(l.outcome)}">${l.outcome || "—"}</td></tr>`
       ).join("");
+      const flowLogRows = (d.flow_log || []).map(l =>
+        `<tr><td>${l.paris || "—"}</td>` +
+        `<td class="mut">${(l.utc||"").slice(5,16).replace("T"," ")}Z</td>` +
+        `<td class="${outcomeClass(l.outcome)}">${l.outcome || "—"}</td></tr>`
+      ).join("");
       $("stBox").innerHTML =
         chips +
         `<div style="overflow-x:auto"><table class="tb"><thead><tr><th>Marché</th><th>Date</th><th>Publié</th>` +
         `<th>Prix</th><th>IV</th></tr></thead><tbody>${tgRows}</tbody></table></div>` +
         `<div style="margin-top:14px; color:var(--muted); font-size:10px; ` +
-        `letter-spacing:.08em; text-transform:uppercase">Journal des hits cron (15 derniers)</div>` +
+        `letter-spacing:.08em; text-transform:uppercase">Journal des hits cron (15 derniers, hors intrajournalier)</div>` +
         (logRows
           ? `<div style="max-height:260px; overflow:auto"><table class="tb"><thead>` +
             `<tr><th>Paris</th><th>UTC</th><th>Source</th><th>Requête</th><th>Résultat</th></tr>` +
             `</thead><tbody>${logRows}</tbody></table></div>`
-          : `<div class="mut" style="margin-top:6px"><i>aucun hit cron enregistré</i></div>`);
+          : `<div class="mut" style="margin-top:6px"><i>aucun hit cron enregistré</i></div>`) +
+        `<div style="margin-top:14px; color:var(--muted); font-size:10px; ` +
+        `letter-spacing:.08em; text-transform:uppercase">Journal Flux — tirs intrajournaliers (?intraday=1, cadence 5-10 min)</div>` +
+        (flowLogRows
+          ? `<div style="max-height:260px; overflow:auto"><table class="tb"><thead>` +
+            `<tr><th>Paris</th><th>UTC</th><th>Résultat</th></tr>` +
+            `</thead><tbody>${flowLogRows}</tbody></table></div>`
+          : `<div class="mut" style="margin-top:6px"><i>aucun tir intrajournalier enregistré</i></div>`);
     }catch(e){ $("stBox").textContent = "Statut indisponible : " + e.message; }
   }
   $("stRefresh").onclick = loadStatus;

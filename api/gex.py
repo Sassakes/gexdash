@@ -40,6 +40,15 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            fetch_embed_keys, save_embed_keys)
 
 CRON_LOG_KEY = "gex:cron:log"
+# Journal SEPARE pour les tirs intrajournaliers (?intraday=1) : cadence 5-10
+# min sur toute la seance (cf. vercel.json), le plus gros volume de hits cron
+# de loin -- les melanger au journal principal (15 entrees) noyait en
+# quelques heures toute trace d'un event rare et important (publication
+# canonique, erreur, recalage Daily Open). Cap plus large (rotation, pas de
+# cout Redis supplementaire par requete utilisateur : une seule cle, jamais
+# lue hors admin) pour couvrir plusieurs heures de seance d'un coup.
+FLOW_CRON_LOG_KEY = "gex:cron:flowlog"
+FLOW_CRON_LOG_MAX = 40
 FINNHUB_CACHE_S = 2.5
 _BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
 _GOLD_OFF = {"v": None, "at": 0.0}
@@ -1834,6 +1843,20 @@ class handler(BaseHTTPRequestHandler):
             log.insert(0, entry)
             kv_set(CRON_LOG_KEY, json.dumps(log[:15]), ex=14 * 86400)
 
+        def journal_flow(outcome):
+            """Meme forme que journal() ci-dessus, cle dediee FLOW_CRON_LOG_KEY
+            -- reserve au bruit routine des tirs intrajournaliers (cf. note sur
+            FLOW_CRON_LOG_KEY plus haut), jamais aux events rares/importants."""
+            entry["outcome"] = outcome
+            try:
+                log = json.loads(kv_get(FLOW_CRON_LOG_KEY) or "[]")
+                if not isinstance(log, list):
+                    log = []
+            except Exception:
+                log = []
+            log.insert(0, entry)
+            kv_set(FLOW_CRON_LOG_KEY, json.dumps(log[:FLOW_CRON_LOG_MAX]), ex=14 * 86400)
+
         cron_secret = os.environ.get("CRON_SECRET")
         gex_key = os.environ.get("GEX_REFRESH_KEY")
         auth = self.headers.get("Authorization", "")
@@ -1984,15 +2007,15 @@ class handler(BaseHTTPRequestHandler):
                             if reason:
                                 results[target]["flow_skip_reason"] = reason
                             if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
-                                journal(f"flow {target} (force) controle de "
-                                        f"justesse KO : cboe_gross="
-                                        f"{chk['cboe_gross_bn']}Bn vs flow="
-                                        f"{chk['flow_gross_bn']}Bn "
-                                        f"(ecart {chk['deviation_pct']}%)")
+                                journal_flow(f"flow {target} (force) controle de "
+                                             f"justesse KO : cboe_gross="
+                                             f"{chk['cboe_gross_bn']}Bn vs flow="
+                                             f"{chk['flow_gross_bn']}Bn "
+                                             f"(ecart {chk['deviation_pct']}%)")
                         except Exception as e:
                             results[target]["flow_forced"] = False
                             results[target]["flow_error"] = str(e)
-                            journal(f"flow {target} (force) KO: {e}")
+                            journal_flow(f"flow {target} (force) KO: {e}")
                     continue
                 # Pre-ouverture (< 9h30 ET) : la publication canonique de
                 # 15h25 Paris tombe 5 minutes AVANT l'ouverture des cotations
@@ -2041,14 +2064,14 @@ class handler(BaseHTTPRequestHandler):
                         # planification cron, pas un etat normal -- on le
                         # journalise comme le reste.
                         if reason:
-                            journal(f"flow {target} : rien calcule ({reason})")
+                            journal_flow(f"flow {target} : rien calcule ({reason})")
                         elif chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
-                            journal(f"flow {target} controle de justesse KO : "
-                                    f"cboe_gross={chk['cboe_gross_bn']}Bn vs "
-                                    f"flow={chk['flow_gross_bn']}Bn "
-                                    f"(ecart {chk['deviation_pct']}%)")
+                            journal_flow(f"flow {target} controle de justesse KO : "
+                                         f"cboe_gross={chk['cboe_gross_bn']}Bn vs "
+                                         f"flow={chk['flow_gross_bn']}Bn "
+                                         f"(ecart {chk['deviation_pct']}%)")
                     except Exception as e:
-                        journal(f"flow {target} KO: {e}")
+                        journal_flow(f"flow {target} KO: {e}")
                 # Trace intrajournaliere : l'open interest ne bouge pas en
                 # seance, donc les MURS sont figes — mais les gammas unitaires
                 # evoluent avec le spot, l'IV et la decroissance temporelle.
@@ -2117,7 +2140,11 @@ class handler(BaseHTTPRequestHandler):
                     + paris_hhmm() + " Paris · " + slot + ")"
                     + ("\n" + px if px else "")
                     + "\nhttps://gexdash.wealthbuilders.group")
-            journal("ok computed=%d notify=%s news=%s" % (len(computed), notified, news))
+            # Tir intrajournalier (?intraday=1) : resume routine, cadence 5-10
+            # min toute la seance -- vers le journal Flux dedie (cf.
+            # FLOW_CRON_LOG_KEY), jamais le journal principal.
+            (journal_flow if "intraday" in qs else journal)(
+                "ok computed=%d notify=%s news=%s" % (len(computed), notified, news))
             self._send(200, json.dumps({
                 "date": today, "discord": notified, "news": news,
                 "targets": results,
@@ -2147,11 +2174,16 @@ class handler(BaseHTTPRequestHandler):
                 log = json.loads(kv_get(CRON_LOG_KEY) or "[]")
             except Exception:
                 log = []
+            try:
+                flow_log = json.loads(kv_get(FLOW_CRON_LOG_KEY) or "[]")
+            except Exception:
+                flow_log = []
             self._send(200, json.dumps({
                 "paris_now": paris_hhmm(), "date_et": today,
                 "notified_today": bool(kv_get(f"gex:notified:{today}")),
                 "targets": targets,
                 "cron_log": log[:10] if isinstance(log, list) else [],
+                "flow_log": flow_log[:15] if isinstance(flow_log, list) else [],
                 "webhooks": sorted(fetch_webhooks().keys()),
             }).encode(), "application/json")
             return
