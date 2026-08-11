@@ -7,7 +7,8 @@
  *   <div id="chart"></div>
  *   <script>
  *     const w = new TheHubFluxWidget(document.getElementById('chart'), {
- *       key: 'YOUR_KEY',      // required, request one from TheHub
+ *       key: 'YOUR_KEY',      // request one from TheHub -- omit only for
+ *                              // first-party same-origin pages (see below)
  *       target: 'NQ',          // NQ | ES | SPX | GC | XAU
  *       mode: 'gamma',         // gamma | vanna | charm
  *       lang: 'en',            // en | fr
@@ -15,6 +16,12 @@
  *     });
  *     // w.setTarget('ES'); w.setMode('vanna'); w.setLang('fr'); w.destroy();
  *   </script>
+ *
+ * Same-origin/first-party use (e.g. gexdash's own /dash): omit `key` and set
+ * `apiBase: ""` -- the widget then reads /api/flow directly (same endpoint
+ * the terminal itself uses, no auth) instead of the public, key-gated
+ * /api/embed/flow. External embedders keep passing a real key and are
+ * unaffected.
  *
  * Ported from the Flux panel in index.html (gexdash terminal) -- v1 scope is
  * the PROJECTION only (no historique: that needs a second live data feed,
@@ -151,18 +158,18 @@ const CUR_FONT = "11px IBM Plex Mono, monospace";
 class TheHubFluxWidget{
   constructor(el, opts){
     opts = opts || {};
-    if (!opts.key) throw new Error("TheHubFluxWidget: 'key' option is required");
     this.el = typeof el === "string" ? document.getElementById(el) : el;
     if (!this.el) throw new Error("TheHubFluxWidget: target element not found");
 
     this.opts = {
-      key: opts.key,
-      apiBase: opts.apiBase || API_BASE_DEFAULT,
+      key: opts.key || null,
+      apiBase: opts.apiBase != null ? opts.apiBase : API_BASE_DEFAULT,
       target: opts.target || "NQ",
       mode: opts.mode || "gamma",
       lang: opts.lang === "fr" ? "fr" : "en",
       height: opts.height || 400,
       pollMs: opts.pollMs || POLL_MS_DEFAULT,
+      showBadge: opts.showBadge !== false,
     };
 
     this.state = {
@@ -216,7 +223,7 @@ class TheHubFluxWidget{
             <circle cx="30" cy="30" r="26" fill="none" stroke="#F0B90B" stroke-width="3"
                     stroke-linecap="round" stroke-dasharray="42 200"/>
           </svg>
-          <img class="loader-mark" src="${API_BASE_DEFAULT}/thehub-mark.png" alt="" aria-hidden="true">
+          <img class="loader-mark" src="${this.opts.apiBase}/thehub-mark.png" alt="" aria-hidden="true">
         </div>
       </div>
       <a class="badge" href="${API_BASE_DEFAULT}/" target="_blank" rel="noopener"></a>
@@ -230,6 +237,7 @@ class TheHubFluxWidget{
       modeBtns: [...root.querySelectorAll(".modes button")],
     };
     this.dom.badge.textContent = this._loc().badge;
+    this.dom.badge.hidden = !this.opts.showBadge;
     this.dom.modeBtns.forEach(b => b.classList.toggle("on", b.dataset.m === this.opts.mode));
 
     this.state.resizeObs = new ResizeObserver(() => this.redrawAll());
@@ -286,8 +294,10 @@ class TheHubFluxWidget{
     this.state.status = {kind: "loading"};
     this._renderNote();
     try{
-      const url = `${this.opts.apiBase}/api/embed/flow?target=${encodeURIComponent(tgt)}`
-        + `&key=${encodeURIComponent(this.opts.key)}`;
+      const url = this.opts.key
+        ? `${this.opts.apiBase}/api/embed/flow?target=${encodeURIComponent(tgt)}`
+          + `&key=${encodeURIComponent(this.opts.key)}`
+        : `${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}`;
       const r = await fetch(url);
       if (this.state.destroyed || tgt !== this.opts.target) return;
       if (r.status === 401 || r.status === 403){

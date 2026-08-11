@@ -12,6 +12,7 @@
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/ui.js"></script>
 <script src="/loader.js"></script>
+<script src="/widget/flux-widget.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
@@ -109,7 +110,7 @@
     text-align:center; white-space:nowrap;
     transition:color .12s ease, border-color .12s ease, background .12s ease;
   }
-  #ivChips .chip{flex-basis:calc(50% - 3px)}
+  #ivChips .chip{flex-basis:calc(33.333% - 4px)}
   .chip:hover{color:var(--text); border-color:var(--line-strong)}
   .chip.on{
     color:var(--gold); border-color:rgba(240,185,11,.5);
@@ -255,6 +256,14 @@
   .hmt tr.live td.k{color:var(--gold); font-weight:600}
   .hmt tr.live{outline:1px solid rgba(240,185,11,.5); outline-offset:-1px}
   .hmt .cell{display:block; padding:2px 4px; border-radius:1px}
+  /* Carte Flux : le widget public (widget/flux-widget.js) a son propre
+     cadre/badge pensés pour un site tiers -- ici on le fond dans le chrome
+     de la carte (bordure déjà posée par .card, pas de double-cadre) et on
+     laisse son wrap (canvas) suivre la hauteur réelle de la carte au lieu
+     du px figé passé à la construction, pour rester redimensionnable comme
+     les autres cartes. */
+  .card .thub-flux{height:100%; display:flex; flex-direction:column; border:0; background:transparent}
+  .card .thub-flux .wrap{flex:1 1 auto; height:auto !important; min-height:0}
   .card .box{height:calc(100% - 37px); position:relative}
   body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
   body.editing .card .head{cursor:grab}
@@ -423,6 +432,7 @@
           <button type="button" class="chip" data-v="5m">5m</button>
           <button type="button" class="chip" data-v="15m">15m</button>
           <button type="button" class="chip" data-v="heat">▦ Heatmap</button>
+          <button type="button" class="chip" data-v="flux">Γ Flux</button>
         </div>
       </div>
       <div class="pop-sec" id="panelSec" hidden>
@@ -1070,6 +1080,25 @@ function hmFmt(v){
   if (a >= 1e3) return `${s}${(a/1e3).toFixed(0)}k`;
   return a > 0 ? `${s}${a.toFixed(0)}` : "";
 }
+/* Carte Flux : délègue entièrement au widget public (widget/flux-widget.js,
+   cf. docs/BRIEF-flux.md) plutôt qu'au flux-panel.js du terminal -- celui-ci
+   est un singleton à globals FLUX_* pensé pour une seule instance par page,
+   incompatible avec plusieurs cartes Flux simultanées sur le dashboard. Le
+   widget, lui, porte son état par instance (this.state/this.gfx/this.dom) et
+   s'y prête nativement. apiBase:"" + pas de clé -> lit /api/flow en direct
+   (même origine, même route que le terminal, aucune auth requise côté
+   Flux), au lieu du chemin public /api/embed/flow réservé aux sites tiers. */
+function mountFlux(cfg, host){
+  const box = host.querySelector(".box");
+  const w = new TheHubFluxWidget(box, {
+    target: cfg.t, mode: cfg.fluxMode || "gamma", lang: LANG,
+    apiBase: "", showBadge: false, height: 240,
+  });
+  const setMode0 = w.setMode.bind(w);
+  w.setMode = m => { setMode0(m); cfg.fluxMode = m; saveCards(); };
+  host._fluxWidget = w;
+}
+
 async function mountHeatCard(cfg, host){
   const box = host.querySelector(".hmbox");
   const draw = async () => {
@@ -1197,6 +1226,7 @@ function layoutCard(card, cfg){
    cartes naissaient en 6x4, d'où les grands espaces vides. */
 const CARD_SIZE = {
   heat: {w: 5, h: 6},
+  flux: {w: 6, h: 5},
   feed: {w: 4, h: 7},
   news: {w: 4, h: 7},
   eco:  {w: 4, h: 7},
@@ -1220,6 +1250,7 @@ function render(){
     if (el._anim) cancelAnimationFrame(el._anim);
     if (el._geoRaf) cancelAnimationFrame(el._geoRaf);
     try{ el._chart && el._chart.remove(); }catch(_){}
+    try{ el._fluxWidget && el._fluxWidget.destroy(); }catch(_){}
   }
   board.innerHTML = "";
   $("empty").hidden = CARDS.length > 0;
@@ -1272,6 +1303,21 @@ function render(){
       layoutCard(card, cfg);
       wireEdit(card, cfg);
       mountHeatCard(cfg, card);
+      return;
+    }
+    if (cfg.iv === "flux"){
+      card.innerHTML = `<div class="head"><span class="t">${cfg.t} · Γ Flux</span>
+        <span class="n"></span><span class="gh"></span>
+        <button class="rm" title="Retirer">✕</button></div>
+        <div class="box"></div>`;
+      card.querySelector(".rm").onclick = () => {
+        try{ card._fluxWidget && card._fluxWidget.destroy(); }catch(_){}
+        CARDS.splice(idx, 1); saveCards(); render();
+      };
+      board.appendChild(card);
+      layoutCard(card, cfg);
+      wireEdit(card, cfg);
+      mountFlux(cfg, card);
       return;
     }
     card.innerHTML = `<div class="head"><span class="t">${cfg.t} · ${cfg.iv}</span>
