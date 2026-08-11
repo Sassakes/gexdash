@@ -26,16 +26,18 @@
  * Ported from the Flux panel in index.html (gexdash terminal). Default scope
  * is the PROJECTION only, for external embedders (small payload, no extra
  * fetches). Pass `advanced: true` (first-party pages only, e.g. gexdash's
- * own /dash) to also pull in CW/PW/Flip levels, strike markers, the session
- * "so far" history and the compression/acceleration/derive/divergence
- * synthesis panel -- everything flux-panel.js (the terminal's own copy)
- * shows, minus the realized-price overlay line (needs a companion candle
- * chart the dashboard card doesn't have). All the extra data (levels.json,
- * /api/flow?hist=1) is same-origin and free of the public embed endpoint's
- * constraints, so this only makes sense together with an omitted `key`.
- * Every instance owns its state (this.state/this.gfx/this.dom) instead of
- * the module-level FLUX_* globals index.html uses, since a host page may
- * embed more than one widget at once.
+ * own /dash) to also pull in CW/PW/Flip levels, strike markers (both with
+ * on/off toggle buttons, `strikesOn`/`histOn` opts, `w.setStrikesOn()`/
+ * `w.setHistOn()`), the session "so far" history and a compact
+ * compression/acceleration/derive/divergence synthesis panel (verdict +
+ * gamma/vanna/charm reading only -- no call/put volume table, kept out on
+ * purpose). Skips the realized-price overlay line flux-panel.js draws
+ * (needs a companion candle chart the dashboard card doesn't have). All the
+ * extra data (levels.json, /api/flow?hist=1) is same-origin and free of the
+ * public embed endpoint's constraints, so this only makes sense together
+ * with an omitted `key`. Every instance owns its state (this.state/this.gfx/
+ * this.dom) instead of the module-level FLUX_* globals index.html uses,
+ * since a host page may embed more than one widget at once.
  */
 (function(){
 "use strict";
@@ -62,11 +64,9 @@ const LOCALES = {
        fs_vanna_pos: "supports if IV ↑", fs_vanna_neg: "destabilizes if IV ↑", fs_vanna_flat: "flat",
        fs_charm_pos: "bullish drift", fs_charm_neg: "bearish drift", fs_charm_flat: "flat",
        fs_unitGamma: "/1%", fs_unitVanna: "/pt IV", fs_unitCharm: "/day",
-       fvBiasLbl: "Today's volume bias", fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
-       fvCaveat: "Volume doesn't say direction: a large volume can be client buying or selling, with "
-         + "opposite implications for dealers. An attention-zone indicator, not a directional one.",
-       fvEmpty: "No exploitable volume yet",
-       fvRatioHi: "vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
+       fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
+       fluxStrikesChip: "Strikes", fluxStrikesTip: "Today's active strike markers (volume/OI) on the gradient",
+       fluxHistChip: "History", fluxHistTip: "Dealer gamma exposure over the elapsed part of the session",
        pts: "pts"},
   fr: {now: "maint.", close: "clôture", loading: "Chargement…", wait: "En attente du prochain calcul",
        ready: ts => "Calculé " + ts, error: m => "Indisponible (" + m + ")", price: "Prix",
@@ -78,11 +78,9 @@ const LOCALES = {
        fs_vanna_pos: "soutien si IV ↑", fs_vanna_neg: "fragilise si IV ↑", fs_vanna_flat: "neutre",
        fs_charm_pos: "dérive haussière", fs_charm_neg: "dérive baissière", fs_charm_flat: "neutre",
        fs_unitGamma: "/1%", fs_unitVanna: "/pt IV", fs_unitCharm: "/jour",
-       fvBiasLbl: "Biais volume du jour", fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
-       fvCaveat: "Le volume ne dit pas le sens : un gros volume peut être de l'achat ou de la vente côté "
-         + "client, avec des implications opposées pour les dealers. Indicateur de zone d'attention, pas de direction.",
-       fvEmpty: "Pas de volume exploitable pour l'instant",
-       fvRatioHi: "vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
+       fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
+       fluxStrikesChip: "Strikes", fluxStrikesTip: "Repères des strikes actifs (volume/OI du jour) sur le dégradé",
+       fluxHistChip: "Historique", fluxHistTip: "Exposition dealer réelle sur la portion de séance déjà écoulée",
        pts: "pts"},
 };
 
@@ -104,6 +102,13 @@ function injectCss(){
   padding:5px 10px;cursor:pointer;letter-spacing:.02em}
 .thub-flux .modes button.on{background:#F0B90B;color:#0A0A0C;font-weight:600}
 .thub-flux .modes button:not(.on):hover{color:#ECEAE4}
+.thub-flux .tb2{display:flex;gap:6px;padding:6px 12px;border-bottom:1px solid #212127}
+.thub-flux .tgl{display:inline-flex;align-items:center;gap:5px;background:none;border:1px solid #212127;
+  color:#5C5C66;font:inherit;font-size:10px;padding:4px 9px;cursor:pointer;letter-spacing:.02em}
+.thub-flux .tgl .led{width:5px;height:5px;border-radius:50%;background:#33333B;flex:none}
+.thub-flux .tgl:hover{color:#ECEAE4}
+.thub-flux .tgl.on{color:#F0B90B;border-color:rgba(240,185,11,.5)}
+.thub-flux .tgl.on .led{background:#F0B90B;box-shadow:0 0 5px rgba(240,185,11,.5)}
 .thub-flux .wrap{position:relative;width:100%}
 .thub-flux .wrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .thub-flux .wrap canvas.bg,.thub-flux .wrap canvas.main{pointer-events:none}
@@ -119,8 +124,8 @@ function injectCss(){
 .thub-flux .loader-ring{width:52px;height:52px;animation:thub-flux-spin 1.1s linear infinite}
 .thub-flux .loader-mark{width:34px;height:34px;object-fit:contain;border-radius:50%}
 @keyframes thub-flux-spin{to{transform:rotate(360deg)}}
-.thub-flux .synth,.thub-flux .volctx{padding:10px 12px;border-top:1px solid #212127;font-size:11px}
-.thub-flux .synth[hidden],.thub-flux .volctx[hidden]{display:none}
+.thub-flux .synth{padding:10px 12px;border-top:1px solid #212127;font-size:11px}
+.thub-flux .synth[hidden]{display:none}
 .thub-flux .verdict{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
 .thub-flux .verdict .vlab{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#5C5C66}
 .thub-flux .verdict .vval{font-weight:700;font-size:12.5px;letter-spacing:.03em}
@@ -136,24 +141,6 @@ function injectCss(){
 .thub-flux .fsrow.neg .fsval{color:#EF5350}
 .thub-flux .fsrow.flat .fsval{color:#8A8A94}
 .thub-flux .fssens{color:#8A8A94;font-size:10px}
-.thub-flux .fvbias{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-.thub-flux .fvbias .fvlab{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#5C5C66}
-.thub-flux .fvbias .fvval{font-weight:700}
-.thub-flux .fvbias .fvval.call{color:#26A69A}
-.thub-flux .fvbias .fvval.put{color:#EF5350}
-.thub-flux .fvbias .fvd{color:#5C5C66;font-size:10px}
-.thub-flux .fvcols{display:flex;gap:16px;flex-wrap:wrap}
-.thub-flux .fvcol{flex:1 1 180px;min-width:0}
-.thub-flux .fvcol .fvhead{font-size:9px;letter-spacing:.13em;text-transform:uppercase;margin-bottom:4px}
-.thub-flux .fvcol.call .fvhead{color:#26A69A}
-.thub-flux .fvcol.put .fvhead{color:#EF5350}
-.thub-flux .fvrow{font-size:10.5px;padding:1.5px 0;color:#8A8A94}
-.thub-flux .fvrow .fvk{color:#ECEAE4;font-weight:600}
-.thub-flux .fvrow .fvd{color:#5C5C66}
-.thub-flux .fvrow .fvr{padding:0 4px;border-radius:3px;margin-left:2px}
-.thub-flux .fvrow.hi{color:#ECEAE4}
-.thub-flux .fvrow.hi .fvr{background:rgba(240,185,11,.12);color:#F0B90B;font-weight:700}
-.thub-flux .fvempty{color:#5C5C66;font-size:10.5px}
 `;
   const style = document.createElement("style");
   style.textContent = css;
@@ -353,6 +340,7 @@ class TheHubFluxWidget{
       status: {kind: "loading"}, poll: null, pollArmed: false, watchWired: false, watch: null,
       destroyed: false, fatalError: false, everLoaded: false, resizeObs: null, boundMouseUp: null,
       levels: null, histData: null,
+      strikesOn: opts.strikesOn !== false, histOn: opts.histOn !== false,
     };
     this.gfx = {off: null, stages: [], gradSrc: null, gradMeta: null, gradKey: null};
 
@@ -360,6 +348,7 @@ class TheHubFluxWidget{
     this._buildDom();
     this._bindInteraction();
     this._bindModeButtons();
+    if (this.opts.advanced) this._bindToggleButtons();
     this._renderNote();
 
     this.load();
@@ -389,6 +378,12 @@ class TheHubFluxWidget{
           <button type="button" data-m="charm">${L.modes.charm}</button>
         </div>
       </div>
+      ${this.opts.advanced ? `<div class="tb2">
+        <button type="button" class="tgl${this.state.strikesOn ? " on" : ""}" data-tgl="strikes"
+          title="${L.fluxStrikesTip}"><i class="led"></i>${L.fluxStrikesChip}</button>
+        <button type="button" class="tgl${this.state.histOn ? " on" : ""}" data-tgl="hist"
+          title="${L.fluxHistTip}"><i class="led"></i>${L.fluxHistChip}</button>
+      </div>` : ""}
       <div class="wrap" style="height:${this.opts.height}px">
         <canvas class="bg"></canvas>
         <canvas class="main"></canvas>
@@ -402,7 +397,7 @@ class TheHubFluxWidget{
           <img class="loader-mark" src="${this.opts.apiBase}/thehub-mark.png" alt="" aria-hidden="true">
         </div>
       </div>
-      ${this.opts.advanced ? '<div class="synth" hidden></div><div class="volctx" hidden></div>' : ""}
+      ${this.opts.advanced ? '<div class="synth" hidden></div>' : ""}
       <a class="badge" href="${API_BASE_DEFAULT}/" target="_blank" rel="noopener"></a>
     `;
     this.el.appendChild(root);
@@ -412,7 +407,8 @@ class TheHubFluxWidget{
       cvCur: root.querySelector("canvas.cur"), badge: root.querySelector(".badge"),
       loader: root.querySelector(".loader"),
       modeBtns: [...root.querySelectorAll(".modes button")],
-      synth: root.querySelector(".synth"), volctx: root.querySelector(".volctx"),
+      synth: root.querySelector(".synth"),
+      tglBtns: [...root.querySelectorAll(".tgl")],
     };
     this.dom.badge.textContent = this._loc().badge;
     this.dom.badge.hidden = !this.opts.showBadge;
@@ -424,6 +420,13 @@ class TheHubFluxWidget{
 
   _bindModeButtons(){
     this.dom.modeBtns.forEach(b => b.addEventListener("click", () => this.setMode(b.dataset.m)));
+  }
+
+  _bindToggleButtons(){
+    this.dom.tglBtns.forEach(b => b.addEventListener("click", () => {
+      if (b.dataset.tgl === "strikes") this.setStrikesOn(!this.state.strikesOn);
+      else this.setHistOn(!this.state.histOn);
+    }));
   }
 
   _renderNote(){
@@ -465,46 +468,6 @@ class TheHubFluxWidget{
       `</div>`;
   }
 
-  // ───── mode avancé : contexte volume/OI (call/put, mêmes strikes que les
-  // repères tracés sur le dégradé) ─────
-  renderVolCtx(){
-    const box = this.dom.volctx;
-    if (!box) return;
-    const vc = this.state.data && this.state.data.volume_context;
-    if (!vc){ box.hidden = true; box.innerHTML = ""; return; }
-    box.hidden = false;
-    const L = this._loc();
-    const row = e => {
-      const hi = e.vol_oi_ratio != null && e.vol_oi_ratio > 1;
-      const dist = e.distance == null ? "" :
-        (e.distance >= 0 ? "+" : "") + Math.round(e.distance) + " " + L.pts;
-      return `<div class="fvrow ${hi ? "hi" : ""}" ${hi ? `title="${L.fvRatioHi}"` : ""}>
-        <span class="fvk">${this._fmt(e.strike, 0)}</span>
-        · ${fmtCount(e.volume)} ${L.fvVolUnit}
-        · <span class="fvr">×${e.vol_oi_ratio != null ? e.vol_oi_ratio.toFixed(2) : "—"}</span>
-        · <span class="fvd">${dist}</span>
-      </div>`;
-    };
-    const col = (cls, head, rows) => `<div class="fvcol ${cls}">
-        <div class="fvhead">${head}</div>
-        ${rows.length ? rows.map(row).join("") : `<div class="fvempty">${L.fvEmpty}</div>`}
-      </div>`;
-    const ratio = vc.call_put_ratio;
-    const dom = ratio == null ? null : (ratio >= 1 ? "call" : "put");
-    const biasTxt = ratio == null ? "—" : "×" + (dom === "call" ? ratio : (1 / ratio)).toFixed(2);
-    box.innerHTML =
-      `<div class="fvbias">
-         <span class="fvlab">${L.fvBiasLbl}</span>
-         <span class="fvval ${dom || ""}">${dom ? L[dom === "call" ? "fvCalls" : "fvPuts"] : "—"}</span>
-         <span class="fvd">(${biasTxt} · ${fmtCount(vc.call_vol)} / ${fmtCount(vc.put_vol)})</span>
-         <span class="fvd" title="${L.fvCaveat}" style="cursor:help">ⓘ</span>
-       </div>
-       <div class="fvcols">` +
-       col("call", L.fvCalls, vc.calls || []) +
-       col("put", L.fvPuts, vc.puts || []) +
-      `</div>`;
-  }
-
   // ───── public API ─────
   setTarget(target){
     if (target === this.opts.target) return;
@@ -519,13 +482,32 @@ class TheHubFluxWidget{
     this.gfx.gradKey = null;
     this.redrawAll();
   }
+  // ───── mode avancé : bascules Strikes/Historique -- les strikes ne
+  // demandent aucun fetch (déjà dans volume_context), l'historique en
+  // déclenche un (skip tant que la bascule est OFF, cf. load()) ; l'éteindre
+  // libère aussi la donnée en cache, comme flux-panel.js. ─────
+  setStrikesOn(on){
+    if (!this.opts.advanced || on === this.state.strikesOn) return;
+    this.state.strikesOn = on;
+    const b = this.dom.tglBtns.find(x => x.dataset.tgl === "strikes");
+    if (b) b.classList.toggle("on", on);
+    this.redrawAll();
+  }
+  setHistOn(on){
+    if (!this.opts.advanced || on === this.state.histOn) return;
+    this.state.histOn = on;
+    const b = this.dom.tglBtns.find(x => x.dataset.tgl === "hist");
+    if (b) b.classList.toggle("on", on);
+    if (on) this.load();
+    else { this.state.histData = null; this.redrawAll(); }
+  }
   setLang(lang){
     this.opts.lang = lang === "fr" ? "fr" : "en";
     const L = this._loc();
     this.dom.badge.textContent = L.badge;
     this.dom.modeBtns.forEach(b => { b.textContent = L.modes[b.dataset.m] || b.dataset.m; });
     this._renderNote();
-    if (this.opts.advanced){ this.renderSynth(); this.renderVolCtx(); }
+    if (this.opts.advanced) this.renderSynth();
     this.redrawAll();
   }
   destroy(){
@@ -552,19 +534,25 @@ class TheHubFluxWidget{
         : `${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}`;
       // Niveaux + historique de séance : uniquement en mode avancé (pages
       // même origine), en parallèle de la matrice -- jamais sur le chemin
-      // public /api/embed/flow (cf. commentaire d'en-tête).
+      // public /api/embed/flow (cf. commentaire d'en-tête). L'historique
+      // n'est fetché que si la bascule Historique est active (cf.
+      // setHistOn) -- pas d'appel réseau pour rien quand elle est coupée.
       const extra = this.opts.advanced
         ? Promise.all([
             fetchLevels(this.opts.apiBase, tgt),
-            fetch(`${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}&hist=1`)
-              .then(x => x.json()).catch(() => null),
+            this.state.histOn
+              ? fetch(`${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}&hist=1`)
+                  .then(x => x.json()).catch(() => null)
+              : Promise.resolve(null),
           ])
         : Promise.resolve([null, null]);
       const [r, [levels, hist]] = await Promise.all([fetch(url), extra]);
       if (this.state.destroyed || tgt !== this.opts.target) return;
       if (this.opts.advanced){
         this.state.levels = levels;
-        this.state.histData = (hist && hist.ready) ? {target: tgt, entries: hist.history || []} : null;
+        if (this.state.histOn){
+          this.state.histData = (hist && hist.ready) ? {target: tgt, entries: hist.history || []} : null;
+        }
       }
       if (r.status === 401 || r.status === 403){
         this.state.status = {kind: "error", msg: "invalid key"};
@@ -597,7 +585,7 @@ class TheHubFluxWidget{
       this.state.status = {kind: "error", msg: e.message};
     }
     this._renderNote();
-    if (this.opts.advanced){ this.renderSynth(); this.renderVolCtx(); }
+    if (this.opts.advanced) this.renderSynth();
     this.redrawAll();
     // Le rond de chargement (logo + anneau) ne couvre QUE le tout premier
     // appel -- une fois qu'on a une réponse (prête, en attente ou en erreur,
@@ -705,8 +693,8 @@ class TheHubFluxWidget{
   }
 
   // ───── mode avancé : CW/PW/Flip (levels.json, en cache par target) et
-  // strikes (déjà dans volume_context, cf. renderVolCtx) fusionnés en une
-  // liste de repères tagués -- même schéma que flux-panel.js. ─────
+  // strikes (déjà dans volume_context) fusionnés en une liste de repères
+  // tagués -- même schéma que flux-panel.js. ─────
   levelMarkers(){
     const lv = this.state.levels;
     if (!lv || !lv.levels) return [];
@@ -764,7 +752,7 @@ class TheHubFluxWidget{
         markers.push({price: m.price, tier: 1, text: m.label, full: m.full, color: m.color,
                       textColor: m.color, dash: [2, 3], lw: 1, font: LVL_FONT});
       });
-      this.strikeMarkers().forEach(m => {
+      if (this.state.strikesOn) this.strikeMarkers().forEach(m => {
         if (m.strike == null || m.strike < fullMin || m.strike > fullMax) return;
         const ratio = m.vol_oi_ratio;
         const k = Math.max(0, Math.min(1, (ratio || 0) / 2));
@@ -779,7 +767,7 @@ class TheHubFluxWidget{
           dash: m.isCall ? [] : [3, 2], lw: 1 + 1.4 * k, font: STRIKE_FONT,
         });
       });
-      hist = this.sessionElapsed();
+      if (this.state.histOn) hist = this.sessionElapsed();
     }
 
     const mctx = this.dom.cvMain.getContext("2d");

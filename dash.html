@@ -263,7 +263,7 @@
      du px figé passé à la construction, pour rester redimensionnable comme
      les autres cartes. */
   .card .thub-flux{height:100%; display:flex; flex-direction:column; border:0; background:transparent; overflow-y:auto}
-  .card .thub-flux .tb,.card .thub-flux .synth,.card .thub-flux .volctx{flex:none}
+  .card .thub-flux .tb,.card .thub-flux .tb2,.card .thub-flux .synth{flex:none}
   .card .thub-flux .wrap{flex:1 1 auto; height:auto !important; min-height:180px}
   .card .box{height:calc(100% - 37px); position:relative}
   body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
@@ -1090,17 +1090,25 @@ function hmFmt(v){
    (même origine, même route que le terminal, aucune auth requise côté
    Flux), au lieu du chemin public /api/embed/flow réservé aux sites tiers.
    advanced:true (réservé aux pages même origine, cf. widget) déverrouille
-   CW/PW/Flip, strikes, historique de séance et le panneau de synthèse --
-   feature parity avec flux-panel.js hormis la ligne de prix réalisé, qui
-   demanderait un flux de bougies séparé que cette carte n'a pas. */
+   CW/PW/Flip (toujours affichés), strikes et historique de séance (bascules
+   Strikes/Historique, état persisté par carte comme le mode gamma/vanna/
+   charm) et un panneau de synthèse volontairement minimal -- verdict +
+   lecture gamma/vanna/charm, pas le détail calls/puts. Feature parity avec
+   flux-panel.js hormis la ligne de prix réalisé, qui demanderait un flux de
+   bougies séparé que cette carte n'a pas. */
 function mountFlux(cfg, host){
   const box = host.querySelector(".box");
   const w = new TheHubFluxWidget(box, {
     target: cfg.t, mode: cfg.fluxMode || "gamma", lang: LANG,
     apiBase: "", showBadge: false, height: 240, advanced: true,
+    strikesOn: cfg.strikesOn !== false, histOn: cfg.histOn !== false,
   });
   const setMode0 = w.setMode.bind(w);
   w.setMode = m => { setMode0(m); cfg.fluxMode = m; saveCards(); };
+  const setStrikes0 = w.setStrikesOn.bind(w);
+  w.setStrikesOn = on => { setStrikes0(on); cfg.strikesOn = on; saveCards(); };
+  const setHist0 = w.setHistOn.bind(w);
+  w.setHistOn = on => { setHist0(on); cfg.histOn = on; saveCards(); };
   host._fluxWidget = w;
 }
 
@@ -1231,7 +1239,7 @@ function layoutCard(card, cfg){
    cartes naissaient en 6x4, d'où les grands espaces vides. */
 const CARD_SIZE = {
   heat: {w: 5, h: 6},
-  flux: {w: 7, h: 8},
+  flux: {w: 7, h: 7},
   feed: {w: 4, h: 7},
   news: {w: 4, h: 7},
   eco:  {w: 4, h: 7},
