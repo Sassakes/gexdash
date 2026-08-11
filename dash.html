@@ -262,8 +262,9 @@
      laisse son wrap (canvas) suivre la hauteur réelle de la carte au lieu
      du px figé passé à la construction, pour rester redimensionnable comme
      les autres cartes. */
-  .card .thub-flux{height:100%; display:flex; flex-direction:column; border:0; background:transparent}
-  .card .thub-flux .wrap{flex:1 1 auto; height:auto !important; min-height:0}
+  .card .thub-flux{height:100%; display:flex; flex-direction:column; border:0; background:transparent; overflow-y:auto}
+  .card .thub-flux .tb,.card .thub-flux .synth,.card .thub-flux .volctx{flex:none}
+  .card .thub-flux .wrap{flex:1 1 auto; height:auto !important; min-height:180px}
   .card .box{height:calc(100% - 37px); position:relative}
   body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
   body.editing .card .head{cursor:grab}
@@ -1087,12 +1088,16 @@ function hmFmt(v){
    widget, lui, porte son état par instance (this.state/this.gfx/this.dom) et
    s'y prête nativement. apiBase:"" + pas de clé -> lit /api/flow en direct
    (même origine, même route que le terminal, aucune auth requise côté
-   Flux), au lieu du chemin public /api/embed/flow réservé aux sites tiers. */
+   Flux), au lieu du chemin public /api/embed/flow réservé aux sites tiers.
+   advanced:true (réservé aux pages même origine, cf. widget) déverrouille
+   CW/PW/Flip, strikes, historique de séance et le panneau de synthèse --
+   feature parity avec flux-panel.js hormis la ligne de prix réalisé, qui
+   demanderait un flux de bougies séparé que cette carte n'a pas. */
 function mountFlux(cfg, host){
   const box = host.querySelector(".box");
   const w = new TheHubFluxWidget(box, {
     target: cfg.t, mode: cfg.fluxMode || "gamma", lang: LANG,
-    apiBase: "", showBadge: false, height: 240,
+    apiBase: "", showBadge: false, height: 240, advanced: true,
   });
   const setMode0 = w.setMode.bind(w);
   w.setMode = m => { setMode0(m); cfg.fluxMode = m; saveCards(); };
@@ -1226,7 +1231,7 @@ function layoutCard(card, cfg){
    cartes naissaient en 6x4, d'où les grands espaces vides. */
 const CARD_SIZE = {
   heat: {w: 5, h: 6},
-  flux: {w: 6, h: 5},
+  flux: {w: 7, h: 8},
   feed: {w: 4, h: 7},
   news: {w: 4, h: 7},
   eco:  {w: 4, h: 7},

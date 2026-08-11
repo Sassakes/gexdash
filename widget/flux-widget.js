@@ -23,11 +23,16 @@
  * /api/embed/flow. External embedders keep passing a real key and are
  * unaffected.
  *
- * Ported from the Flux panel in index.html (gexdash terminal) -- v1 scope is
- * the PROJECTION only (no historique: that needs a second live data feed,
- * candle bars, that the public embed endpoint does not expose). No CW/PW/
- * Flip levels, no strike markers, no synthesis panel -- those pull in data
- * sources and layout complexity out of scope for a first embeddable cut.
+ * Ported from the Flux panel in index.html (gexdash terminal). Default scope
+ * is the PROJECTION only, for external embedders (small payload, no extra
+ * fetches). Pass `advanced: true` (first-party pages only, e.g. gexdash's
+ * own /dash) to also pull in CW/PW/Flip levels, strike markers, the session
+ * "so far" history and the compression/acceleration/derive/divergence
+ * synthesis panel -- everything flux-panel.js (the terminal's own copy)
+ * shows, minus the realized-price overlay line (needs a companion candle
+ * chart the dashboard card doesn't have). All the extra data (levels.json,
+ * /api/flow?hist=1) is same-origin and free of the public embed endpoint's
+ * constraints, so this only makes sense together with an omitted `key`.
  * Every instance owns its state (this.state/this.gfx/this.dom) instead of
  * the module-level FLUX_* globals index.html uses, since a host page may
  * embed more than one widget at once.
@@ -49,10 +54,36 @@ const C = {text: "#ECEAE4", faint: "#5C5C66", teal: "#26A69A", red: "#EF5350", g
 const LOCALES = {
   en: {now: "now", close: "close", loading: "Loading…", wait: "Waiting for the next update",
        ready: ts => "Updated " + ts, error: m => "Unavailable (" + m + ")", price: "Price",
-       modes: {gamma: "Gamma", vanna: "Vanna", charm: "Charm"}, badge: "Powered by TheHub"},
+       modes: {gamma: "Gamma", vanna: "Vanna", charm: "Charm"}, badge: "Powered by TheHub",
+       fsVerdict: "Flux synthesis", fsV_compression: "COMPRESSION", fsV_acceleration: "ACCELERATION",
+       fsV_derive: "DRIFT", fsV_divergence: "DIVERGENCE",
+       fs_gamma: "Gamma", fs_vanna: "Vanna", fs_charm: "Charm",
+       fs_gamma_pos: "dampens", fs_gamma_neg: "amplifies", fs_gamma_flat: "flat",
+       fs_vanna_pos: "supports if IV ↑", fs_vanna_neg: "destabilizes if IV ↑", fs_vanna_flat: "flat",
+       fs_charm_pos: "bullish drift", fs_charm_neg: "bearish drift", fs_charm_flat: "flat",
+       fs_unitGamma: "/1%", fs_unitVanna: "/pt IV", fs_unitCharm: "/day",
+       fvBiasLbl: "Today's volume bias", fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
+       fvCaveat: "Volume doesn't say direction: a large volume can be client buying or selling, with "
+         + "opposite implications for dealers. An attention-zone indicator, not a directional one.",
+       fvEmpty: "No exploitable volume yet",
+       fvRatioHi: "vol/OI > 1 — today's activity already exceeds all accumulated OI on this strike",
+       pts: "pts"},
   fr: {now: "maint.", close: "clôture", loading: "Chargement…", wait: "En attente du prochain calcul",
        ready: ts => "Calculé " + ts, error: m => "Indisponible (" + m + ")", price: "Prix",
-       modes: {gamma: "Gamma", vanna: "Vanna", charm: "Charm"}, badge: "Propulsé par TheHub"},
+       modes: {gamma: "Gamma", vanna: "Vanna", charm: "Charm"}, badge: "Propulsé par TheHub",
+       fsVerdict: "Synthèse flux", fsV_compression: "COMPRESSION", fsV_acceleration: "ACCÉLÉRATION",
+       fsV_derive: "DÉRIVE", fsV_divergence: "DIVERGENCE",
+       fs_gamma: "Gamma", fs_vanna: "Vanna", fs_charm: "Charm",
+       fs_gamma_pos: "amortit", fs_gamma_neg: "amplifie", fs_gamma_flat: "neutre",
+       fs_vanna_pos: "soutien si IV ↑", fs_vanna_neg: "fragilise si IV ↑", fs_vanna_flat: "neutre",
+       fs_charm_pos: "dérive haussière", fs_charm_neg: "dérive baissière", fs_charm_flat: "neutre",
+       fs_unitGamma: "/1%", fs_unitVanna: "/pt IV", fs_unitCharm: "/jour",
+       fvBiasLbl: "Biais volume du jour", fvCalls: "CALLS", fvPuts: "PUTS", fvVolUnit: "vol", fvOiLbl: "OI",
+       fvCaveat: "Le volume ne dit pas le sens : un gros volume peut être de l'achat ou de la vente côté "
+         + "client, avec des implications opposées pour les dealers. Indicateur de zone d'attention, pas de direction.",
+       fvEmpty: "Pas de volume exploitable pour l'instant",
+       fvRatioHi: "vol/OI > 1 — l'activité du jour dépasse tout l'encours accumulé sur ce strike",
+       pts: "pts"},
 };
 
 let _cssInjected = false;
@@ -88,6 +119,41 @@ function injectCss(){
 .thub-flux .loader-ring{width:52px;height:52px;animation:thub-flux-spin 1.1s linear infinite}
 .thub-flux .loader-mark{width:34px;height:34px;object-fit:contain;border-radius:50%}
 @keyframes thub-flux-spin{to{transform:rotate(360deg)}}
+.thub-flux .synth,.thub-flux .volctx{padding:10px 12px;border-top:1px solid #212127;font-size:11px}
+.thub-flux .synth[hidden],.thub-flux .volctx[hidden]{display:none}
+.thub-flux .verdict{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
+.thub-flux .verdict .vlab{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#5C5C66}
+.thub-flux .verdict .vval{font-weight:700;font-size:12.5px;letter-spacing:.03em}
+.thub-flux .verdict.cmp .vval{color:#26A69A}
+.thub-flux .verdict.acc .vval{color:#EF5350}
+.thub-flux .verdict.drf .vval{color:#F0B90B}
+.thub-flux .verdict.dvg .vval{color:#8A8A94}
+.thub-flux .fsrows{display:flex;gap:16px;flex-wrap:wrap}
+.thub-flux .fsrow{display:flex;align-items:baseline;gap:6px;font-size:11px}
+.thub-flux .fsk{color:#5C5C66;letter-spacing:.06em;text-transform:uppercase;font-size:9.5px}
+.thub-flux .fsval{font-weight:600}
+.thub-flux .fsrow.pos .fsval{color:#26A69A}
+.thub-flux .fsrow.neg .fsval{color:#EF5350}
+.thub-flux .fsrow.flat .fsval{color:#8A8A94}
+.thub-flux .fssens{color:#8A8A94;font-size:10px}
+.thub-flux .fvbias{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.thub-flux .fvbias .fvlab{font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#5C5C66}
+.thub-flux .fvbias .fvval{font-weight:700}
+.thub-flux .fvbias .fvval.call{color:#26A69A}
+.thub-flux .fvbias .fvval.put{color:#EF5350}
+.thub-flux .fvbias .fvd{color:#5C5C66;font-size:10px}
+.thub-flux .fvcols{display:flex;gap:16px;flex-wrap:wrap}
+.thub-flux .fvcol{flex:1 1 180px;min-width:0}
+.thub-flux .fvcol .fvhead{font-size:9px;letter-spacing:.13em;text-transform:uppercase;margin-bottom:4px}
+.thub-flux .fvcol.call .fvhead{color:#26A69A}
+.thub-flux .fvcol.put .fvhead{color:#EF5350}
+.thub-flux .fvrow{font-size:10.5px;padding:1.5px 0;color:#8A8A94}
+.thub-flux .fvrow .fvk{color:#ECEAE4;font-weight:600}
+.thub-flux .fvrow .fvd{color:#5C5C66}
+.thub-flux .fvrow .fvr{padding:0 4px;border-radius:3px;margin-left:2px}
+.thub-flux .fvrow.hi{color:#ECEAE4}
+.thub-flux .fvrow.hi .fvr{background:rgba(240,185,11,.12);color:#F0B90B;font-weight:700}
+.thub-flux .fvempty{color:#5C5C66;font-size:10.5px}
 `;
   const style = document.createElement("style");
   style.textContent = css;
@@ -118,6 +184,25 @@ function fluxSameShape(a, b){
     && a.hours.length === b.hours.length);
 }
 
+// Repère (niveau ou strike) le plus proche du pointeur : survol direct de
+// son étiquette en marge, sinon proximité verticale (≤6px) avec sa ligne
+// DANS la grille. Le repère de prix courant (tier 0) n'est pas un "niveau"
+// au sens ergonomique -- exclu du survol.
+function hoverMarker(markers, mx, my, inBounds){
+  let hover = null, bestDy = 6;
+  for (const m of (markers || [])){
+    if (m.tier < 1) continue;
+    if (m.shown && mx >= m.boxX && mx <= m.boxX + m.boxW && my >= m.boxY && my <= m.boxY + m.boxH){
+      return m;
+    }
+    if (inBounds){
+      const dy = Math.abs(my - m.y);
+      if (dy <= bestDy){ bestDy = dy; hover = m; }
+    }
+  }
+  return hover;
+}
+
 function fluxLerpMat(from, to, t){
   return to.map((row, hi) => row.map((v, pi) => {
     const v0 = from[hi] ? from[hi][pi] : v;
@@ -133,6 +218,77 @@ function fmtUsd(v){
   if (av >= 1e6) return sign + (av / 1e6).toFixed(1) + " $M";
   if (av >= 1e3) return sign + (av / 1e3).toFixed(1) + " $K";
   return sign + av.toFixed(0) + " $";
+}
+
+// -- comptage brut (pas de $) : volume/OI en nombre de contrats.
+function fmtCount(v){
+  if (v == null) return "—";
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "k";
+  return String(Math.round(v));
+}
+
+// ───── mode avancé (advanced:true) : CW/PW/Flip, strikes, synthèse ─────
+// Mêmes calculs et mêmes seuils que flux-panel.js (docs/BRIEF-flux.md) --
+// gamma reste l'axe primaire (seule grecque validée contre gex_by_strike),
+// vanna/charm ne font que confirmer ou contredire.
+const LEVEL_COLOR = {res: "#26A69A", sup: "#EF5350", flip: "#F0B90B"};
+const LEVEL_KIND_LABEL = {res: "CW", sup: "PW", flip: "Flip"};
+
+function fluxNearestIdx(grid, val){
+  if (!grid || !grid.length || val == null) return -1;
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < grid.length; i++){
+    const dd = Math.abs(grid[i] - val);
+    if (dd < bd){ bd = dd; bi = i; }
+  }
+  return bi;
+}
+function fluxRef95(mat){
+  const vals = [];
+  for (const row of mat) for (const v of row) vals.push(Math.abs(v));
+  vals.sort((a, b) => a - b);
+  return fluxPercentile(vals, 0.95) || 0;
+}
+const NEUTRAL_FRAC = 0.15;   // sous 15% du p95 propre à sa grecque : lu comme plat
+
+// Synthèse au point (maintenant, prix courant) : verdict unique + une lecture
+// par grecque, jamais fondues (unités différentes). Une contradiction nette
+// avec le gamma affiche DIVERGENCE plutôt que d'être lissée.
+function computeSynthesis(d, spot){
+  if (!d || !d.gamma || !d.vanna || !d.charm || !d.price_grid || !d.price_grid.length) return null;
+  const pi = fluxNearestIdx(d.price_grid, spot);
+  if (pi < 0 || !d.gamma[0] || !d.vanna[0] || !d.charm[0]) return null;
+  const g = d.gamma[0][pi], v = d.vanna[0][pi], c = d.charm[0][pi];
+  const refG = fluxRef95(d.gamma), refV = fluxRef95(d.vanna), refC = fluxRef95(d.charm);
+  const dirOf = (val, ref) => ref <= 0 ? 0 : (Math.abs(val) < NEUTRAL_FRAC * ref ? 0 : Math.sign(val));
+  const gDir = dirOf(g, refG), vDir = dirOf(v, refV), cDir = dirOf(c, refC);
+
+  let verdict;
+  if (gDir > 0){
+    verdict = ((cDir < 0 && Math.abs(c) > 0.5 * refC) || (vDir < 0 && Math.abs(v) > 0.5 * refV))
+      ? "divergence" : "compression";
+  } else if (gDir < 0){
+    verdict = ((cDir > 0 && Math.abs(c) > 0.5 * refC) || (vDir > 0 && Math.abs(v) > 0.5 * refV))
+      ? "divergence" : "acceleration";
+  } else {
+    verdict = (cDir !== 0 || vDir !== 0) ? "derive" : "compression";
+  }
+  return {verdict, gamma: {val: g, dir: gDir}, vanna: {val: v, dir: vDir}, charm: {val: c, dir: cDir}};
+}
+const VERDICT_CLASS = {compression: "cmp", acceleration: "acc", derive: "drf", divergence: "dvg"};
+
+// levels.json partagé entre instances (mêmes niveaux quel que soit le
+// widget qui les demande) -- clé apiBase+target, jamais réécrit.
+const LEVELS_CACHE = {};
+async function fetchLevels(apiBase, target){
+  const key = apiBase + "|" + target;
+  if (LEVELS_CACHE[key] !== undefined) return LEVELS_CACHE[key];
+  try{
+    const d = await (await fetch(`${apiBase}/levels.json?target=${encodeURIComponent(target)}`)).json();
+    LEVELS_CACHE[key] = d && !d.error ? d : null;
+  }catch(_){ LEVELS_CACHE[key] = null; }
+  return LEVELS_CACHE[key];
 }
 
 // Vrai uniquement pendant la fenêtre où le cron serveur recalcule le flux
@@ -151,9 +307,26 @@ function sessionOpenNow(){
   return mins >= sh * 60 + sm && mins <= eh * 60 + em;
 }
 
+// Epoch UTC réel d'une heure ET donnée, pour le jour courant -- même
+// approche que flux-panel.js (re-mesure l'offset ET à chaque appel via
+// Intl.DateTimeFormat plutôt que de supposer -4h/-5h en dur, correct des
+// deux côtés d'un changement d'heure d'été).
+function etEpochToday(hh, mm){
+  const P = tSec => new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false})
+    .formatToParts(new Date(tSec * 1000)).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const now = Math.floor(Date.now() / 1000);
+  const p = P(now);
+  const guess = Date.UTC(+p.year, +p.month - 1, +p.day, hh, mm, 0) / 1000;
+  const pg = P(guess);
+  const diffMin = (hh * 60 + mm) - ((+pg.hour % 24) * 60 + (+pg.minute));
+  return guess + diffMin * 60;
+}
+
 const LVL_FONT = "11px IBM Plex Mono, monospace";
 const AXIS_FONT = "10px IBM Plex Mono, monospace";
 const CUR_FONT = "11px IBM Plex Mono, monospace";
+const STRIKE_FONT = "9.5px IBM Plex Mono, monospace";
 
 class TheHubFluxWidget{
   constructor(el, opts){
@@ -170,6 +343,7 @@ class TheHubFluxWidget{
       height: opts.height || 400,
       pollMs: opts.pollMs || POLL_MS_DEFAULT,
       showBadge: opts.showBadge !== false,
+      advanced: !!opts.advanced,
     };
 
     this.state = {
@@ -178,6 +352,7 @@ class TheHubFluxWidget{
       size: {w: 0, h: 0, dpr: 0}, padRCur: null, sizeTries: 0,
       status: {kind: "loading"}, poll: null, pollArmed: false, watchWired: false, watch: null,
       destroyed: false, fatalError: false, everLoaded: false, resizeObs: null, boundMouseUp: null,
+      levels: null, histData: null,
     };
     this.gfx = {off: null, stages: [], gradSrc: null, gradMeta: null, gradKey: null};
 
@@ -204,13 +379,14 @@ class TheHubFluxWidget{
   _buildDom(){
     const root = document.createElement("div");
     root.className = "thub-flux";
+    const L = this._loc();
     root.innerHTML = `
       <div class="tb">
         <div class="note"></div>
         <div class="modes">
-          <button type="button" data-m="gamma">Γ</button>
-          <button type="button" data-m="vanna">V</button>
-          <button type="button" data-m="charm">Θ</button>
+          <button type="button" data-m="gamma">${L.modes.gamma}</button>
+          <button type="button" data-m="vanna">${L.modes.vanna}</button>
+          <button type="button" data-m="charm">${L.modes.charm}</button>
         </div>
       </div>
       <div class="wrap" style="height:${this.opts.height}px">
@@ -226,6 +402,7 @@ class TheHubFluxWidget{
           <img class="loader-mark" src="${this.opts.apiBase}/thehub-mark.png" alt="" aria-hidden="true">
         </div>
       </div>
+      ${this.opts.advanced ? '<div class="synth" hidden></div><div class="volctx" hidden></div>' : ""}
       <a class="badge" href="${API_BASE_DEFAULT}/" target="_blank" rel="noopener"></a>
     `;
     this.el.appendChild(root);
@@ -235,6 +412,7 @@ class TheHubFluxWidget{
       cvCur: root.querySelector("canvas.cur"), badge: root.querySelector(".badge"),
       loader: root.querySelector(".loader"),
       modeBtns: [...root.querySelectorAll(".modes button")],
+      synth: root.querySelector(".synth"), volctx: root.querySelector(".volctx"),
     };
     this.dom.badge.textContent = this._loc().badge;
     this.dom.badge.hidden = !this.opts.showBadge;
@@ -256,6 +434,77 @@ class TheHubFluxWidget{
       : L.loading;
   }
 
+  // ───── mode avancé : synthèse (verdict + lecture gamma/vanna/charm) ─────
+  renderSynth(){
+    const box = this.dom.synth;
+    if (!box) return;
+    const d = this.state.data;
+    const spot = d && d.spot;
+    const s = d ? computeSynthesis(d, spot) : null;
+    if (!s){ box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    const L = this._loc();
+    const row = (key, item, unit) => {
+      const tone = item.dir > 0 ? "pos" : item.dir < 0 ? "neg" : "flat";
+      const sensKey = "fs_" + key + "_" + (item.dir > 0 ? "pos" : item.dir < 0 ? "neg" : "flat");
+      return `<div class="fsrow ${tone}">
+        <span class="fsk">${L["fs_" + key]}</span>
+        <span class="fsval">${fmtUsd(item.val)} ${L[unit]}</span>
+        <span class="fssens">${L[sensKey]}</span>
+      </div>`;
+    };
+    box.innerHTML =
+      `<div class="verdict ${VERDICT_CLASS[s.verdict]}">
+         <div class="vlab">${L.fsVerdict}</div>
+         <div class="vval">${L["fsV_" + s.verdict]}</div>
+       </div>
+       <div class="fsrows">` +
+       row("gamma", s.gamma, "fs_unitGamma") +
+       row("vanna", s.vanna, "fs_unitVanna") +
+       row("charm", s.charm, "fs_unitCharm") +
+      `</div>`;
+  }
+
+  // ───── mode avancé : contexte volume/OI (call/put, mêmes strikes que les
+  // repères tracés sur le dégradé) ─────
+  renderVolCtx(){
+    const box = this.dom.volctx;
+    if (!box) return;
+    const vc = this.state.data && this.state.data.volume_context;
+    if (!vc){ box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    const L = this._loc();
+    const row = e => {
+      const hi = e.vol_oi_ratio != null && e.vol_oi_ratio > 1;
+      const dist = e.distance == null ? "" :
+        (e.distance >= 0 ? "+" : "") + Math.round(e.distance) + " " + L.pts;
+      return `<div class="fvrow ${hi ? "hi" : ""}" ${hi ? `title="${L.fvRatioHi}"` : ""}>
+        <span class="fvk">${this._fmt(e.strike, 0)}</span>
+        · ${fmtCount(e.volume)} ${L.fvVolUnit}
+        · <span class="fvr">×${e.vol_oi_ratio != null ? e.vol_oi_ratio.toFixed(2) : "—"}</span>
+        · <span class="fvd">${dist}</span>
+      </div>`;
+    };
+    const col = (cls, head, rows) => `<div class="fvcol ${cls}">
+        <div class="fvhead">${head}</div>
+        ${rows.length ? rows.map(row).join("") : `<div class="fvempty">${L.fvEmpty}</div>`}
+      </div>`;
+    const ratio = vc.call_put_ratio;
+    const dom = ratio == null ? null : (ratio >= 1 ? "call" : "put");
+    const biasTxt = ratio == null ? "—" : "×" + (dom === "call" ? ratio : (1 / ratio)).toFixed(2);
+    box.innerHTML =
+      `<div class="fvbias">
+         <span class="fvlab">${L.fvBiasLbl}</span>
+         <span class="fvval ${dom || ""}">${dom ? L[dom === "call" ? "fvCalls" : "fvPuts"] : "—"}</span>
+         <span class="fvd">(${biasTxt} · ${fmtCount(vc.call_vol)} / ${fmtCount(vc.put_vol)})</span>
+         <span class="fvd" title="${L.fvCaveat}" style="cursor:help">ⓘ</span>
+       </div>
+       <div class="fvcols">` +
+       col("call", L.fvCalls, vc.calls || []) +
+       col("put", L.fvPuts, vc.puts || []) +
+      `</div>`;
+  }
+
   // ───── public API ─────
   setTarget(target){
     if (target === this.opts.target) return;
@@ -272,8 +521,11 @@ class TheHubFluxWidget{
   }
   setLang(lang){
     this.opts.lang = lang === "fr" ? "fr" : "en";
-    this.dom.badge.textContent = this._loc().badge;
+    const L = this._loc();
+    this.dom.badge.textContent = L.badge;
+    this.dom.modeBtns.forEach(b => { b.textContent = L.modes[b.dataset.m] || b.dataset.m; });
     this._renderNote();
+    if (this.opts.advanced){ this.renderSynth(); this.renderVolCtx(); }
     this.redrawAll();
   }
   destroy(){
@@ -298,8 +550,22 @@ class TheHubFluxWidget{
         ? `${this.opts.apiBase}/api/embed/flow?target=${encodeURIComponent(tgt)}`
           + `&key=${encodeURIComponent(this.opts.key)}`
         : `${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}`;
-      const r = await fetch(url);
+      // Niveaux + historique de séance : uniquement en mode avancé (pages
+      // même origine), en parallèle de la matrice -- jamais sur le chemin
+      // public /api/embed/flow (cf. commentaire d'en-tête).
+      const extra = this.opts.advanced
+        ? Promise.all([
+            fetchLevels(this.opts.apiBase, tgt),
+            fetch(`${this.opts.apiBase}/api/flow?target=${encodeURIComponent(tgt)}&hist=1`)
+              .then(x => x.json()).catch(() => null),
+          ])
+        : Promise.resolve([null, null]);
+      const [r, [levels, hist]] = await Promise.all([fetch(url), extra]);
       if (this.state.destroyed || tgt !== this.opts.target) return;
+      if (this.opts.advanced){
+        this.state.levels = levels;
+        this.state.histData = (hist && hist.ready) ? {target: tgt, entries: hist.history || []} : null;
+      }
       if (r.status === 401 || r.status === 403){
         this.state.status = {kind: "error", msg: "invalid key"};
         // clé invalide : ne repartira jamais d'elle-même -- arrête aussi le
@@ -331,6 +597,7 @@ class TheHubFluxWidget{
       this.state.status = {kind: "error", msg: e.message};
     }
     this._renderNote();
+    if (this.opts.advanced){ this.renderSynth(); this.renderVolCtx(); }
     this.redrawAll();
     // Le rond de chargement (logo + anneau) ne couvre QUE le tout premier
     // appel -- une fois qu'on a une réponse (prête, en attente ou en erreur,
@@ -437,21 +704,114 @@ class TheHubFluxWidget{
     });
   }
 
-  // ───── layout (v1 : projection seule, pas d'historique/niveaux/strikes) ─────
+  // ───── mode avancé : CW/PW/Flip (levels.json, en cache par target) et
+  // strikes (déjà dans volume_context, cf. renderVolCtx) fusionnés en une
+  // liste de repères tagués -- même schéma que flux-panel.js. ─────
+  levelMarkers(){
+    const lv = this.state.levels;
+    if (!lv || !lv.levels) return [];
+    const kinds = LEVEL_KIND_LABEL;
+    return Object.keys(kinds).map(k => lv.levels.find(x => x.kind === k))
+      .filter(Boolean)
+      .map(x => ({price: x.price_nq, label: kinds[x.kind], full: x.label, color: LEVEL_COLOR[x.kind]}));
+  }
+  strikeMarkers(){
+    const vc = this.state.data && this.state.data.volume_context;
+    if (!vc) return [];
+    const tag = (arr, isCall) => (arr || []).map(e => Object.assign({isCall}, e));
+    return tag(vc.calls, true).concat(tag(vc.puts, false));
+  }
+
+  // Portion de séance déjà écoulée, reconstituée à partir de /api/flow?hist=1
+  // (chaque tir de cron passé = un "maintenant" réel avec sa propre grille de
+  // prix). Pas de ligne de prix réalisé ici (contrairement au terminal) :
+  // ça demanderait un flux de bougies séparé que la carte dashboard n'a pas
+  // -- le champ gamma/vanna/charm historique porte déjà l'essentiel.
+  sessionElapsed(){
+    const hd = this.state.histData;
+    if (!hd || !hd.entries || !hd.entries.length) return null;
+    const sessionStart = etEpochToday(SESSION_START_ET[0], SESSION_START_ET[1]);
+    const sessionEnd = etEpochToday(SESSION_END_ET[0], SESSION_END_ET[1]);
+    const nowS = Math.min(Math.floor(Date.now() / 1000), sessionEnd);
+    const elapsedH = Math.max(0, (nowS - sessionStart) / 3600);
+    if (elapsedH <= 0.02) return null;
+    const entries = hd.entries
+      .map(e => ({...e, th: (Math.floor(new Date(e.t).getTime() / 1000) - sessionStart) / 3600}))
+      .filter(e => isFinite(e.th))
+      .sort((a, b) => a.th - b.th);
+    if (!entries.length) return null;
+    return {elapsedH, entries};
+  }
+
+  // ───── layout : padding, marge droite (repères), et scission
+  // historique/projection en mode avancé ─────
   layout(d, mat, w, h){
-    const padL = 46, padT = 8, padB = 20;
+    const padL0 = 46, padT = 8, padB = 20;
     const gh = Math.max(1, h - padT - padB);
     const nH = mat.length, nP = d.price_grid.length;
     const fullMin = d.price_grid[0], fullMax = d.price_grid[nP - 1];
     const spot = d.spot;
-    const spotText = spot != null ? this._fmt(spot, 0) : null;
+
+    const markers = [];
+    if (spot != null && spot >= fullMin && spot <= fullMax){
+      markers.push({price: spot, tier: 0, text: this._fmt(spot, 0), full: null,
+                    color: C.text, textColor: C.text, dash: [4, 3], lw: 1, font: LVL_FONT});
+    }
+    let hist = null;
+    if (this.opts.advanced){
+      this.levelMarkers().forEach(m => {
+        if (m.price == null || m.price < fullMin || m.price > fullMax) return;
+        markers.push({price: m.price, tier: 1, text: m.label, full: m.full, color: m.color,
+                      textColor: m.color, dash: [2, 3], lw: 1, font: LVL_FONT});
+      });
+      this.strikeMarkers().forEach(m => {
+        if (m.strike == null || m.strike < fullMin || m.strike > fullMax) return;
+        const ratio = m.vol_oi_ratio;
+        const k = Math.max(0, Math.min(1, (ratio || 0) / 2));
+        const rTxt = ratio != null ? "×" + ratio.toFixed(2) : "—";
+        markers.push({
+          price: m.strike, tier: 2, ratio: ratio || 0,
+          strike: m.strike, isCall: m.isCall, volume: m.volume, oi: m.oi,
+          vol_oi_ratio: ratio, distance: m.distance,
+          text: `${m.isCall ? "C" : "P"} ${this._fmt(m.strike, 0)} ${rTxt}`,
+          color: `rgba(236,234,228,${0.35 + 0.45 * k})`,
+          textColor: "rgba(236,234,228,.92)",
+          dash: m.isCall ? [] : [3, 2], lw: 1 + 1.4 * k, font: STRIKE_FONT,
+        });
+      });
+      hist = this.sessionElapsed();
+    }
+
     const mctx = this.dom.cvMain.getContext("2d");
-    mctx.font = LVL_FONT;
-    const spotTextW = spotText ? mctx.measureText(spotText).width : 0;
-    const padR = spotText ? Math.min(Math.max(spotTextW + 16, 50), Math.max(60, w * 0.42)) : 40;
+    let maxTextW = 0;
+    for (const m of markers){ mctx.font = m.font; maxTextW = Math.max(maxTextW, mctx.measureText(m.text).width); }
+    const padR = markers.length
+      ? Math.min(Math.max(maxTextW + 16, 50), Math.max(60, w * 0.42))
+      : 40;
+
+    const remainH = d.hours[d.hours.length - 1] || 0;
+    const elapsedH = hist ? hist.elapsedH : 0;
+    const totalH = elapsedH + remainH;
+    const availW = Math.max(1, w - padL0 - padR);
+    const gap = 10;
+    const minGw = 90;   // sous ce seuil, "maint."/"clôture" finissent l'un sur l'autre
+    let histW = (elapsedH > 0 && totalH > 0)
+      ? Math.max(0, Math.round(availW * elapsedH / totalH) - gap)
+      : 0;
+    histW = Math.min(histW, Math.max(0, availW - minGw - gap));
+    if (histW <= 4) histW = 0;
+    const histX0 = padL0;
+    const padL = padL0 + (histW > 0 ? histW + gap : 0);
     const gw = Math.max(1, w - padL - padR);
-    return {padL, padT, padB, padR, gw, gh, nH, nP, fullMin, fullMax,
-            viewMin: fullMin, viewMax: fullMax, spot, spotText};
+    // gradW : largeur RÉELLEMENT proportionnelle aux heures restantes -- gw
+    // peut être élargi de force par minGw en fin de séance, mais le dégradé
+    // ne doit pas s'étirer sur cet espace en trop (cf. commentaire équivalent
+    // dans flux-panel.js).
+    const gradW = totalH > 0 ? Math.min(gw, Math.max(1, Math.round(availW * remainH / totalH))) : gw;
+
+    return {padL, padT, padB, padR, gw, gradW, gh, nH, nP, fullMin, fullMax,
+            viewMin: fullMin, viewMax: fullMax, spot, markers,
+            histX0, histW, elapsedH, histEntries: hist ? hist.entries : null};
   }
 
   currentView(lay){
@@ -515,11 +875,87 @@ class TheHubFluxWidget{
   }
 
   gradient(d, mat, lay){
-    const key = (d.generated_utc || "") + "|" + this.opts.mode + "|" + lay.gw + "|" + lay.gh;
+    const key = (d.generated_utc || "") + "|" + this.opts.mode + "|" + lay.gradW + "|" + lay.gh;
     if (this.gfx.gradKey !== key){
-      this.buildGradient(mat, lay.nH, lay.nP, lay.gw, lay.gh);
+      this.buildGradient(mat, lay.nH, lay.nP, lay.gradW, lay.gh);
       this.gfx.gradKey = key;
     }
+  }
+
+  // ───── mode avancé : dégradé de la portion déjà écoulée de la séance,
+  // reconstitué à partir de /api/flow?hist=1 (docs/BRIEF-flux.md). Version
+  // simplifiée du pipeline de flux-panel.js : un seul passage de montée en
+  // résolution (imageSmoothingQuality "high") au lieu de plusieurs étages
+  // x3 -- légèrement moins net en zoom extrême, code très inférieur en
+  // complexité pour un panneau qui reste petit (carte du dashboard). Jamais
+  // mis en cache par clé (contrairement à buildGradient) : nRows×nCols reste
+  // ≤ 25×180, recalculer à chaque frame est négligeable. ─────
+  drawHistBg(ctx, lay, priceMin, priceMax){
+    const entries = lay.histEntries;
+    if (!entries || !entries.length || lay.histW <= 4) return;
+    const field = {gamma: "gamma0", vanna: "vanna0", charm: "charm0"}[this.opts.mode];
+    const {histX0, histW, elapsedH, padT, gh} = lay;
+
+    const absVals = [];
+    for (const e of entries) for (const v of (e[field] || [])) absVals.push(Math.abs(v));
+    if (!absVals.length) return;
+    absVals.sort((a, b) => a - b);
+    const ref = fluxPercentile(absVals, 0.95) || 1;
+    const ref99 = fluxPercentile(absVals, 0.99) || ref;
+
+    const nRows = 25;
+    const rowPrice = r => priceMin + (r + 0.5) / nRows * (priceMax - priceMin || 1);
+    const rowsByEntry = [], thByEntry = [];
+    for (const e of entries){
+      const grid = e.price_grid, vals = e[field];
+      if (!grid || !vals || !grid.length) continue;
+      const row = new Array(nRows);
+      let gi = 0;
+      for (let r = 0; r < nRows; r++){
+        const p = rowPrice(r);
+        while (gi < grid.length - 1 && Math.abs(grid[gi + 1] - p) <= Math.abs(grid[gi] - p)) gi++;
+        row[r] = vals[gi];
+      }
+      rowsByEntry.push(row);
+      thByEntry.push(e.th);
+    }
+    if (!rowsByEntry.length) return;
+
+    const nCols = Math.max(2, Math.min(180, Math.round(histW)));
+    if (!this.gfx.histOff) this.gfx.histOff = document.createElement("canvas");
+    const off = this.gfx.histOff;
+    off.width = nCols; off.height = nRows;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(nCols, nRows);
+
+    let ei = 0;
+    for (let c = 0; c < nCols; c++){
+      const t = nCols === 1 ? elapsedH : (c / (nCols - 1)) * elapsedH;
+      while (ei < thByEntry.length - 2 && thByEntry[ei + 1] < t) ei++;
+      const rowsA = rowsByEntry[ei];
+      let frac = 0, rowsB = rowsA;
+      if (ei < thByEntry.length - 1){
+        const span = thByEntry[ei + 1] - thByEntry[ei];
+        frac = span > 1e-6 ? Math.min(1, Math.max(0, (t - thByEntry[ei]) / span)) : 0;
+        rowsB = rowsByEntry[ei + 1];
+      }
+      for (let r = 0; r < nRows; r++){
+        const v = rowsA[r] + (rowsB[r] - rowsA[r]) * frac;
+        const [red, g, b, a] = fluxShade(v, ref, ref99);
+        const rowY = nRows - 1 - r;
+        const idx = (rowY * nCols + c) * 4;
+        img.data[idx] = red; img.data[idx + 1] = g; img.data[idx + 2] = b;
+        img.data[idx + 3] = Math.round(255 * a);
+      }
+    }
+    octx.putImageData(img, 0, 0);
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(histX0, padT, histW, gh); ctx.clip();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(off, 0, 0, nCols, nRows, histX0, padT, histW, gh);
+    ctx.restore();
   }
 
   drawBg(cv, d, mat, lay){
@@ -530,6 +966,7 @@ class TheHubFluxWidget{
     if (!lay) return;
     this.gradient(d, mat, lay);
     const view = this.currentView(lay);
+    if (this.opts.advanced) this.drawHistBg(ctx, lay, view.min, view.max);
     const {sw, sh} = this.gfx.gradMeta;
     const cropTop = (lay.fullMax - view.max) / (lay.fullMax - lay.fullMin || 1) * sh;
     const cropH = (view.max - view.min) / (lay.fullMax - lay.fullMin || 1) * sh;
@@ -537,11 +974,12 @@ class TheHubFluxWidget{
     ctx.beginPath(); ctx.rect(lay.padL, lay.padT, lay.gw, lay.gh); ctx.clip();
     ctx.imageSmoothingEnabled = true;
     if ("imageSmoothingQuality" in ctx) ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(this.gfx.gradSrc, 0, cropTop, sw, Math.max(1, cropH), lay.padL, lay.padT, lay.gw, lay.gh);
+    ctx.drawImage(this.gfx.gradSrc, 0, cropTop, sw, Math.max(1, cropH), lay.padL, lay.padT, lay.gradW, lay.gh);
     ctx.restore();
   }
 
-  // ───── axes, spot marker ─────
+  // ───── axes, repères (prix courant + CW/PW/Flip + strikes en mode
+  // avancé), scission historique/projection ─────
   drawMain(cv, d, mat, lay){
     const ctx = cv.getContext("2d");
     const {w, h, dpr} = this.state.size;
@@ -557,10 +995,11 @@ class TheHubFluxWidget{
     }
     const L = this._loc();
     const view = this.currentView(lay);
-    const {padL, padT, gw, gh, nH, nP} = lay;
+    const {padL, padT, gw, gh, nH, nP, histX0, histW, elapsedH} = lay;
     const priceMin = view.min, priceMax = view.max;
     const yFor = p => padT + gh * (1 - (p - priceMin) / (priceMax - priceMin || 1));
     const xFor = hi => padL + gw * (hi / Math.max(1, nH - 1));
+    const lineX0 = histW > 0 ? histX0 : padL;   // grille/repères traversent aussi l'historique
 
     ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
     ctx.font = AXIS_FONT;
@@ -569,7 +1008,7 @@ class TheHubFluxWidget{
     for (let i = 0; i < nP; i += 2){
       const mult = sigUnit ? Math.round(((d.price_grid[i] - d.spot) / sigUnit) * 2) / 2 : null;
       const y = yFor(d.price_grid[i]), yy = Math.round(y) + 0.5;
-      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + gw, yy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lineX0, yy); ctx.lineTo(padL + gw, yy); ctx.stroke();
       if (mult == null) continue;
       ctx.textAlign = "right"; ctx.textBaseline = "middle";
       ctx.fillText((mult > 0 ? "+" : mult === 0 ? "" : "") + mult + "σ", padL - 6, y);
@@ -584,25 +1023,69 @@ class TheHubFluxWidget{
       ctx.fillText(label, x, padT + gh + 4);
     });
 
-    // ---- repère : prix courant, ligne + pastille bord droit ----
-    if (lay.spot != null && lay.spot >= priceMin && lay.spot <= priceMax){
-      const sy = Math.round(yFor(lay.spot)) + 0.5;
-      ctx.setLineDash([4, 3]); ctx.strokeStyle = C.text; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(padL, sy); ctx.lineTo(padL + gw, sy); ctx.stroke();
+    // ---- graduations horaires côté historique, en heures relatives à
+    // "maintenant" (−1h, −2h...) -- volontairement pas d'heure ronde en
+    // horloge murale (contrairement au terminal) : le widget n'a pas de
+    // fuseau d'affichage réglable, une heure ronde ET/locale exigerait une
+    // conversion qui n'a pas sa place ici. ----
+    if (histW > 60 && elapsedH > 0.5){
+      for (let hBack = 1; hBack <= elapsedH - 0.3; hBack++){
+        const x = histX0 + histW * ((elapsedH - hBack) / elapsedH);
+        if (x < histX0 + 16) continue;
+        ctx.fillText("−" + hBack + "h", x, padT + gh + 4);
+      }
+    }
+    // ---- séparation "maintenant" entre historique et projection ----
+    if (histW > 4){
+      const nowX = Math.round(padL) + 0.5;
+      ctx.setLineDash([2, 3]); ctx.strokeStyle = "rgba(255,255,255,.15)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(nowX, padT); ctx.lineTo(nowX, padT + gh); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.font = LVL_FONT;
-      const tw = ctx.measureText(lay.spotText).width;
-      const bh = 15, bw = tw + 13, x0 = padL + gw + 5;
+    }
+
+    // ---- repères : prix courant (tier 0) + CW/PW/Flip (tier 1) + strikes
+    // (tier 2, mode avancé) -- ligne toujours tracée, étiquette en pastille
+    // posée seulement si la place le permet ; tier 2 trié par ratio vol/OI
+    // décroissant, le reste évincé en simple point (cf. flux-panel.js). ----
+    const markers = (lay.markers || []).filter(m => m.price >= priceMin && m.price <= priceMax);
+    markers.forEach(m => { m.y = yFor(m.price); m.shown = false; });
+    const rowH = 17;
+    const placedYs = [];
+    const fits = y => !placedYs.some(py => Math.abs(py - y) < rowH);
+    const order = markers.filter(m => m.tier < 2)
+      .concat(markers.filter(m => m.tier === 2).sort((a, b) => b.ratio - a.ratio));
+
+    for (const m of order){
+      const show = m.tier < 2 || fits(m.y);
+      if (!show){
+        ctx.globalAlpha = 0.5; ctx.fillStyle = m.color;
+        ctx.beginPath(); ctx.arc(w - 4, m.y, 1.7, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      const my2 = Math.round(m.y) + 0.5;
+      const mx0 = m.tier < 2 ? lineX0 : padL;
+      ctx.setLineDash(m.dash); ctx.strokeStyle = m.color; ctx.lineWidth = m.lw;
+      ctx.beginPath(); ctx.moveTo(mx0, my2); ctx.lineTo(padL + gw, my2); ctx.stroke();
+      ctx.setLineDash([]);
+
+      placedYs.push(m.y);
+      ctx.font = m.font;
+      const tw = ctx.measureText(m.text).width;
+      const bh = 15, bw = tw + 13;
+      const x0 = padL + gw + 5;
       ctx.fillStyle = "rgba(12,12,15,.9)";
-      ctx.fillRect(x0, sy - bh / 2, bw, bh);
-      ctx.fillStyle = C.text;
-      ctx.fillRect(x0, sy - bh / 2, 2, bh);
+      ctx.fillRect(x0, m.y - bh / 2, bw, bh);
+      ctx.fillStyle = m.color;
+      ctx.fillRect(x0, m.y - bh / 2, 2, bh);
+      ctx.fillStyle = m.textColor;
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(lay.spotText, x0 + 7, sy + 0.5);
+      ctx.fillText(m.text, x0 + 7, m.y + 0.5);
+      m.shown = true; m.boxX = x0; m.boxY = m.y - bh / 2; m.boxW = bw; m.boxH = bh;
     }
 
     this.state.layout = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP,
-                          hours: d.hours, rows: mat, spot: lay.spot};
+                          hours: d.hours, rows: mat, spot: lay.spot, markers: order};
   }
 
   hoverTimeLabel(hVal, hours){
@@ -642,9 +1125,61 @@ class TheHubFluxWidget{
     const L = this.state.layout, pos = this.state.cursor;
     if (!L || !pos) return;
     const {mx, my} = pos;
-    const {padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours, rows} = L;
+    const {padL, padT, gw, gh, priceMin, priceMax, nH, nP, hours, rows, markers, spot} = L;
     const inBounds = mx >= padL && mx <= padL + gw && my >= padT && my <= padT + gh;
     ctx.font = CUR_FONT;
+
+    // ---- survol niveaux/strikes (mode avancé) : vit aussi hors grille
+    // (étiquettes en marge), évalué avant tout retour anticipé sur inBounds.
+    // advHover mémorisé pour éviter d'empiler l'infobulle de cellule
+    // (val != null plus bas) par-dessus celle d'un repère survolé. ----
+    let advHover = null;
+    if (this.opts.advanced){
+      const hover = hoverMarker(markers, mx, my, inBounds);
+      advHover = hover;
+      if (hover){
+        const Lo = this._loc();
+        for (const m of (markers || [])){
+          if (m === hover || !m.shown) continue;
+          ctx.fillStyle = "rgba(9,9,11,.55)";
+          ctx.fillRect(m.boxX, m.boxY, m.boxW, m.boxH);
+        }
+        const hoverColor = hover.tier === 2 ? "rgba(236,234,228,.95)" : hover.color;
+        const hy = Math.round(hover.y) + 0.5;
+        ctx.setLineDash(hover.dash || []);
+        ctx.strokeStyle = hoverColor; ctx.lineWidth = (hover.lw || 1) + 1.6;
+        ctx.beginPath(); ctx.moveTo(padL, hy); ctx.lineTo(padL + gw, hy); ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (hover.shown){
+          ctx.fillStyle = "rgba(20,20,24,.98)";
+          ctx.fillRect(hover.boxX, hover.boxY, hover.boxW, hover.boxH);
+          ctx.fillStyle = hoverColor;
+          ctx.fillRect(hover.boxX, hover.boxY, 2, hover.boxH);
+          ctx.strokeStyle = hoverColor; ctx.lineWidth = 1;
+          ctx.strokeRect(hover.boxX + 0.5, hover.boxY + 0.5, hover.boxW - 1, hover.boxH - 1);
+          ctx.fillStyle = hover.textColor;
+          ctx.textAlign = "left"; ctx.textBaseline = "middle";
+          ctx.fillText(hover.text, hover.boxX + 7, hover.boxY + hover.boxH / 2 + 0.5);
+        }
+
+        const distPts = spot != null ? hover.price - spot : null;
+        const distPct = distPts != null && spot ? distPts / spot * 100 : null;
+        const distTxt = distPts == null ? Lo.pts + " —"
+          : (distPts >= 0 ? "+" : "") + Math.round(distPts) + " " + Lo.pts
+            + (distPct != null ? "  (" + (distPct >= 0 ? "+" : "") + distPct.toFixed(2) + " %)" : "");
+        const lines = hover.tier === 2
+          ? [
+              `${hover.isCall ? Lo.fvCalls : Lo.fvPuts} ${this._fmt(hover.strike, 0)}`,
+              `${fmtCount(hover.volume)} ${Lo.fvVolUnit} · ${Lo.fvOiLbl} ${fmtCount(hover.oi)}` +
+                ` · ×${hover.vol_oi_ratio != null ? hover.vol_oi_ratio.toFixed(2) : "—"}`,
+              distTxt,
+            ]
+          : [hover.full || hover.text, `${Lo.price}: ${this._fmt(hover.price, 0)}`, distTxt];
+        this.drawTooltip(ctx, mx, hover.y, lines, w, h, hoverColor);
+      }
+    }
+
     if (!inBounds) return;
 
     const price = priceMax - (my - padT) / gh * (priceMax - priceMin || 1);
@@ -682,7 +1217,7 @@ class TheHubFluxWidget{
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(timeTxt, tbx + ttw / 2 + 5, tby + 7.5);
 
-    if (val != null){
+    if (val != null && !advHover){
       const L2 = this._loc();
       const lines = [
         `${L2.modes[this.opts.mode] || this.opts.mode}  ${fmtUsd(val)}`,
