@@ -2092,6 +2092,14 @@ class handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             # ---- canal News : trace publique de chaque refresh effectif ----
+            # Le libellé distingue un vrai changement de niveaux d'un refresh
+            # verrouillé (cf. _freeze_levels) : hors fenetre canonique 15h25,
+            # tant que gex:lock=1 depuis la veille, les payloads publiés ici
+            # ne font que rafraîchir prix/IV/flux -- levels/gex_by_strike/
+            # open_grid/expected_move/pine restent ceux d'hier (payload.
+            # levels_locked = True). Sans cette distinction le message disait
+            # "niveaux mis à jour" même sur ces tirs verrouillés, laissant
+            # croire à tort que le gamma avait bougé.
             news = False
             if computed:
                 px = " · ".join(
@@ -2100,8 +2108,12 @@ class handler(BaseHTTPRequestHandler):
                 slot = ("open Globex" if now_p < "0300"
                         else "pré-open US" if "1500" <= now_p <= "1800"
                         else "refresh")
+                locked = all(p.get("levels_locked") for p in computed)
+                title = ("🔒 **GEX Terminal** — refresh (niveaux gamma inchangés, verrouillés) ("
+                          if locked else
+                          "🔄 **GEX Terminal** — niveaux mis à jour (")
                 news = discord_news(
-                    "🔄 **GEX Terminal** — niveaux mis à jour ("
+                    title
                     + paris_hhmm() + " Paris · " + slot + ")"
                     + ("\n" + px if px else "")
                     + "\nhttps://gexdash.wealthbuilders.group")
