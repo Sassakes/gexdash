@@ -75,20 +75,6 @@
     transition:color .12s ease; white-space:nowrap;
   }
   .topnav a:hover{color:var(--gold)}
-  /* Soutien : seul élément plein de la barre -> il capte le regard */
-  .topnav a.donate{
-    color:#0A0A0C; background:#F0B90B; border:1px solid #F0B90B;
-    padding:6px 13px; font-weight:600;
-    animation:donGlow 3.8s ease-in-out infinite;
-  }
-  .topnav a.donate:hover{
-    background:#ffd23f; border-color:#ffd23f; animation:none;
-  }
-  @keyframes donGlow{
-    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
-    50%    { box-shadow:0 0 12px rgba(240,185,11,.28); }
-  }
-  @media (prefers-reduced-motion:reduce){ .topnav a.donate{ animation:none; } }
   .addsep{width:1px; height:22px; background:var(--line-strong); margin:0 4px; flex:0 0 auto}
   .addbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
   .addbar select{
@@ -377,11 +363,12 @@
     <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
-  <nav class="topnav"><a href="/">← <span id="backLbl">Terminal</span></a>
-    <a href="/heatmap">Heatmap</a>
-    <a href="/doc">Doc</a>
-    <a id="donateLink" class="donate" target="_blank" rel="noopener" hidden
-       href="#"><span aria-hidden="true">♥</span> <span id="donLbl">Soutenir</span></a></nav>
+  <nav class="topnav">
+    <a href="/" id="navTerm">Terminal</a>
+    <a href="/heatmap" id="navHeat">Heatmap</a>
+    <a href="/news" id="navNews" hidden>News</a>
+    <a href="/doc" id="navDoc">Doc</a>
+  </nav>
 </header>
 
 <div class="addbar">
@@ -444,12 +431,12 @@ const GROUP_KINDS = {
 let LANG = "fr";
 try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 const TXT = {
-  fr: {mkts:"Panorama marché", needAuth:"Connexion requise", goSignIn:"Se connecter", noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", back:"Terminal", add:"Ajouter un chart",
+  fr: {mkts:"Panorama marché", needAuth:"Connexion requise", goSignIn:"Se connecter", noise:"Zones fortes", hmNone:"Données indisponibles", title:"Mon dashboard", term:"Terminal", heat:"Heatmap", news:"News", doc:"Doc", add:"Ajouter un chart",
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — ajoute NQ, ES ou SPX ci-dessus.",
        feedKo:"flux indisponible", edit:"Éditer", done:"Terminé",
        magIncomplete:"Échantillon incomplet"},
-  en: {mkts:"Market snapshot", needAuth:"Sign-in required", goSignIn:"Sign in", noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", back:"Terminal", add:"Add a chart",
+  en: {mkts:"Market snapshot", needAuth:"Sign-in required", goSignIn:"Sign in", noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", term:"Terminal", heat:"Heatmap", news:"News", doc:"Doc", add:"Add a chart",
        hint:"Layout saved in this browser.",
        empty:"No charts yet — add NQ, ES or SPX above.",
        feedKo:"feed unavailable", edit:"Edit", done:"Done",
@@ -1267,19 +1254,11 @@ function firstFreeSpot(w, h){
 }
 
 $("hTitle").textContent = tx("title");
-$("backLbl").textContent = tx("back");
+$("navTerm").textContent = tx("term");
+$("navHeat").textContent = tx("heat");
+$("navNews").textContent = tx("news");
+$("navDoc").textContent = tx("doc");
 enhanceAllSelects();
-(async () => {
-  try{
-    const d = await (await fetch("/api/links")).json();
-    if (d.donate){
-      const a = $("donateLink");
-      a.href = d.donate;
-      a.hidden = false;
-      $("donLbl").textContent = (PREFS && PREFS.lang) === "en" ? "Support" : "Soutenir";
-    }
-  }catch(_){}
-})();
 $("addLbl").textContent = tx("add");
 $("hintLbl").textContent = tx("hint");
 $("editLbl").textContent = tx("edit");
@@ -1304,7 +1283,7 @@ $("addBtn").onclick = () => {
 (async function gatePanels(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  for (const id of ["panelSep", "addPanel", "addPanelBtn"]){
+  for (const id of ["panelSep", "addPanel", "addPanelBtn", "navNews"]){
     const e = document.getElementById(id);
     if (e) e.hidden = !ok;
   }

@@ -35,10 +35,16 @@
   }
   header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
   header h1 b{color:var(--gold)}
-  .nav{display:flex; gap:3px; margin-left:auto; align-items:center; flex-wrap:wrap}
-  .nav a{color:var(--muted); font-size:12px; text-decoration:none; padding:6px 10px;
-         border:1px solid transparent}
-  .nav a:hover{color:var(--text); border-color:var(--line-strong); background:var(--surface2)}
+  .topnav{display:flex; gap:4px; margin-left:auto; align-items:center; flex-wrap:wrap}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
+    position:relative; transition:color .12s ease; white-space:nowrap}
+  .topnav a:hover{color:var(--gold)}
+  .topnav a::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
+    background:var(--gold); transform:scaleX(0); transform-origin:left;
+    transition:transform .16s ease;
+  }
+  .topnav a:hover::after{transform:scaleX(1)}
   .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
   .lang button{background:none; border:none; color:var(--muted); font:inherit;
                font-size:11px; padding:5px 10px; cursor:pointer}
@@ -202,7 +208,7 @@
     .faq .ans{padding-left:36px}
     header{padding:11px 14px; gap:9px}
     header h1{font-size:11px; letter-spacing:.14em}
-    .nav a{padding:6px 8px; font-size:11.5px}
+    .topnav a{padding:6px 8px; font-size:11.5px}
   }
   @media (max-width:860px){
     .wrap{grid-template-columns:1fr; gap:18px}
@@ -222,12 +228,13 @@
 <body>
 <header>
   <h1><b>THE</b>HUB · <span id="hTitle">Documentation</span></h1>
-  <nav class="nav">
+  <nav class="topnav">
     <a href="/" id="nTerm">Terminal</a>
     <a href="/dash" id="nDash">Dashboard</a>
     <a href="/heatmap" id="nHeat">Heatmap</a>
-    <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
+    <a href="/news" id="nNews" hidden>News</a>
   </nav>
+  <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
 </header>
 
 <div class="hero">
@@ -293,7 +300,7 @@ function tickCd(){
 /* ───── contenu structuré en blocs ───── */
 const T = {
 fr: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap", news:"News",
   heroT:"Comment lire et utiliser le terminal",
   heroP:"Les niveaux, leur signification, l'export vers TradingView et le calendrier exact des mises à jour.",
   cd1k:"Prochain recalcul daily · Open + EM", cd1s:"00h11 Paris · lundi → vendredi",
@@ -407,7 +414,7 @@ fr: {
 ]},
 
 en: {
-  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap",
+  title:"Documentation", term:"Terminal", dash:"Dashboard", heat:"Heatmap", news:"News",
   heroT:"How to read and use the terminal",
   heroP:"The levels, what they mean, exporting to TradingView, and the exact update schedule.",
   cd1k:"Next daily recompute · Open + EM", cd1s:"00:11 Paris · Monday → Friday",
@@ -613,6 +620,7 @@ function render(){
   $("nTerm").textContent = L.term;
   $("nDash").textContent = L.dash;
   $("nHeat").textContent = L.heat;
+  $("nNews").textContent = L.news;
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
   $("cd1k").textContent = L.cd1k; $("cd1s").textContent = L.cd1s;
@@ -661,6 +669,11 @@ $("bFr").onclick = () => setLang("fr");
 $("bEn").onclick = () => setLang("en");
 render();
 setInterval(tickCd, 1000);
+(async function gateNewsNav(){
+  let ok = false;
+  try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
+  const nl = $("nNews"); if (nl) nl.hidden = !ok;
+})();
 </script>
 </body>
 </html>

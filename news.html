@@ -30,9 +30,16 @@
   header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
   header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
   header h1 b{color:var(--gold)}
-  header a{color:var(--muted); font-size:12px; text-decoration:none}
-  header a:hover{color:var(--gold)}
-  .langsel{margin-left:auto; display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
+  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
+  .topnav a:hover{color:var(--gold)}
+  .topnav a::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
+    background:var(--gold); transform:scaleX(0); transform-origin:left;
+    transition:transform .16s ease;
+  }
+  .topnav a:hover::after{transform:scaleX(1)}
+  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
   .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em}
   .langsel button+button{border-left:1px solid var(--line-strong)}
   .langsel button.on{background:var(--gold-soft); color:var(--gold)}
@@ -202,7 +209,7 @@
   @media (max-width:700px){
     header{padding:10px 14px; gap:8px; flex-wrap:wrap}
     header h1{font-size:12px; letter-spacing:.12em}
-    header a{font-size:11.5px; padding:5px 7px}
+    .topnav a{font-size:11.5px; padding:5px 7px}
     .macro{margin:10px 12px 0; padding:11px 13px; border-radius:8px}
     .metric{min-width:calc(50% - 8px)}
 
@@ -251,9 +258,12 @@
 <body>
 <header>
   <h1><b>GEX</b>DASH · MACRO</h1>
-  <a href="/" id="navTerm">Terminal</a>
-  <a href="/heatmap" id="navHeat">Heatmap</a>
-  <a href="/dash" id="navDash">Dashboard</a>
+  <nav class="topnav">
+    <a href="/" id="navTerm">Terminal</a>
+    <a href="/dash" id="navDash">Dashboard</a>
+    <a href="/heatmap" id="navHeat">Heatmap</a>
+    <a href="/doc" id="navDoc">Doc</a>
+  </nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -304,7 +314,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
 const T = {
-  fr: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
+  fr: { term:"Terminal", heat:"Heatmap", dash:"Dashboard", doc:"Doc",
     mtFeed:"Flux", mtNews:"Actus", mtCal:"Calendrier", mtMag:"MAG7",
     macroTitle:"Environnement macro actuel", colFeed:"Flux direct", colNews:"Actualités marché", colCal:"Calendrier éco.", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
@@ -339,7 +349,7 @@ const T = {
       + "ou par une seule valeur. Le panorama en dessous replace le tout dans son "
       + "contexte — indices, taux, dollar, matières premières et volatilité.",
     macroNa:"Synthèse indisponible — source macro à configurer" },
-  en: { term:"Terminal", heat:"Heatmap", dash:"Dashboard",
+  en: { term:"Terminal", heat:"Heatmap", dash:"Dashboard", doc:"Doc",
     mtFeed:"Feed", mtNews:"News", mtCal:"Calendar", mtMag:"MAG7",
     macroTitle:"Current Macro Environment", colFeed:"Live feed", colNews:"Market news", colCal:"Economic Calendar", colMag:"MAG7",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
@@ -750,6 +760,7 @@ async function loadMacro(){ const d = await jget("/macro.json?t=" + Date.now());
 function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   $("#navTerm").textContent = t("term"); $("#navHeat").textContent = t("heat"); $("#navDash").textContent = t("dash");
+  $("#navDoc").textContent = t("doc");
   $("#macroTitle").textContent = t("macroTitle");
   $("#colNews").textContent = t("colNews");
   $("#colFeed").textContent = t("colFeed");

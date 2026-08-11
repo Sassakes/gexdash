@@ -27,9 +27,16 @@
   header{display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
   header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
   header h1 b{color:var(--gold)}
-  header a{color:var(--muted); font-size:12px; text-decoration:none}
-  header a:hover{color:var(--gold)}
-  .langsel{margin-left:auto; display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
+  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
+  .topnav a:hover{color:var(--gold)}
+  .topnav a::after{
+    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
+    background:var(--gold); transform:scaleX(0); transform-origin:left;
+    transition:transform .16s ease;
+  }
+  .topnav a:hover::after{transform:scaleX(1)}
+  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
   .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em}
   .langsel button+button{border-left:1px solid var(--line-strong)}
   .langsel button.on{background:var(--gold-soft); color:var(--gold)}
@@ -174,8 +181,12 @@
 <body>
 <header>
   <h1><b>GEX</b>DASH · HEATMAP</h1>
-  <a href="/" id="navTerm">Terminal</a>
-  <a href="/dash" id="navDash">Dashboard</a>
+  <nav class="topnav">
+    <a href="/" id="navTerm">Terminal</a>
+    <a href="/dash" id="navDash">Dashboard</a>
+    <a href="/news" id="navNews" hidden>News</a>
+    <a href="/doc" id="navDoc">Doc</a>
+  </nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -221,7 +232,7 @@ const GRAN_DEF    = { NQ:10, ES:10, SPX:10, GC:10 };   // pas par défaut
    « ±5M » ne dit rien à la lecture ; « Zones » et « Majeur » si. */
 
 const T = {
-  fr: { term:"Terminal", dash:"Dashboard", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
+  fr: { term:"Terminal", dash:"Dashboard", news:"News", doc:"Doc", scale:"Échelle", step:"Échelle de prix", exp:"Échéances", all:"Tout", overlay:"Niveaux",
     filter:"Filtre", filterOff:"Off", lock:"Sync",
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
     globex:"GLOBEX", noise:"Zones fortes", today:"Niveaux du jour",
@@ -233,7 +244,7 @@ const T = {
     cPos:"gamma positif — marché amorti, effet aimant", cNeg:"gamma négatif — mouvements amplifiés", cExt:"magnitude extrême (≥ p99 de la colonne)",
     lCW:"Call Wall — résistance", lPW:"Put Wall — support", lFlip:"Gamma Flip — bascule +/−γ", lMP:"Max Pain", lEM:"Expected Move ▲/▼",
     tip:"Sélectionne 1, 2 ou 3 actifs — la page s'ajuste toute seule." },
-  en: { term:"Terminal", dash:"Dashboard", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
+  en: { term:"Terminal", dash:"Dashboard", news:"News", doc:"Doc", scale:"Scale", step:"Price Scale", exp:"Expiries", all:"All", overlay:"Levels",
     filter:"Filter", filterOff:"Off", lock:"Sync",
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
     globex:"GLOBEX", noise:"Strong zones", today:"Today's levels",
@@ -464,6 +475,7 @@ function paintLevelDate(){
 function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
+  $("#navNews").textContent = t("news"); $("#navDoc").textContent = t("doc");
   const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
   paintLevelDate();
@@ -675,6 +687,11 @@ TARGETS.forEach(tg => { GRAN_DD[tg] = mkDD("#dd" + tg, GRAN_STEPS, granLabel,
   () => PREFS.gran[tg], v => { PREFS.gran[tg] = v; saveGran(); render(tg, true); }); });
 applyLang();
 TARGETS.forEach(loadStatic);
+(async function gateNewsNav(){
+  let ok = false;
+  try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
+  const nl = $("#navNews"); if (nl) nl.hidden = !ok;
+})();
 /* La heatmap interroge TROIS marchés à chaque tour : un intervalle fixe de
    20 s coûtait ~540 requêtes/heure, week-end compris. On garde 20 s pendant
    la séance US, on ralentit hors séance, et on coupe le week-end. */
