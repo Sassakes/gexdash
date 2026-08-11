@@ -36,7 +36,7 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
                            fetch_webhooks, kv_get, kv_set,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
-                           flow_gamma_matrix, flow_volume_context,
+                           flow_gamma_matrix, flow_gamma_sanity, flow_volume_context,
                            fetch_embed_keys, save_embed_keys)
 
 CRON_LOG_KEY = "gex:cron:log"
@@ -821,7 +821,11 @@ def _read_intraday(tgt):
 # levels/open_grid/expected_move/pine restent seuls maitres du verrou GEX).
 # Endpoint /api/flow en lecture seule sur ce cache.
 FLOW_KEY = "gex:flow:{t}:{d}"
-FLOW_CHECK_TOL_PCT = 20.0   # ecart au-dela duquel on journalise une alerte
+FLOW_CHECK_TOL_PCT = 10.0   # ecart au-dela duquel on journalise une alerte -- le
+# controle compare desormais des totaux BRUTS (jamais un residu de deux grands
+# nombres proches, cf. flow_gamma_sanity), mesures a 0.5-3.8% d'ecart naturel
+# sur chaine reelle (NQ/SPX) ; 10% laisse une marge large sur ce bruit tout en
+# restant assez serre pour attraper une vraie erreur de convention/echelle
 
 # Historique intrajournalier de la colonne "maintenant" (rang 0 de flow_gamma_
 # matrix, deja calculee pour chaque tir -- aucun calcul supplementaire). Sert
@@ -950,13 +954,23 @@ def _refresh_flow(target, payload, capture):
         "volume_context": flow_volume_context(
             opts, payload.get("nq_price"), basis),
     }
-    # Controle de justesse (obligatoire, brief etape 1) : a T=maintenant
-    # (rang 0) et sur la colonne du spot courant (grille centree dessus,
-    # indice du milieu), le total recalcule en BS doit rester proche du
-    # net_gex_bn publie -- MEMES options, seul le gamma differe (recalcule
-    # BS ici, fourni par CBOE dans per_strike_gex). Un ecart important
-    # signale une erreur de convention/echelle/formule, pas une divergence
-    # de marche normale.
+    # Controle de justesse (obligatoire, brief etape 1) : le gamma dollar
+    # BRUT (somme des |gamma$| par contrat, cf. flow_gamma_sanity) recalcule
+    # en BS doit rester proche du meme total calcule avec le gamma natif
+    # CBOE -- MEMES options non-0DTE, seul le gamma differe (recalcule BS
+    # ici, fourni par CBOE sinon). Un ecart important signale une erreur de
+    # convention/echelle/formule, pas une divergence de marche normale.
+    #
+    # BRUT, PAS le net signe (calls - puts) : mesure sur chaine reelle, le
+    # net publie est un residu proche de zero entre deux totaux qui
+    # s'annulent presque (~12Bn de chaque cote pour <1Bn de net sur NQ) --
+    # le champ gamma de CBOE est arrondi a 4 decimales sur TOUTE la chaine
+    # (pas seulement le 0DTE), un bruit negligeable par jambe qui s'amplifie
+    # jusqu'a 78% d'ecart une fois divise par un net minuscule, sans aucun
+    # rapport avec une erreur de notre cote (cf. flow_gamma_sanity pour le
+    # detail chiffre). Le brut, jamais un residu de deux grands nombres
+    # proches, reste lui stable a quelques % -- c'est le signal qui detecte
+    # reellement une erreur de convention/echelle/formule.
     #
     # 0DTE EXCLU du controle, des DEUX cotes : mesure sur chaine reelle, le
     # champ gamma de CBOE pour ces echeances est quantifie a 0.0001 -- plat
@@ -968,23 +982,15 @@ def _refresh_flow(target, payload, capture):
     # erreur de notre cote.
     check = None
     check_reason = None
-    net_total_bn = capture.get("net_total_bn")
-    if net_total_bn is None:
-        check_reason = "net_total_bn absent de la capture"
+    cboe_gross_bn, bs_gross_bn = flow_gamma_sanity(opts, capture.get("spot"))
+    if cboe_gross_bn is None:
+        check_reason = "non-0DTE sans IV exploitable pour le controle"
     else:
-        non0dte = [o for o in opts if o.dte > 0]
-        _, net_non0 = per_strike_gex(capture.get("spot"), non0dte, bucket=None)
-        cboe_ref_bn = float(net_non0.sum()) / 1e9
-        flow_non0 = flow_gamma_matrix(non0dte, [capture.get("spot")], [0.0], hours_left)
-        flow_ref_bn = (flow_non0["gamma"][0][0] / 1e9) if flow_non0 else None
-        if flow_ref_bn is None:
-            check_reason = "non-0DTE sans IV exploitable pour le controle"
-        else:
-            denom = abs(cboe_ref_bn) if abs(cboe_ref_bn) > 1e-6 else 1e-6
-            dev_pct = round(100.0 * abs(flow_ref_bn - cboe_ref_bn) / denom, 1)
-            check = {"gex_by_strike_bn": round(cboe_ref_bn, 3),
-                     "flow_spot_now_bn": round(flow_ref_bn, 3),
-                     "deviation_pct": dev_pct, "excl_0dte": True}
+        denom = cboe_gross_bn if cboe_gross_bn > 1e-6 else 1e-6
+        dev_pct = round(100.0 * abs(bs_gross_bn - cboe_gross_bn) / denom, 1)
+        check = {"cboe_gross_bn": round(cboe_gross_bn, 3),
+                 "flow_gross_bn": round(bs_gross_bn, 3),
+                 "deviation_pct": dev_pct, "excl_0dte": True}
     out["check"] = check
     kv_set(FLOW_KEY.format(t=target, d=out["date"]), json.dumps(out), ex=2 * 86400)
     # matrice + check ecrits en KV meme si check est None (check_reason
@@ -1979,9 +1985,9 @@ class handler(BaseHTTPRequestHandler):
                                 results[target]["flow_skip_reason"] = reason
                             if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
                                 journal(f"flow {target} (force) controle de "
-                                        f"justesse KO : gex_by_strike="
-                                        f"{chk['gex_by_strike_bn']}Bn vs flow="
-                                        f"{chk['flow_spot_now_bn']}Bn "
+                                        f"justesse KO : cboe_gross="
+                                        f"{chk['cboe_gross_bn']}Bn vs flow="
+                                        f"{chk['flow_gross_bn']}Bn "
                                         f"(ecart {chk['deviation_pct']}%)")
                         except Exception as e:
                             results[target]["flow_forced"] = False
@@ -2038,8 +2044,8 @@ class handler(BaseHTTPRequestHandler):
                             journal(f"flow {target} : rien calcule ({reason})")
                         elif chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
                             journal(f"flow {target} controle de justesse KO : "
-                                    f"gex_by_strike={chk['gex_by_strike_bn']}Bn vs "
-                                    f"flow={chk['flow_spot_now_bn']}Bn "
+                                    f"cboe_gross={chk['cboe_gross_bn']}Bn vs "
+                                    f"flow={chk['flow_gross_bn']}Bn "
                                     f"(ecart {chk['deviation_pct']}%)")
                     except Exception as e:
                         journal(f"flow {target} KO: {e}")

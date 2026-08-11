@@ -459,6 +459,46 @@ def flow_gamma_matrix(opts, price_grid_idx, hours_grid, today_hours_left):
     return {"gamma": rows_gamma, "vanna": rows_vanna, "charm": rows_charm}
 
 
+def flow_gamma_sanity(opts, spot_idx):
+    """Controle de justesse pour _refresh_flow (api/gex.py) : compare le
+    gamma dollar CBOE natif au gamma dollar recalcule en BS -- meme IV,
+    meme T = dte/365, meme formule que flow_gamma_matrix -- sur les options
+    non-0DTE (dte>=1, 0DTE exclu comme dans flow_gamma_matrix). Retourne
+    (cboe_gross_bn, bs_gross_bn), ou (None, None) si rien d'exploitable.
+
+    GROSS (somme des |gamma$| par contrat), PAS le net signe (calls - puts)
+    de per_strike_gex/flow_gamma_matrix : le net est un residu proche de
+    zero entre deux totaux qui s'annulent presque (mesure sur chaine reelle
+    NQ : ~12.4Bn de chaque cote pour ~0.8Bn de net). Le champ "gamma" de
+    CBOE est arrondi a 4 decimales (verifie sur chaine reelle : 100% des
+    valeurs tombent sur cette grille, ~35% des jambes non-0DTE arrondies a
+    zero) -- un bruit negligeable par jambe (ratio recalcule/CBOE ~0.99 en
+    mediane, verifie par strike et par DTE) qui s'accumule en biais et se
+    retrouve amplifie une fois divise par un net minuscule (jusqu'a 78%
+    d'ecart observe sur une chaine de controle, sans aucun rapport avec une
+    erreur de convention). Le total BRUT, lui, reste stable (0.5% a 3.8%
+    d'ecart mesures sur NQ/SPX) car il n'est jamais un residu de deux
+    grands nombres proches -- c'est donc lui qui detecte reellement une
+    erreur de convention/echelle/formule, sans faux positif du a l'arrondi
+    CBOE sur la chaine complete."""
+    non0 = [o for o in opts if o.dte > 0 and o.iv > 0]
+    if not non0 or not spot_idx:
+        return None, None
+    K = np.array([o.K for o in non0])
+    dte = np.array([o.dte for o in non0], dtype=float)
+    iv = np.array([o.iv for o in non0])
+    OI = np.array([o.OI for o in non0])
+    scale = np.array([o.scale for o in non0])
+    cboe_g = np.array([o.gamma for o in non0])
+    S = spot_idx * scale
+    T = dte / 365.0
+    bs_g = bs_gamma(S, K, T, iv)
+    weight = OI * CONTRACT_MULT * S * S * 0.01
+    cboe_gross_bn = float(np.sum(np.abs(cboe_g) * weight)) / 1e9
+    bs_gross_bn = float(np.sum(np.abs(bs_g) * weight)) / 1e9
+    return cboe_gross_bn, bs_gross_bn
+
+
 def flow_volume_context(opts, spot_prod, basis, top_n=5):
     """Contexte live : OI est fige depuis hier soir, le volume est celui du
     jour -- comparer les deux montre OU les positions se construisent
