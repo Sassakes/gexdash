@@ -240,8 +240,10 @@
   .ecowrap iframe{border:0 !important; width:100% !important; height:100% !important;
     min-height:280px; display:block; flex:1 1 auto}
 
-  /* Carte heatmap : même palette et même lecture que la page /heatmap */
-  .hmbox{overflow:auto; -webkit-overflow-scrolling:touch}
+  /* Carte heatmap : même palette et même lecture que la page /heatmap,
+     y compris le rectangle de prix qui glisse (.pxbox, porté tel quel de
+     heatmap.html) plutôt que sauter d'un palier à l'autre. */
+  .hmbox{position:relative; overflow:auto; -webkit-overflow-scrolling:touch}
   .cchips .hmnoise{font-size:11px; padding:2px 7px; line-height:1.4}
   .cchips .hmnoise.on{color:var(--gold); border-color:rgba(240,185,11,.5)}
   .hmload{padding:22px; text-align:center; color:var(--faint); font-size:11px}
@@ -254,8 +256,15 @@
   .hmt td.k{text-align:right; padding-right:7px; color:var(--muted);
     border-right:1px solid var(--line)}
   .hmt tr.live td.k{color:var(--gold); font-weight:600}
-  .hmt tr.live{outline:1px solid rgba(240,185,11,.5); outline-offset:-1px}
+  .hmt tr.live{background:transparent; position:relative; z-index:1}
   .hmt .cell{display:block; padding:2px 4px; border-radius:1px}
+  .hmt .chip{font-size:6.5px; font-weight:600; padding:1px 2px; margin-right:3px;
+    border:1px solid; border-radius:2px; letter-spacing:.02em; vertical-align:middle}
+  .pxbox{position:absolute; left:0; right:0; z-index:0; pointer-events:none;
+    border:1px solid var(--gold); border-radius:2px;
+    background:rgba(240,185,11,.06); box-shadow:0 0 10px rgba(240,185,11,.16);
+    transition:top .4s cubic-bezier(.22,.61,.36,1), height .2s ease; will-change:top}
+  .pxbox.noanim{transition:none}
   /* Carte Flux : le widget public (widget/flux-widget.js) a son propre
      cadre/badge pensés pour un site tiers -- ici on le fond dans le chrome
      de la carte (bordure déjà posée par .card, pas de double-cadre) et on
@@ -1058,15 +1067,17 @@ async function mountNewsCard(cfg, host){
 }
 
 /* ═══ CARTE HEATMAP ═══════════════════════════════════════════════════
-   Version compacte de la page /heatmap : même source (/api/matrix), même
-   palette (teal = gamma positif, rouge = négatif, or = extrême), centrée
-   sur le prix. Les contrôles fins restent sur la page dédiée — ici on veut
-   un coup d'œil, pas un poste de pilotage. */
+   Même source (/api/matrix), même palette et mêmes repères que la page
+   /heatmap -- signe $, glow doré p99, puces CW/PW/Flip et ligne de prix qui
+   GLISSE d'un palier à l'autre au lieu de sauter (cf. movePxLine ci-dessous,
+   porté de heatmap.html). Les contrôles fins (échelle, fenêtre, expiries)
+   restent sur la page dédiée — ici on veut un coup d'œil fidèle, pas un
+   poste de pilotage. */
 function hmCellStyle(v, p95, p99){
   if (!v || !p95) return "";
   const x = Math.pow(Math.min(1, Math.abs(v) / p95), 0.7);
   if (Math.abs(v) >= p99)
-    return "background:#F0B90B;color:#0A0A0C;font-weight:600";
+    return "background:#F0B90B;color:#0A0A0C;font-weight:600;box-shadow:0 0 9px rgba(240,185,11,.45)";
   if (v > 0){
     const R = Math.round(15 + 23*x), G = Math.round(26 + 140*x), B = Math.round(24 + 130*x);
     return `background:rgb(${R},${G},${B});color:${x > .5 ? "#05140F" : "#7FCDBF"}`;
@@ -1076,10 +1087,22 @@ function hmCellStyle(v, p95, p99){
 }
 function hmFmt(v){
   const a = Math.abs(v), s = v < 0 ? "-" : "";
-  if (a >= 1e9) return `${s}${(a/1e9).toFixed(1)}B`;
-  if (a >= 1e6) return `${s}${(a/1e6).toFixed(0)}M`;
-  if (a >= 1e3) return `${s}${(a/1e3).toFixed(0)}k`;
-  return a > 0 ? `${s}${a.toFixed(0)}` : "";
+  if (a >= 1e9) return `$${s}${(a/1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `$${s}${(a/1e6).toFixed(0)}M`;
+  if (a >= 1e3) return `$${s}${(a/1e3).toFixed(0)}k`;
+  return a > 0 ? `$${s}${a.toFixed(0)}` : "";
+}
+/* Niveaux CW/PW/Flip en puces sur la colonne prix -- même parsing (chaîne
+   Pine, pas le tableau levels[]) et mêmes libellés que heatmap.html, pour
+   que les deux vues restent visuellement identiques. */
+const HM_KEEP = {res:1, sup:1, res0:1, sup0:1, flip:1, mpain:1, emh:1, eml:1};
+const HM_KCOL = {res:"#26A69A", sup:"#EF5350", res0:"#26A69A", sup0:"#EF5350",
+                 flip:"#F0B90B", mpain:"#B9903A", emh:"#8A8A94", eml:"#8A8A94"};
+const HM_KLAB = {res:"CW", sup:"PW", res0:"CW·0", sup0:"PW·0", flip:"FLIP", mpain:"MP", emh:"EM▲", eml:"EM▼"};
+function hmParseLevels(pine){
+  if (!pine) return [];
+  return pine.split(";").map(s => { const [p, , k] = s.split(","); return {price: +p, kind: k}; })
+             .filter(x => HM_KEEP[x.kind] && isFinite(x.price));
 }
 /* Carte Flux : délègue entièrement au widget public (widget/flux-widget.js,
    cf. docs/BRIEF-flux.md) plutôt qu'au flux-panel.js du terminal -- celui-ci
@@ -1114,14 +1137,48 @@ function mountFlux(cfg, host){
 
 async function mountHeatCard(cfg, host){
   const box = host.querySelector(".hmbox");
+  const tbl = box.querySelector(".hmtbl");
+
+  /* Rectangle de prix qui GLISSE d'un palier à l'autre (transition CSS,
+     cf. .pxbox) au lieu de sauter -- porté de movePxLine (heatmap.html).
+     .pxbox vit dans .hmbox, JAMAIS dans .hmtbl (dont l'innerHTML est
+     réécrit à chaque tir) : sans cette séparation il serait recréé à
+     chaque poll et perdrait la transition. */
+  function movePxLine(price){
+    if (price == null) return;
+    const rows = [...tbl.querySelectorAll("tr[data-p]")];
+    if (!rows.length) return;
+    let best = null, bd = Infinity;
+    for (const r of rows){
+      const d = Math.abs(+r.dataset.p - price);
+      if (d < bd){ bd = d; best = r; }
+    }
+    if (!best) return;
+    let pbox = box.querySelector(".pxbox");
+    if (!pbox){
+      pbox = document.createElement("div");
+      pbox.className = "pxbox noanim";
+      box.appendChild(pbox);
+      requestAnimationFrame(() => requestAnimationFrame(() => pbox.classList.remove("noanim")));
+    }
+    pbox.style.top = best.offsetTop + "px";
+    pbox.style.height = best.offsetHeight + "px";
+    const cur = tbl.querySelector("tr.live");
+    if (cur !== best){
+      if (cur) cur.classList.remove("live");
+      best.classList.add("live");
+    }
+  }
+
   const draw = async () => {
     try{
-      const [m, q] = await Promise.all([
+      const [m, q, lv] = await Promise.all([
         fetch(`/api/matrix?target=${cfg.t}`).then(r => r.json()).catch(() => null),
         fetch(`/api/quote?target=${cfg.t}`).then(r => r.json()).catch(() => null),
+        getLevels(cfg.t),
       ]);
       if (!m || !m.rows || !m.rows.length){
-        box.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
+        tbl.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
         return;
       }
       const price = (q && q.price) || m.spot;
@@ -1143,44 +1200,72 @@ async function mountHeatCard(cfg, host){
         all.sort((a, b) => a - b);
         flt = all.length ? all[Math.min(all.length - 1, Math.floor(all.length * 0.70))] : 0;
       }
+      // Puces CW/PW/Flip : niveau -> ligne de prix la plus proche.
+      const chipByRow = {};
+      if (lv && lv.pine) hmParseLevels(lv.pine).forEach(lvl => {
+        let bi = -1, bd = Infinity;
+        m.rows.forEach((r, i) => { const dd = Math.abs(r.p - lvl.price); if (dd < bd){ bd = dd; bi = i; } });
+        if (bi >= 0) (chipByRow[bi] = chipByRow[bi] || []).push(lvl);
+      });
       let h = `<table class="hmt"><thead><tr><th>PX</th>`
             + m.cols.map(c => `<th>${c.label}</th>`).join("") + `</tr></thead><tbody>`;
-      let done = false;
-      for (const r of m.rows){
-        const live = !done && r.p <= price;
-        if (live) done = true;
-        h += `<tr${live ? ' class="live"' : ""}><td class="k">${Math.round(r.p).toLocaleString("fr-FR")}</td>`;
-        for (let c = 0; c < nc; c++)
-        {
+      m.rows.forEach((r, i) => {
+        const chips = (chipByRow[i] || []).map(lvl =>
+          `<span class="chip" style="color:${HM_KCOL[lvl.kind]};border-color:${HM_KCOL[lvl.kind]}55">${HM_KLAB[lvl.kind]}</span>`).join("");
+        h += `<tr data-p="${r.p}"><td class="k">${chips}${Math.round(r.p).toLocaleString("fr-FR")}</td>`;
+        for (let c = 0; c < nc; c++){
           const v = r.v[c];
           const dim = flt && Math.abs(v || 0) < flt;
           h += `<td><span class="cell" style="${dim ? "opacity:.12" : hmCellStyle(v, p95[c], p99[c])}">${dim ? "" : hmFmt(v)}</span></td>`;
         }
         h += `</tr>`;
-      }
-      box.innerHTML = h + `</tbody></table>`;
-      const lr = box.querySelector("tr.live");
+      });
+      tbl.innerHTML = h + `</tbody></table>`;
+      movePxLine(price);
+      const lr = tbl.querySelector("tr.live");
       if (lr) box.scrollTop = lr.offsetTop - box.clientHeight / 2 + lr.offsetHeight / 2;
       const n = host.querySelector(".n");
       if (n) n.textContent = price ? Math.round(price).toLocaleString("fr-FR") : "";
     }catch(e){
-      box.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
+      tbl.innerHTML = `<div class="hmload">${tx("hmNone")}</div>`;
     }
   };
   host._redraw = draw;
   await draw();
-  // même rythme que le reste : rien le week-end, lent hors séance
+
+  // même rythme que le reste : rien le week-end, lent hors séance. Deux
+  // horloges séparées, comme heatmap.html : le rectangle de prix glisse au
+  // rythme du quote (3 s en séance), la grille (recalcul gamma complet) se
+  // reconstruit bien moins souvent -- sans ça le rectangle sauterait par
+  // à-coups toutes les 20 s au lieu de suivre le prix en continu.
+  const armQuote = () => {
+    clearInterval(host._qtimer);
+    const ms = marketPollMs();
+    if (ms) host._qtimer = setInterval(async () => {
+      try{
+        const q = await fetch(`/api/quote?target=${cfg.t}`).then(r => r.json());
+        if (q && q.price){
+          movePxLine(q.price);
+          const n = host.querySelector(".n");
+          if (n) n.textContent = Math.round(q.price).toLocaleString("fr-FR");
+        }
+      }catch(_){}
+    }, ms <= 3000 ? 3000 : ms);
+  };
   const arm = () => {
     clearInterval(host._timer);
     const ms = marketPollMs();
     // aligné sur la page heatmap : 20 s en séance, sinon le rythme général
     if (ms) host._timer = setInterval(draw, ms <= 3000 ? 20000 : Math.max(ms, 60000));
   };
-  arm();
+  arm(); armQuote();
   clearInterval(host._pollWatch);
   host._pollWatch = setInterval(() => {
-    if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
-    arm();
+    if (!host.isConnected){
+      clearInterval(host._pollWatch); clearInterval(host._timer); clearInterval(host._qtimer);
+      return;
+    }
+    arm(); armQuote();
   }, 120000);
 }
 
@@ -1257,6 +1342,7 @@ function render(){
     // deux minutes plus tard, en recréant des minuteurs entre-temps.
     if (el._timer) clearInterval(el._timer);
     if (el._timer2) clearInterval(el._timer2);
+    if (el._qtimer) clearInterval(el._qtimer);
     if (el._pollWatch) clearInterval(el._pollWatch);
     if (el._geoSafe) clearInterval(el._geoSafe);
     if (el._touchT) clearTimeout(el._touchT);
@@ -1298,7 +1384,7 @@ function render(){
         <span class="cchips"><button class="hmnoise${cfg.nz ? " on" : ""}">⚡</button></span>
         <span class="gh"></span>
         <button class="rm" title="Retirer">✕</button></div>
-        <div class="box hmbox"><div class="hmload">…</div></div>`;
+        <div class="box hmbox"><div class="hmtbl"><div class="hmload">…</div></div></div>`;
       const nb = card.querySelector(".hmnoise");
       nb.title = tx("noise");
       nb.onclick = () => {
@@ -1309,6 +1395,7 @@ function render(){
       };
       card.querySelector(".rm").onclick = () => {
         if (card._timer) clearInterval(card._timer);
+        if (card._qtimer) clearInterval(card._qtimer);
         if (card._pollWatch) clearInterval(card._pollWatch);
         CARDS.splice(idx, 1); saveCards(); render();
       };
