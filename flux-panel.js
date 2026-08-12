@@ -317,6 +317,9 @@ let FLUX_LAYOUT = null, FLUX_HOVER_WIRED = false;
 // recoupe plus la grille reçue (cf. fluxCurrentView) -- persiste d'un
 // rafraîchissement ou d'un changement de mode à l'autre.
 let FLUX_VIEW = null;
+// true pendant un glisser/pincement actif (souris ou tactile) -- protège
+// FLUX_VIEW d'un recentrage serveur en cours de geste, cf. fluxCurrentView.
+let FLUX_DRAGGING = false;
 
 let FLUX_DIRTY = {bg: false, main: false, cursor: false};
 let FLUX_RAF = null;
@@ -714,9 +717,32 @@ function fluxGradient(d, mat, lay){
 // recadrage du bitmap dans drawFluxBg.
 function fluxCurrentView(lay){
   const {viewMin, viewMax} = lay;
-  if (!FLUX_VIEW || FLUX_VIEW.max <= viewMin || FLUX_VIEW.min >= viewMax){
+  if (!FLUX_VIEW){
     FLUX_VIEW = {min: viewMin, max: viewMax};
+    return FLUX_VIEW;
   }
+  // Pendant un glisser-déposer actif, panTo() clampe déjà lui-même à chaque
+  // frame -- retoucher la vue ICI (parce qu'un poll est arrivé entre-temps,
+  // price_grid étant recentrée sur le spot à chaque tir serveur) écrase
+  // drag.view0 sous le geste en cours : la vue se bloque, "revient" toute
+  // seule, ou l'affichage se déforme (bug identique corrigé dans le widget
+  // public, widget/flux-widget.js -- cf. CLAUDE.md, deux copies séparées).
+  if (FLUX_DRAGGING) return FLUX_VIEW;
+  if (FLUX_VIEW.max <= viewMin || FLUX_VIEW.min >= viewMax){
+    // aucun recouvrement avec la grille courante -- rien à préserver, on
+    // repart du plein cadre.
+    FLUX_VIEW = {min: viewMin, max: viewMax};
+    return FLUX_VIEW;
+  }
+  // Recouvrement partiel : la grille a glissé sous une vue déjà zoomée sans
+  // en sortir complètement -- on la RETRANSLATE à l'intérieur du nouveau
+  // cadre (même span, donc même niveau de zoom) plutôt que d'écraser le
+  // zoom de l'utilisateur à chaque léger recentrage.
+  let span = Math.min(FLUX_VIEW.max - FLUX_VIEW.min, viewMax - viewMin);
+  let min = FLUX_VIEW.min, max = FLUX_VIEW.min + span;
+  if (min < viewMin){ min = viewMin; max = min + span; }
+  if (max > viewMax){ max = viewMax; min = max - span; }
+  FLUX_VIEW = {min, max};
   return FLUX_VIEW;
 }
 
@@ -1305,11 +1331,13 @@ function bindFluxHover(){
   cv.addEventListener("mousedown", e => {
     if (!FLUX_LAYOUT || !FLUX_VIEW) return;
     drag = {startY: e.clientY, view0: {...FLUX_VIEW}};
+    FLUX_DRAGGING = true;
     cv.style.cursor = "grabbing";
   });
   window.addEventListener("mouseup", e => {
     if (!drag) return;
     drag = null;
+    FLUX_DRAGGING = false;
     const r = cv.getBoundingClientRect();
     updateCursorIcon(e.clientX - r.left, e.clientY - r.top);
   });
@@ -1336,6 +1364,7 @@ function bindFluxHover(){
     if (e.touches.length === 1){
       pinch = null;
       drag = {startY: e.touches[0].clientY, view0: {...FLUX_VIEW}};
+      FLUX_DRAGGING = true;
       // tactile : l'infobulle apparaît à l'appui (comfort n°5), même point
       // que le doigt qui va ensuite glisser/paner.
       const {mx, my} = touchXY(e.touches[0]);
@@ -1351,6 +1380,7 @@ function bindFluxHover(){
         view0: {...FLUX_VIEW},
         midPrice: L.priceMax - (midY - L.padT) / L.gh * (L.priceMax - L.priceMin || 1),
       };
+      FLUX_DRAGGING = true;
     }
     e.preventDefault();
   }, {passive: false});
@@ -1369,7 +1399,7 @@ function bindFluxHover(){
     }
     e.preventDefault();
   }, {passive: false});
-  const touchEnd = () => { drag = null; pinch = null; clearCursorPos(); };
+  const touchEnd = () => { drag = null; pinch = null; FLUX_DRAGGING = false; clearCursorPos(); };
   cv.addEventListener("touchend", touchEnd);
   cv.addEventListener("touchcancel", touchEnd);
 }

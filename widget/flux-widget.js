@@ -341,6 +341,7 @@ class TheHubFluxWidget{
       destroyed: false, fatalError: false, everLoaded: false, resizeObs: null, boundMouseUp: null,
       levels: null, histData: null,
       strikesOn: opts.strikesOn !== false, histOn: opts.histOn !== false,
+      dragging: false,
     };
     this.gfx = {off: null, stages: [], gradSrc: null, gradMeta: null, gradKey: null};
 
@@ -804,9 +805,33 @@ class TheHubFluxWidget{
 
   currentView(lay){
     const {viewMin, viewMax} = lay;
-    if (!this.state.view || this.state.view.max <= viewMin || this.state.view.min >= viewMax){
+    const v = this.state.view;
+    if (!v){
       this.state.view = {min: viewMin, max: viewMax};
+      return this.state.view;
     }
+    // Pendant un glisser-déposer actif, panTo() clampe déjà lui-même à
+    // chaque frame -- retoucher la vue ICI (parce qu'un poll est arrivé
+    // entre-temps) écrase drag.view0 sous le geste en cours et produit
+    // exactement le bug remonté : zoom puis déplacement qui se bloque,
+    // "revient" tout seul, ou déforme l'affichage.
+    if (this.state.dragging) return v;
+    if (v.max <= viewMin || v.min >= viewMax){
+      // aucun recouvrement avec la grille courante (recentrée sur le spot à
+      // chaque tir serveur, cf. price_grid côté _gex_core.py) -- rien à
+      // préserver, on repart du plein cadre.
+      this.state.view = {min: viewMin, max: viewMax};
+      return this.state.view;
+    }
+    // Recouvrement partiel : la grille a glissé sous une vue déjà zoomée
+    // sans en sortir complètement -- on la RETRANSLATE à l'intérieur du
+    // nouveau cadre (même span, donc même niveau de zoom) plutôt que
+    // d'écraser le zoom de l'utilisateur à chaque léger recentrage.
+    let span = Math.min(v.max - v.min, viewMax - viewMin);
+    let min = v.min, max = v.min + span;
+    if (min < viewMin){ min = viewMin; max = min + span; }
+    if (max > viewMax){ max = viewMax; min = max - span; }
+    this.state.view = {min, max};
     return this.state.view;
   }
 
@@ -1288,11 +1313,13 @@ class TheHubFluxWidget{
     cv.addEventListener("mousedown", e => {
       if (!this.state.layout || !this.state.view) return;
       drag = {startY: e.clientY, view0: {...this.state.view}};
+      this.state.dragging = true;
       cv.style.cursor = "grabbing";
     });
     this.state.boundMouseUp = e => {
       if (!drag) return;
       drag = null;
+      this.state.dragging = false;
       const r = cv.getBoundingClientRect();
       updateCursorIcon(e.clientX - r.left, e.clientY - r.top);
     };
@@ -1320,6 +1347,7 @@ class TheHubFluxWidget{
       if (e.touches.length === 1){
         pinch = null;
         drag = {startY: e.touches[0].clientY, view0: {...this.state.view}};
+        this.state.dragging = true;
         const {mx, my} = touchXY(e.touches[0]);
         setCursorPos(mx, my);
       } else if (e.touches.length === 2){
@@ -1333,6 +1361,7 @@ class TheHubFluxWidget{
           view0: {...this.state.view},
           midPrice: L.priceMax - (midY - L.padT) / L.gh * (L.priceMax - L.priceMin || 1),
         };
+        this.state.dragging = true;
       }
       e.preventDefault();
     }, {passive: false});
@@ -1351,7 +1380,7 @@ class TheHubFluxWidget{
       }
       e.preventDefault();
     }, {passive: false});
-    const touchEnd = () => { drag = null; pinch = null; clearCursorPos(); };
+    const touchEnd = () => { drag = null; pinch = null; this.state.dragging = false; clearCursorPos(); };
     cv.addEventListener("touchend", touchEnd);
     cv.addEventListener("touchcancel", touchEnd);
   }
