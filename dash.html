@@ -487,6 +487,9 @@
     <button data-preset="focus">◻ Focus NQ</button>
     <button data-preset="triple">▤ NQ · ES · SPX</button>
     <button data-preset="nqmtf">▦ NQ multi-TF</button>
+    <button data-preset="desk">◆ Desk complet</button>
+    <button data-preset="context">▥ Multi-marché + contexte</button>
+    <button data-preset="fluxfocus">Γ Flux focus</button>
   </div>
 </div>
 <div id="board"></div>
@@ -1607,6 +1610,35 @@ const PRESETS = {
            {t:"SPX", iv:"5m", x:0, y:5, w:12, h:4}],
   nqmtf:  [{t:"NQ", iv:"1m", x:0, y:0, w:6, h:5}, {t:"NQ", iv:"5m", x:6, y:0, w:6, h:5},
            {t:"NQ", iv:"15m", x:0, y:5, w:12, h:4}],
+  // Desk complet : colonne charts (NQ 1m -> SPX 5m -> Heatmap NQ -> Flux NQ)
+  // + colonne Flux direct pleine hauteur a droite -- le combo demande le
+  // plus souvent (niveaux + flux + actu, un seul coup d'oeil).
+  desk: [
+    {t:"NQ",  iv:"1m",   x:0, y:0,  w:7, h:5},
+    {t:"SPX", iv:"5m",   x:0, y:5,  w:7, h:5},
+    {t:"NQ",  iv:"heat", x:0, y:10, w:7, h:6},
+    {t:"NQ",  iv:"flux", x:0, y:16, w:7, h:7},
+    {t:"NQ",  iv:"feed", x:7, y:0,  w:5, h:23},
+  ],
+  // Multi-marche + contexte : NQ/ES/SPX cote a cote, actualites/flux/MAG7
+  // en dessous -- pour suivre plusieurs marches sans perdre le contexte
+  // macro qui les fait bouger.
+  context: [
+    {t:"NQ",  iv:"5m",   x:0, y:0, w:4, h:5},
+    {t:"ES",  iv:"5m",   x:4, y:0, w:4, h:5},
+    {t:"SPX", iv:"5m",   x:8, y:0, w:4, h:5},
+    {t:"NQ",  iv:"news", x:0, y:5, w:4, h:7},
+    {t:"NQ",  iv:"feed", x:4, y:5, w:4, h:7},
+    {t:"NQ",  iv:"mag7", x:8, y:5, w:4, h:7},
+  ],
+  // Flux focus : un seul marche, mais le chart, le flux d'options et
+  // l'actualite qui l'explique tous visibles ensemble.
+  fluxfocus: [
+    {t:"NQ", iv:"5m",   x:0, y:0,  w:7, h:5},
+    {t:"NQ", iv:"feed", x:7, y:0,  w:5, h:12},
+    {t:"NQ", iv:"flux", x:0, y:5,  w:7, h:7},
+    {t:"NQ", iv:"news", x:0, y:12, w:12, h:6},
+  ],
 };
 function applyPreset(name){
   const p = PRESETS[name]; if (!p) return;
