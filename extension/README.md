@@ -64,6 +64,27 @@ l'écosystème gexdash (widget Flux embarquable) — voir `CLAUDE.md` à la raci
 du dépôt pour le raisonnement (pas de header custom, pour éviter un
 préflight CORS que le serveur ne sait pas répondre).
 
+## Règle générale : sélecteurs TradingView
+
+Tous les sélecteurs CSS ciblant le DOM de TradingView (`content.js`) doivent
+utiliser des **préfixes de classe** (`[class*="study-"]`, `[class*="item-"]`,
+…), **jamais une classe complète**. Exemple relevé en prod sur la légende
+d'un indicateur :
+
+```html
+<div class="withCustomTextColor-quatTGAC item-quatTGAC study-quatTGAC has5Buttons-quatTGAC">
+  GEX Daily Levels
+</div>
+```
+
+Le suffixe `-quatTGAC` est un hash de build TradingView : il **change à
+chaque déploiement**, sans préavis ni changelog public. Un sélecteur sur la
+classe complète (`.study-quatTGAC`) casse au prochain déploiement ; un
+sélecteur par préfixe (`[class*="study-"]`) survit tant que la convention de
+nommage elle-même ne change pas. `findIndicatorLegendItem()` illustre le
+patron à suivre : cascade de stratégies du plus précis au plus large, jamais
+une seule classe exacte comme unique piste.
+
 ## Limites connues (non vérifiables sans navigateur réel)
 
 Cette extension a été écrite sans accès à un TradingView réel. Le squelette
@@ -71,11 +92,12 @@ Cette extension a été écrite sans accès à un TradingView réel. Le squelett
 429) est testable tel quel, mais tout ce qui touche au DOM effectif de
 TradingView repose sur des heuristiques best-effort à revérifier :
 
-- **Sélecteurs de l'icône réglages / ouverture du dialogue de paramètres**
-  (`content.js`, `openSettingsDialog`) — plusieurs sélecteurs `data-name`
-  connus de la communauté sont tentés, puis un repli en double-clic sur le
-  titre de l'indicateur. À confirmer que l'un des deux fonctionne sur la
-  version actuelle de TradingView.
+- **Ouverture du dialogue de paramètres** (`content.js`,
+  `openSettingsDialog`) — double-clic sur la légende en premier (geste
+  utilisateur habituel), avec repli sur un bouton d'options révélé au
+  survol si le double-clic ne produit aucune fenêtre dans le délai
+  d'attente actif (`waitForDialog`). À confirmer que l'un des deux
+  fonctionne sur la version actuelle de TradingView.
 - **Détection de l'onglet Inputs** (`ensureInputsTabWithTextareas`) — clique
   chaque onglet du dialogue jusqu'à trouver 5 `<textarea>`, pour rester
   indépendant de la langue de l'UI TradingView (FR/EN/etc.). À confirmer que

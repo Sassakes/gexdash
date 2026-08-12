@@ -54,38 +54,75 @@ async function getIndicatorName() {
   }
 }
 
+// Le DOM réel de la légende TradingView n'expose aucun data-name stable
+// (relevé en prod : <div class="withCustomTextColor-quatTGAC item-quatTGAC
+// study-quatTGAC has5Buttons-quatTGAC">GEX Daily Levels</div>). Le suffixe
+// "-quatTGAC" est un hash de build qui change à chaque déploiement — cf.
+// règle générale dans README.md. On ne cible donc que des PRÉFIXES de
+// classe, en cascade du plus précis au plus large.
 function findIndicatorLegendItem(name) {
-  const items = document.querySelectorAll('[data-name="legend-source-item"]');
   const pattern = buildNamePattern(name);
+  const exactPattern = new RegExp("^" + pattern.source + "$", "i");
   const seen = [];
-  for (const item of items) {
-    const text = (item.textContent || "").trim();
-    seen.push(text);
+
+  // Stratégie 1 : élément dont une classe commence par "study-".
+  const studyEls = document.querySelectorAll('[class*="study-"]');
+  for (const el of studyEls) {
+    const text = (el.textContent || "").trim();
+    if (text) seen.push(text);
     if (pattern.test(text)) {
-      log("indicateur trouvé (correspondance exacte sur le nom configuré) :", JSON.stringify(text));
-      return item;
+      log('indicateur trouvé via [class*="study-"] :', JSON.stringify(text));
+      return el;
     }
   }
-  for (const item of items) {
-    const text = (item.textContent || "").trim();
-    if (/GEX/i.test(text)) {
-      log("nom exact non trouvé, repli sur le premier indicateur contenant 'GEX' :", JSON.stringify(text));
-      return item;
+
+  // Stratégie 2 : élément dont une classe commence par "item-".
+  const itemEls = document.querySelectorAll('[class*="item-"]');
+  for (const el of itemEls) {
+    const text = (el.textContent || "").trim();
+    if (text) seen.push(text);
+    if (pattern.test(text)) {
+      log('indicateur trouvé via [class*="item-"] :', JSON.stringify(text));
+      return el;
     }
   }
+
+  // Stratégie 3 (repli le plus large) : tout élément sans enfant dont le
+  // texte correspond exactement au nom configuré.
+  const leafCandidates = document.querySelectorAll("div, span");
+  for (const el of leafCandidates) {
+    if (el.children.length > 0) continue;
+    const text = (el.textContent || "").trim();
+    if (!text) continue;
+    if (exactPattern.test(text)) {
+      log("indicateur trouvé via repli (élément feuille, texte exact) :", JSON.stringify(text));
+      return el;
+    }
+  }
+
   log(
-    "indicateur introuvable. Éléments de légende vus sur ce graphique :",
-    seen.length ? seen : "(aucun élément de légende détecté — le graphique a-t-il fini de charger ?)"
+    "indicateur introuvable. Éléments candidats vus sur ce graphique :",
+    seen.length ? seen.slice(0, 30) : "(aucun élément candidat détecté — le graphique a-t-il fini de charger ?)"
   );
   return null;
 }
 
 async function openSettingsDialog(item) {
-  // Les icônes d'action (dont l'engrenage "Settings") ne sont souvent
-  // présentes/actives dans le DOM qu'après un survol du legend item.
+  // 1) Geste utilisateur habituel pour ouvrir les paramètres d'un
+  //    indicateur : double-clic sur la légende. Testé en premier.
+  log("ouverture des paramètres — tentative : double-clic sur la légende");
+  item.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  let dialog = await waitForDialog(1500, 100);
+  if (dialog) return dialog;
+
+  // 2) Repli : bouton d'options révélé au survol. La classe "has5Buttons"
+  //    vue sur l'élément de légende suggère des boutons d'action qui
+  //    n'apparaissent dans le DOM (ou ne deviennent cliquables) qu'après un
+  //    mouseover.
+  log("double-clic sans résultat, repli sur le bouton d'options au survol");
   item.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
   item.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-  await sleep(120);
+  await sleep(150);
 
   const gearSelectors = [
     '[data-name="legend-settings-action"]',
@@ -93,21 +130,26 @@ async function openSettingsDialog(item) {
     'button[aria-label="Settings"]',
     'button[data-tooltip="Settings"]',
     '[data-name*="settings" i]',
+    '[class*="settings"]',
   ];
-  for (const sel of gearSelectors) {
-    const btn = item.querySelector(sel);
-    if (btn) {
-      log("paramètres ouverts via le sélecteur", sel);
-      btn.click();
-      return;
+  const searchRoots = [item, item.parentElement, item.closest('[class*="item-"]')].filter(Boolean);
+  let clicked = false;
+  for (const root of searchRoots) {
+    for (const sel of gearSelectors) {
+      const btn = root.querySelector(sel);
+      if (btn) {
+        log("clic sur le bouton de réglages via le sélecteur", sel);
+        btn.click();
+        clicked = true;
+        break;
+      }
     }
+    if (clicked) break;
   }
+  if (!clicked) log("aucune icône de réglages trouvée au survol");
 
-  // Repli : le double-clic sur le titre de l'indicateur ouvre aussi ses
-  // paramètres — pas de vérification possible ici, waitForDialog() tranche.
-  log("aucune icône réglages trouvée, repli sur double-clic du titre de l'indicateur");
-  const title = item.querySelector('[data-name="legend-source-title"]') || item;
-  title.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  dialog = await waitForDialog();
+  return dialog;
 }
 
 async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
@@ -278,8 +320,7 @@ async function applyLevels(levels) {
     const item = findIndicatorLegendItem(indicatorName);
     if (!item) return fail("Indicateur « " + indicatorName + " » introuvable sur ce graphique");
 
-    await openSettingsDialog(item);
-    const dialog = await waitForDialog();
+    const dialog = await openSettingsDialog(item);
     if (!dialog) return fail("Fenêtre de paramètres introuvable");
 
     const tabOk = await ensureInputsTabWithTextareas(dialog);
