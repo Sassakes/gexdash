@@ -135,6 +135,13 @@
   }
   #editBtn:hover{color:var(--gold)}
   #editBtn.on{background:var(--gold-soft); color:var(--gold); border-color:var(--gold)}
+  #clearBtn{
+    background:var(--surface); border:1px solid var(--line-strong); color:var(--muted);
+    font-size:12px; padding:8px 16px; cursor:pointer; min-height:36px;
+    transition:color .12s ease, border-color .12s ease;
+  }
+  #clearBtn:hover{color:var(--red); border-color:rgba(239,83,80,.5)}
+  #clearBtn[hidden]{display:none}
   .hint{color:var(--faint); font-size:11.5px}
   #board{position:relative}
   .card{
@@ -472,6 +479,7 @@
     </div>
   </div>
   <button id="editBtn">✎ <span id="editLbl">Éditer</span></button>
+  <button id="clearBtn" hidden>✕ <span id="clearLbl">Tout vider</span></button>
   <select id="tzDash" title="Fuseau horaire des charts">
     <option value="Europe/Paris">Paris</option>
     <option value="America/New_York">New York</option>
@@ -537,6 +545,7 @@ const TXT = {
        hint:"Disposition sauvegardée dans ce navigateur.",
        empty:"Aucun chart pour l'instant — clique sur + Ajouter ci-dessus.",
        feedKo:"flux indisponible", edit:"Éditer", done:"Terminé",
+       clear:"Tout vider", clearAsk:n => `Supprimer ${n === 1 ? "cette carte" : "ces " + n + " cartes"} ? Cette action est irréversible.`,
        magIncomplete:"Échantillon incomplet"},
   en: {mkts:"Market snapshot", needAuth:"Sign-in required", goSignIn:"Sign in", noise:"Strong zones", hmNone:"Data unavailable", title:"My dashboard", term:"Terminal", heat:"Heatmap", news:"News", doc:"Doc", add:"Add",
        mkt:"Market", fmt:"Format · click to add", panelsLab:"Panels",
@@ -544,6 +553,7 @@ const TXT = {
        hint:"Layout saved in this browser.",
        empty:"No charts yet — click + Add above.",
        feedKo:"feed unavailable", edit:"Edit", done:"Done",
+       clear:"Clear all", clearAsk:n => `Delete ${n === 1 ? "this card" : "these " + n + " cards"}? This can't be undone.`,
        magIncomplete:"Incomplete sample"},
 };
 const tx = k => (TXT[LANG] || TXT.fr)[k];
@@ -1671,7 +1681,15 @@ document.querySelectorAll(".presets [data-preset]").forEach(b =>
 function updateCount(){
   const c = $("ccount");
   if (c) c.textContent = CARDS.length ? `${CARDS.length} chart${CARDS.length > 1 ? "s" : ""}` : "";
+  // Inutile d'afficher "Tout vider" sur un tableau de bord deja vide.
+  $("clearBtn").hidden = CARDS.length === 0;
 }
+$("clearLbl").textContent = tx("clear");
+$("clearBtn").onclick = () => {
+  if (!CARDS.length) return;
+  if (!confirm(tx("clearAsk")(CARDS.length))) return;
+  CARDS = []; saveCards(); render();
+};
 
 const tzD = $("tzDash");
 tzD.value = PREFS.tz;
