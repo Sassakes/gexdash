@@ -3,6 +3,7 @@
 const T = {
   fr: {
     apiKeyLabel: "Clé API personnelle",
+    indicatorNameLabel: "Nom de l'indicateur",
     test: "Tester la connexion",
     save: "Enregistrer",
     enabledLabel: "Synchronisation active",
@@ -27,6 +28,7 @@ const T = {
   },
   en: {
     apiKeyLabel: "Personal API key",
+    indicatorNameLabel: "Indicator name",
     test: "Test connection",
     save: "Save",
     enabledLabel: "Sync enabled",
@@ -50,6 +52,8 @@ const T = {
     noTab: "no TradingView tab open",
   },
 };
+
+const DEFAULT_INDICATOR_NAME = "GEX Daily Levels";
 
 let lang = (navigator.language || "fr").toLowerCase().startsWith("fr") ? "fr" : "en";
 
@@ -118,6 +122,7 @@ function paintState(st) {
 async function loadState() {
   const st = await send({ type: "GET_STATE" });
   $("apiKey").value = st.apiKey || "";
+  $("indicatorName").value = st.indicatorName || DEFAULT_INDICATOR_NAME;
   paintState(st);
 }
 
@@ -145,9 +150,10 @@ $("testBtn").addEventListener("click", async () => {
 $("saveBtn").addEventListener("click", async () => {
   const key = $("apiKey").value.trim();
   if (!key) return showResult(false, t("noKey"));
+  const indicatorName = $("indicatorName").value.trim() || DEFAULT_INDICATOR_NAME;
   $("saveBtn").disabled = true;
   showResult(true, t("syncing"));
-  const r = await send({ type: "SAVE_KEY", key });
+  const r = await send({ type: "SAVE_KEY", key, indicatorName });
   $("saveBtn").disabled = false;
   if (r.ok) {
     showResult(true, t("saved") + (r.unchanged ? " — " + t("unchanged") : ""));

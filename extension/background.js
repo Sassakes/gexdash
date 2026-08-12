@@ -9,6 +9,7 @@ const API_BASE = "https://gexdash.wealthbuilders.group";
 const POLL_ALARM = "gex-mylevels-poll";
 const POLL_MINUTES = 5;
 const TV_URL_PATTERNS = ["*://*.tradingview.com/*"];
+const DEFAULT_INDICATOR_NAME = "GEX Daily Levels";
 
 // Backoff: doublement du délai après chaque échec réseau/429, plafonné à
 // 60 min, remis à zéro au premier succès. L'alarme périodique reste à 5 min ;
@@ -18,11 +19,12 @@ const BACKOFF_CAP_MIN = 60;
 
 async function getState() {
   const d = await chrome.storage.local.get([
-    "apiKey", "enabled", "lastHash", "lastLevels", "lastSync",
+    "apiKey", "indicatorName", "enabled", "lastHash", "lastLevels", "lastSync",
     "failCount", "backoffUntil", "lastNotifiedError",
   ]);
   return {
     apiKey: d.apiKey || "",
+    indicatorName: d.indicatorName || DEFAULT_INDICATOR_NAME,
     enabled: d.enabled !== false, // défaut: actif
     lastHash: d.lastHash || null,
     lastLevels: d.lastLevels || null,
@@ -190,7 +192,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "SAVE_KEY") {
-    setState({ apiKey: msg.key, failCount: 0, backoffUntil: 0, lastNotifiedError: null })
+    setState({
+      apiKey: msg.key,
+      indicatorName: (msg.indicatorName && msg.indicatorName.trim()) || DEFAULT_INDICATOR_NAME,
+      failCount: 0,
+      backoffUntil: 0,
+      lastNotifiedError: null,
+    })
       .then(() => runSync(true))
       .then((r) => sendResponse(r));
     return true;

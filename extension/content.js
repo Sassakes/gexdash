@@ -13,22 +13,70 @@
  * repli presse-papiers + notification (cf. fallbackClipboard). C'est la
  * partie la plus susceptible de casser à une future mise à jour TradingView
  * — si le remplissage automatique s'arrête un jour, commencer par revérifier
- * les sélecteurs ci-dessous dans les devtools.
+ * les sélecteurs ci-dessous dans les devtools. Chaque étape logge sous le
+ * préfixe [GEX] dans la console de la page — c'est la première chose à
+ * regarder en cas d'échec.
  */
 "use strict";
+
+const DEFAULT_INDICATOR_NAME = "GEX Daily Levels";
+
+function log(...args) {
+  console.log("[GEX]", ...args);
+}
+
+log("script injecté sur", location.hostname);
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function findIndicatorLegendItem() {
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Construit un pattern tolérant aux espaces multiples/variables à partir du
+// nom configuré par l'utilisateur (ex. "GEX  Daily Levels" == "GEX Daily Levels").
+function buildNamePattern(name) {
+  const escaped = name.trim().split(/\s+/).map(escapeRegExp).join("\\s*");
+  return new RegExp(escaped, "i");
+}
+
+async function getIndicatorName() {
+  try {
+    const { indicatorName } = await chrome.storage.local.get(["indicatorName"]);
+    const name = (indicatorName && indicatorName.trim()) || DEFAULT_INDICATOR_NAME;
+    log("nom d'indicateur configuré :", JSON.stringify(name));
+    return name;
+  } catch (e) {
+    log("lecture du nom d'indicateur impossible, repli sur la valeur par défaut :", String(e));
+    return DEFAULT_INDICATOR_NAME;
+  }
+}
+
+function findIndicatorLegendItem(name) {
   const items = document.querySelectorAll('[data-name="legend-source-item"]');
+  const pattern = buildNamePattern(name);
+  const seen = [];
   for (const item of items) {
-    if (/GEX\s*Daily\s*Levels/i.test((item.textContent || "").trim())) return item;
+    const text = (item.textContent || "").trim();
+    seen.push(text);
+    if (pattern.test(text)) {
+      log("indicateur trouvé (correspondance exacte sur le nom configuré) :", JSON.stringify(text));
+      return item;
+    }
   }
   for (const item of items) {
-    if (/GEX/i.test((item.textContent || "").trim())) return item;
+    const text = (item.textContent || "").trim();
+    if (/GEX/i.test(text)) {
+      log("nom exact non trouvé, repli sur le premier indicateur contenant 'GEX' :", JSON.stringify(text));
+      return item;
+    }
   }
+  log(
+    "indicateur introuvable. Éléments de légende vus sur ce graphique :",
+    seen.length ? seen : "(aucun élément de légende détecté — le graphique a-t-il fini de charger ?)"
+  );
   return null;
 }
 
@@ -49,6 +97,7 @@ async function openSettingsDialog(item) {
   for (const sel of gearSelectors) {
     const btn = item.querySelector(sel);
     if (btn) {
+      log("paramètres ouverts via le sélecteur", sel);
       btn.click();
       return;
     }
@@ -56,6 +105,7 @@ async function openSettingsDialog(item) {
 
   // Repli : le double-clic sur le titre de l'indicateur ouvre aussi ses
   // paramètres — pas de vérification possible ici, waitForDialog() tranche.
+  log("aucune icône réglages trouvée, repli sur double-clic du titre de l'indicateur");
   const title = item.querySelector('[data-name="legend-source-title"]') || item;
   title.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
 }
@@ -68,20 +118,33 @@ async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
       Array.from(document.querySelectorAll('div[role="dialog"]')).find(
         (d) => d.querySelector('textarea, [role="tab"]')
       );
-    if (dialog) return dialog;
+    if (dialog) {
+      log("fenêtre de paramètres détectée après", Date.now() - start, "ms");
+      return dialog;
+    }
     await sleep(stepMs);
   }
+  log("fenêtre de paramètres non détectée après", timeoutMs, "ms");
   return null;
 }
 
 async function ensureInputsTabWithTextareas(dialog) {
-  if (dialog.querySelectorAll("textarea").length >= 5) return true;
+  if (dialog.querySelectorAll("textarea").length >= 5) {
+    log("onglet Inputs déjà actif (5+ zones de texte visibles sans clic d'onglet)");
+    return true;
+  }
   const tabs = dialog.querySelectorAll('[role="tab"]');
+  log("onglet Inputs non actif par défaut, essai de", tabs.length, "onglet(s)");
   for (const tab of tabs) {
     tab.click();
     await sleep(150);
-    if (dialog.querySelectorAll("textarea").length >= 5) return true;
+    const n = dialog.querySelectorAll("textarea").length;
+    if (n >= 5) {
+      log("onglet Inputs trouvé :", (tab.textContent || "").trim() || "(sans libellé)");
+      return true;
+    }
   }
+  log("aucun onglet ne révèle 5 zones de texte");
   return false;
 }
 
@@ -113,6 +176,7 @@ function mapFieldsToTextareas(areas) {
     for (const key of ["GC", "XAU", "NQ", "ES", "SPX"]) {
       if (!out[key] && patterns[key].test(label)) {
         out[key] = el;
+        log("champ associé :", key, "<-", JSON.stringify(label));
         break;
       }
     }
@@ -167,6 +231,7 @@ function levelsToText(levels) {
 }
 
 async function fallbackClipboard(levels, reason) {
+  log("repli presse-papiers — raison :", reason);
   const text = levelsToText(levels);
   let copied = false;
   try {
@@ -187,6 +252,7 @@ async function fallbackClipboard(levels, reason) {
       copied = false;
     }
   }
+  log(copied ? "niveaux copiés dans le presse-papiers" : "copie presse-papiers également échouée");
   chrome.runtime.sendMessage({
     type: "NOTIFY",
     id: "gex-fallback-" + Date.now(),
@@ -201,13 +267,16 @@ async function fallbackClipboard(levels, reason) {
 
 async function applyLevels(levels) {
   const fail = (reason) => {
+    log("échec :", reason);
     fallbackClipboard(levels, reason);
     return { ok: false, error: reason, fallback: true };
   };
 
   try {
-    const item = findIndicatorLegendItem();
-    if (!item) return fail("Indicateur GEX Daily Levels introuvable sur ce graphique");
+    const indicatorName = await getIndicatorName();
+
+    const item = findIndicatorLegendItem(indicatorName);
+    if (!item) return fail("Indicateur « " + indicatorName + " » introuvable sur ce graphique");
 
     await openSettingsDialog(item);
     const dialog = await waitForDialog();
@@ -217,6 +286,7 @@ async function applyLevels(levels) {
     if (!tabOk) return fail("Onglet Inputs introuvable ou vide");
 
     const areas = Array.from(dialog.querySelectorAll("textarea"));
+    log("zones de texte détectées dans l'onglet Inputs :", areas.length);
     const mapping = mapFieldsToTextareas(areas);
     const order = ["NQ", "ES", "SPX", "GC", "XAU"];
 
@@ -224,6 +294,7 @@ async function applyLevels(levels) {
       // Repli : correspondance par libellé incomplète mais exactement 5
       // champs trouvés -> on suppose l'ordre de déclaration du script Pine
       // (NQ, ES, SPX, GOLD GC, GOLD XAUUSD), inchangé depuis sa création.
+      log("association par libellé incomplète, repli sur l'ordre de déclaration du script Pine");
       order.forEach((k, i) => {
         mapping[k] = mapping[k] || areas[i];
       });
@@ -243,8 +314,10 @@ async function applyLevels(levels) {
 
     const submit = findSubmitButton(dialog);
     if (!submit) return fail("Bouton de validation introuvable dans la fenêtre de paramètres");
+    log("validation — clic sur le bouton :", (submit.textContent || "").trim() || "(sans libellé)");
     submit.click();
 
+    log("remplissage terminé avec succès, champs mis à jour :", order.join(", "));
     return { ok: true, filled: order.length };
   } catch (e) {
     return fail("Erreur inattendue : " + String((e && e.message) || e));
@@ -253,6 +326,7 @@ async function applyLevels(levels) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "GEX_LEVELS_UPDATE") {
+    log("message GEX_LEVELS_UPDATE reçu du service worker");
     applyLevels(msg.levels).then(sendResponse);
     return true; // réponse asynchrone
   }
