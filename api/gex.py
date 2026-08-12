@@ -478,8 +478,20 @@ def _news_markets():
 
 def _news_mag7():
     from concurrent.futures import ThreadPoolExecutor
+
+    # Les 8 lignes MAG7 tournaient en SERIE (simple liste en compréhension,
+    # 2 appels Finnhub chacune) pendant que _news_markets() juste à côté fait
+    # exactement le même travail en parallèle sur 9 symboles -- l'incohérence
+    # faisait trainer ce bloc jusqu'à 8x plus longtemps que necessaire, avec
+    # un risque bien plus élevé qu'un symbole isolé (rate-limit, latence
+    # Finnhub) dépasse encore la fenêtre de cache et laisse un "échantillon
+    # incomplet" (agg.complete=False) affiché côté dashboard/news.
+    def f_rows():
+        with ThreadPoolExecutor(max_workers=8) as ex2:
+            return list(ex2.map(_news_mag_one, _MAG7))
+
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_mag = ex.submit(lambda: [_news_mag_one(s) for s in _MAG7])
+        f_mag = ex.submit(f_rows)
         f_mkt = ex.submit(_news_markets)
         rows, markets = f_mag.result(), f_mkt.result()
 
