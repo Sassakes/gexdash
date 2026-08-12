@@ -219,6 +219,16 @@ def _news_fj_shared():
     # l'utilisateur sur /news et sur la carte Actualites du dashboard -- pas
     # une marque a exposer, juste indiquer que c'est le fil temps reel.
     rows, err = _fetch_status(FJ_RSS, "Live")
+    # Leur RSS prefixe CHAQUE titre par "FinancialJuice: " en dur (verifie sur
+    # le flux brut) -- ca ne vit pas dans un champ separe qu'on controle, ca
+    # fait partie du texte du titre lui-meme. Retire ici, une seule fois a la
+    # source, plutot que de laisser chaque consommateur (liste de secours
+    # /news, carte Actualites du dashboard) le repeter.
+    if rows:
+        import re as _re
+        for _row in rows:
+            _row["title"] = _re.sub(r"^financialjuice\s*[:\-]\s*", "",
+                                     _row.get("title") or "", flags=_re.IGNORECASE)
     if err.startswith("HTTP 429") or err.startswith("HTTP 5"):
         _FJ_BACKOFF["until"] = now + 300
         try:                              # on ressert le dernier fil connu
