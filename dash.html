@@ -117,6 +117,9 @@
     background:linear-gradient(180deg, rgba(240,185,11,.16), rgba(240,185,11,.07));
   }
   .chip.wide{flex:1 1 100%; text-align:left}
+  .pop-authmsg{font-size:11.5px; color:var(--muted); line-height:1.5}
+  .pop-authmsg a{color:var(--gold); text-decoration:none}
+  .pop-authmsg a:hover{text-decoration:underline}
   #editBtn{
     background:var(--surface); border:1px solid var(--line-strong); color:var(--muted);
     font-size:12px; padding:8px 16px; cursor:pointer; min-height:36px;
@@ -445,13 +448,17 @@
           <button type="button" class="chip" data-v="flux">Γ Flux</button>
         </div>
       </div>
-      <div class="pop-sec" id="panelSec" hidden>
+      <div class="pop-sec" id="panelSec">
         <div class="pop-lab" id="addLabPanels">Panneaux</div>
-        <div class="chiprow stack" id="panelChips">
+        <div class="chiprow stack" id="panelChips" hidden>
           <button type="button" class="chip wide" data-v="feed">▤ <span id="pnFeedLbl">Flux direct</span></button>
           <button type="button" class="chip wide" data-v="news">▤ <span id="pnNewsLbl">Actualités</span></button>
           <button type="button" class="chip wide" data-v="eco">▤ <span id="pnEcoLbl">Calendrier éco</span></button>
           <button type="button" class="chip wide" data-v="mag7">▤ <span id="pnMagLbl">MAG7 + marchés</span></button>
+        </div>
+        <div id="panelAuthMsg" class="pop-authmsg" hidden>
+          <span id="panelAuthTxt">Connexion requise</span>
+          <a href="/" id="panelAuthLink">Se connecter</a>
         </div>
       </div>
     </div>
@@ -1511,6 +1518,8 @@ $("pnFeedLbl").textContent = tx("pnFeed");
 $("pnNewsLbl").textContent = tx("pnNews");
 $("pnEcoLbl").textContent = tx("pnEco");
 $("pnMagLbl").textContent = tx("pnMag");
+$("panelAuthTxt").textContent = tx("needAuth");
+$("panelAuthLink").textContent = tx("goSignIn");
 
 /* ═══ Ajout de charts/panneaux : un seul bouton "+", un popover à puces ═══
    Avant : deux paires select+bouton côte à côte (chart, puis panneau),
@@ -1555,13 +1564,20 @@ document.querySelectorAll("#panelChips .chip").forEach(b => b.onclick = () => {
   closeAddPop();
 });
 
-/* Les panneaux d'information sont réservés aux membres : sans session, on ne
-   propose même pas de les ajouter — plutôt que de laisser l'utilisateur créer
-   une carte qui lui répondrait « connexion requise ». */
+/* Les panneaux d'information (dont Actualités marché) sont réservés aux
+   membres. Avant : la section "Panneaux" entière disparaissait du popover
+   sans trace tant que fetch("/api/auth") n'avait pas résolu "ok" -- un
+   visiteur dont la session avait expiré (ou qui arrivait sur /dash sans être
+   jamais passé par la connexion du terminal, cf. index.html #authBtn, que
+   /dash n'a pas) ne voyait tout simplement plus l'option, sans indice pour
+   comprendre pourquoi ni comment la récupérer. On affiche maintenant TOUJOURS
+   la section, avec soit les puces, soit un lien de connexion explicite vers
+   le terminal (seul endroit où /dash permet de s'authentifier). */
 (async function gatePanels(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  $("panelSec").hidden = !ok;
+  $("panelChips").hidden = !ok;
+  $("panelAuthMsg").hidden = ok;
   const nl = $("navNews"); if (nl) nl.hidden = !ok;
 })();
 
