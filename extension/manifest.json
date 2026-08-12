@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "TheHub — GEX Levels Autofill",
+  "version": "1.0.0",
+  "description": "Remplit automatiquement l'indicateur TradingView GEX Daily Levels avec tes niveaux TheHub, sans jamais rouvrir gexdash.",
+  "permissions": ["storage", "alarms", "notifications", "clipboardWrite"],
+  "host_permissions": [
+    "https://gexdash.wealthbuilders.group/*",
+    "https://*.tradingview.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.tradingview.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TheHub GEX Levels"
+  }
+}
