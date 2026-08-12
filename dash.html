@@ -35,10 +35,18 @@
   #empty[hidden]{display:none}
   #empty .empty-t{font-family:var(--disp); font-size:16px; color:var(--text); letter-spacing:.01em}
   #empty .empty-s{color:var(--muted); font-size:12.5px; margin:6px 0 22px}
-  .presets{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+  /* 3 colonnes thematiques plutot qu'une seule rangee qui wrappait sans
+     logique -- charts seuls / + heatmap-flux / + flux-actus, du plus
+     minimal au plus charge. */
+  .presets{display:flex; gap:26px; flex-wrap:wrap; justify-content:center}
+  .preset-col{display:flex; flex-direction:column; gap:8px; min-width:180px}
+  .preset-h{
+    font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--faint); text-align:left; margin-bottom:2px;
+  }
   .presets button{
     background:var(--surface); border:1px solid var(--line-strong); color:var(--muted);
-    font:inherit; font-size:12px; padding:10px 16px; cursor:pointer;
+    font:inherit; font-size:12px; padding:10px 16px; cursor:pointer; text-align:left;
     transition:color .14s ease, border-color .14s ease, transform .14s ease;
   }
   .presets button:hover{color:var(--gold); border-color:var(--gold-glow); transform:translateY(-1px)}
@@ -484,12 +492,21 @@
   <div class="empty-t">Ton plan de travail est vide</div>
   <div class="empty-s">Ajoute des charts un par un, ou pars d'une disposition prête.</div>
   <div class="presets">
-    <button data-preset="focus">◻ Focus NQ</button>
-    <button data-preset="triple">▤ NQ · ES · SPX</button>
-    <button data-preset="nqmtf">▦ NQ multi-TF</button>
-    <button data-preset="desk">◆ Desk complet</button>
-    <button data-preset="context">▥ Multi-marché + contexte</button>
-    <button data-preset="fluxfocus">Γ Flux focus</button>
+    <div class="preset-col">
+      <div class="preset-h">Charts</div>
+      <button data-preset="focus">◻ Focus NQ</button>
+      <button data-preset="triple">▤ NQ · ES · SPX</button>
+      <button data-preset="nqmtf">▦ NQ multi-TF</button>
+    </div>
+    <div class="preset-col">
+      <div class="preset-h">+ Heatmap / Flux</div>
+      <button data-preset="desk">◆ Desk complet</button>
+      <button data-preset="fluxfocus">Γ Flux focus</button>
+    </div>
+    <div class="preset-col">
+      <div class="preset-h">+ Flux / Actus</div>
+      <button data-preset="context">▥ Multi-marché + contexte</button>
+    </div>
   </div>
 </div>
 <div id="board"></div>
