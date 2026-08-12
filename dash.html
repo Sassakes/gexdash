@@ -510,6 +510,7 @@
       <div class="preset-h">+ Heatmap / Flux</div>
       <button data-preset="desk">◆ Desk complet</button>
       <button data-preset="fluxfocus">Γ Flux focus</button>
+      <button data-preset="chartheat">▥ Chart · Heat · Flux</button>
     </div>
     <div class="preset-col">
       <div class="preset-h">+ Flux / Actus</div>
@@ -1080,14 +1081,15 @@ async function mountNewsCard(cfg, host){
     return;
   }
 
-  const TYPE = {feed: "feed", news: "news", mag7: "mag7"}[cfg.iv];
-  // Le parametre envoye au serveur differe de la cle lue dans la reponse pour
-  // "news" : /api/news?type=fj tente FinancialJuice puis Finnhub puis le flux
-  // institutionnel en repli -- MEME pipeline que loadNews() sur /news -- mais
-  // repond toujours sous la cle "news". ?type=news tout court retombe sur
-  // UNIQUEMENT Finnhub "general", un flux distinct qui affichait des depeches
-  // differentes de l'onglet "Market News" de /news pour la meme carte.
-  const QTYPE = TYPE === "news" ? "fj" : TYPE;
+  // "news" affiche le flux institutionnel (Fed/Tresor/BLS/SEC/Maison-Blanche/
+  // CNBC -- sources autorisees mais qui publient peu souvent) ; "feed" (Live
+  // feed) affiche le ticker FinancialJuice, bien plus frequent et donc
+  // effectivement plus "live" -- volontairement l'INVERSE des noms de type
+  // cote serveur (/api/news?type=feed retourne l'institutionnel, ?type=fj
+  // retourne FinancialJuice), d'ou ce mapping explicite plutot que de
+  // renommer les routes existantes (deja utilisees par /news).
+  const QTYPE = {feed: "fj", news: "feed", mag7: "mag7"}[cfg.iv];
+  const RKEY  = {feed: "news", news: "feed", mag7: "mag7"}[cfg.iv];
   const draw = async () => {
     try{
       const r = await fetch(`/api/news?type=${QTYPE}`);
@@ -1098,7 +1100,7 @@ async function mountNewsCard(cfg, host){
         return;
       }
       const d = await r.json();
-      if (TYPE === "mag7"){
+      if (cfg.iv === "mag7"){
         const rows = (d.mag7 && d.mag7.rows) || [];
         const agg = (d.mag7 && d.mag7.agg) || {};
         if (!rows.length){ box.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; return; }
@@ -1117,7 +1119,7 @@ async function mountNewsCard(cfg, host){
                          + mkts.map(line).join("") : "");
         return;
       }
-      const rows = d[TYPE] || [];
+      const rows = d[RKEY] || [];
       if (!rows.length){ box.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; return; }
       box.innerHTML = rows.slice(0, 60).map(x => {
         const hot = x.impact === "high";
@@ -1665,6 +1667,15 @@ const PRESETS = {
     {t:"NQ", iv:"feed", x:7, y:0,  w:5, h:12},
     {t:"NQ", iv:"flux", x:0, y:5,  w:7, h:7},
     {t:"NQ", iv:"news", x:0, y:12, w:12, h:6},
+  ],
+  // Meme disposition que "Multi-marche + contexte" (chart pleine largeur,
+  // 3 colonnes egales en dessous) mais recentree sur un seul marche :
+  // Heatmap / Flux / Live feed cote a cote sous le chart.
+  chartheat: [
+    {t:"NQ", iv:"5m",   x:0, y:0, w:12, h:5},
+    {t:"NQ", iv:"heat", x:0, y:5, w:4,  h:7},
+    {t:"NQ", iv:"flux", x:4, y:5, w:4,  h:7},
+    {t:"NQ", iv:"feed", x:8, y:5, w:4,  h:7},
   ],
 };
 function applyPreset(name){
