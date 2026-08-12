@@ -871,33 +871,55 @@ async function mountCard(cfg, host){
   // tout premier fetch de la carte, plutôt que de laisser un chart nu.
   const _t0 = PageLoader.begin(box);
   let lastBar = null;
-  try{
-    const r = await fetch(`/api/chart?target=${cfg.t}&interval=${cfg.iv}`);
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || r.status);
-    const bars = d.bars.map(b => ({...b, time: tzShift(b.time)}));
+
+  // Bougies + cotation courante, en parallèle (même mécanisme que loadBars()
+  // côté terminal, index.html) : on synthétise la bougie du bucket ACTUEL si
+  // /api/chart est en retard sur l'horloge, pour ne jamais démarrer -- ou
+  // reprendre après une réouverture de marché, cf. armCard(reopen) plus bas
+  // -- décalé d'un bucket avant le premier tick.
+  const loadBars = async (reopen) => {
+    const [cr, qr] = await Promise.all([
+      fetch(`/api/chart?target=${cfg.t}&interval=${cfg.iv}`).then(r => r.json())
+        .catch(e => ({error: e.message})),
+      fetch(`/api/quote?target=${cfg.t}`).then(r => r.json()).catch(() => null),
+    ]);
+    if (cr.error) throw new Error(cr.error);
+    const bars = cr.bars.map(b => ({...b, time: tzShift(b.time)}));
+    if (qr && qr.price != null && bars.length){
+      const sec0 = IVSEC[cfg.iv];
+      const nowB = Math.floor(tzShift(Date.now() / 1000) / sec0) * sec0;
+      const lastB = bars[bars.length - 1];
+      if (nowB > lastB.time)
+        bars.push({time: nowB, open: qr.price, high: qr.price, low: qr.price, close: qr.price});
+    }
     series.setData(bars);
     lastBar = bars[bars.length - 1] || null;
     if (bars.length){
       const nView = {"1m": 180, "5m": 150, "15m": 120}[cfg.iv] || 150;
-      const reframe = () => {
+      host._reframe = () => {
         chart.priceScale("right").applyOptions({autoScale: true});
         chart.timeScale().setVisibleLogicalRange({
           from: Math.max(0, bars.length - nView), to: bars.length + 6});
       };
-      host._reframe = reframe;
-      reframe();
-      let tries = 0;
-      const settle = () => { reframe(); if (++tries < 15) requestAnimationFrame(settle); };
-      requestAnimationFrame(settle);
-      box.addEventListener("dblclick", () => host._reframe && host._reframe());
+      host._reframe();
+      if (!reopen){
+        let tries = 0;
+        const settle = () => { host._reframe(); if (++tries < 15) requestAnimationFrame(settle); };
+        requestAnimationFrame(settle);
+      }
     } else chart.timeScale().fitContent();
     note.textContent = TZ_CITY[PREFS.tz] || PREFS.tz;
-    host._draw = attachDrawTools(box, chart, series,
-                                 "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
+    if (!host._draw)
+      host._draw = attachDrawTools(box, chart, series,
+                                   "gexDraw:card:" + cfg.id, IVSEC[cfg.iv]);
     if (bars.length) host._draw.setBars(bars.map(b => b.time), IVSEC[cfg.iv]);
     host._times = bars.map(b => b.time);
     host._ivSec = IVSEC[cfg.iv];
+  };
+
+  try{
+    await loadBars();
+    box.addEventListener("dblclick", () => host._reframe && host._reframe());
   }catch(e){ note.textContent = tx("feedKo"); await PageLoader.end(box, _t0); return; }
 
   host._pay = await getLevels(cfg.t);
@@ -919,11 +941,19 @@ async function mountCard(cfg, host){
       const d = await r.json();
       if (!r.ok || d.price == null) return;
       const sec = IVSEC[cfg.iv], p = d.price;
-      const bucket = Math.floor(tzShift(d.time || Date.now()/1000) / sec) * sec;
+      // bucket sur l'HORLOGE, jamais sur d.time (parfois le regularMarketTime
+      // du future différé ~10 min) -- même raison que pollQuote() côté
+      // terminal : la bougie live doit suivre l'heure réelle, pas la source.
+      const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
       if (bucket > lastBar.time){
         if (host._anim) cancelAnimationFrame(host._anim);
         host._anim = null;
-        lastBar = {time:bucket, open:p, high:p, low:p, close:p};
+        // nouvelle bougie : on fige la précédente à son close, on ouvre la
+        // neuve dessus -- pas un doji plat au prix courant (même logique que
+        // pollQuote() côté terminal).
+        const prevClose = lastBar.close;
+        lastBar = {time:bucket, open:prevClose, high:Math.max(prevClose, p),
+                   low:Math.min(prevClose, p), close:p};
         series.update(lastBar);
       } else {
         animatePrice(host, series, lastBar, p, 900);
@@ -936,16 +966,25 @@ async function mountCard(cfg, host){
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
   const offset = (Array.prototype.indexOf.call(board.children, host) % 8) * 250;
   host._timer = null;
-  const armCard = () => {
+  const armCard = (reopen) => {
     clearInterval(host._timer);
+    const prevMs = host._pollMs;
     host._pollMs = marketPollMs();
-    if (host._pollMs){ tick(); host._timer = setInterval(tick, host._pollMs); }
+    if (host._pollMs){
+      // Passage fermé -> ouvert : le prix seul ne suffit pas, il faut aussi
+      // RECHARGER LES BOUGIES -- sans ça, une carte restée au premier plan
+      // pendant la bascule garde des bougies basse-fidélité synthétisées à
+      // partir des polls de 60s d'avant l'ouverture (même logique que
+      // armPoll(reopen) côté terminal, index.html).
+      if (reopen && !prevMs) loadBars(true).catch(() => {});
+      tick(); host._timer = setInterval(tick, host._pollMs);
+    }
   };
   setTimeout(() => { if (host.isConnected) armCard(); }, offset);
   clearInterval(host._pollWatch);
   host._pollWatch = setInterval(() => {
     if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
-    if (marketPollMs() !== host._pollMs) armCard();
+    if (marketPollMs() !== host._pollMs) armCard(true);
   }, 60000);
 }
 
