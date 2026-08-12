@@ -37,6 +37,10 @@
     {
       "path": "/api/cron?intraday=1&flowforce=1",
       "schedule": "0 20 * * 1-5"
+    },
+    {
+      "path": "/api/cron?macrocheck=1",
+      "schedule": "*/30 12-20 * * 1-5"
     }
   ]
 }

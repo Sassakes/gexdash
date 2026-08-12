@@ -49,6 +49,15 @@ CRON_LOG_KEY = "gex:cron:log"
 # lue hors admin) pour couvrir plusieurs heures de seance d'un coup.
 FLOW_CRON_LOG_KEY = "gex:cron:flowlog"
 FLOW_CRON_LOG_MAX = 40
+# Filet de securite pour le cron GitHub Actions "Macro snapshot" (macro.json,
+# cf. scripts/macro_snapshot.py) : GitHub peut retarder ou sauter un
+# declenchement schedule sous charge (documente, deja observe en prod le
+# 2026-08-12 -- le tir de 12h30 UTC prevu pour capter un CPI n'est jamais
+# parti). Garde anti-spam : un seul redeclenchement par heure, le temps que
+# le run GitHub (~1-2 min) commite un macro.json frais.
+MACRO_STALE_HOURS = 5
+MACRO_DISPATCH_GUARD_KEY = "gex:cron:macro_dispatch_guard"
+MACRO_GH_REPO = "Sassakes/gexdash"
 FINNHUB_CACHE_S = 2.5
 _BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
 _GOLD_OFF = {"v": None, "at": 0.0}
@@ -1905,6 +1914,58 @@ class handler(BaseHTTPRequestHandler):
                 self._send(200, json.dumps({"xr": True, "date": today,
                                             "snaps": snaps}).encode(),
                            "application/json")
+                return
+            # ---- Filet de securite macro.json : verifie que le cron GitHub
+            #      Actions "Macro snapshot" a bien tourne recemment (cf.
+            #      MACRO_STALE_HOURS ci-dessus). N'ecrit rien dans les cles
+            #      gelees par _freeze_levels -- redeclenche uniquement le
+            #      workflow GitHub via son API, jamais de calcul local. ----
+            if "macrocheck" in qs:
+                stale, age_h, gen = True, None, None
+                try:
+                    blob = json.loads((ROOT / "macro.json").read_text())
+                    gen = blob.get("generated")
+                    gen_dt = dt.datetime.strptime(gen, "%Y-%m-%dT%H:%M:%SZ").replace(
+                        tzinfo=dt.timezone.utc)
+                    age_h = (dt.datetime.now(dt.timezone.utc) - gen_dt).total_seconds() / 3600
+                    stale = age_h > MACRO_STALE_HOURS
+                except Exception:
+                    pass
+                outcome = "fresh"
+                if stale:
+                    if kv_get(MACRO_DISPATCH_GUARD_KEY):
+                        outcome = "stale but already redeclenche recemment"
+                    else:
+                        token = os.environ.get("GITHUB_DISPATCH_TOKEN")
+                        if not token:
+                            outcome = "stale mais GITHUB_DISPATCH_TOKEN absent"
+                        else:
+                            import requests
+                            try:
+                                r = requests.post(
+                                    f"https://api.github.com/repos/{MACRO_GH_REPO}"
+                                    "/actions/workflows/macro.yml/dispatches",
+                                    json={"ref": "main"},
+                                    headers={"Authorization": f"Bearer {token}",
+                                             "Accept": "application/vnd.github+json",
+                                             "X-GitHub-Api-Version": "2022-11-28"},
+                                    timeout=8)
+                                if r.status_code == 204:
+                                    kv_set(MACRO_DISPATCH_GUARD_KEY, "1", ex=3600)
+                                    outcome = "redeclenche"
+                                else:
+                                    outcome = f"echec dispatch HTTP {r.status_code}"
+                            except Exception as e:
+                                outcome = f"echec dispatch {e}"
+                # Journal seulement si non-trivial : un hit "fresh" toutes les
+                # 30 min pendant 9h noierait vite les 15 entrees du journal
+                # principal (meme raison que FLOW_CRON_LOG_KEY plus haut).
+                if outcome != "fresh":
+                    journal(f"macrocheck generated={gen} age_h={age_h} -> {outcome}")
+                self._send(200, json.dumps({
+                    "macrocheck": True, "generated": gen, "age_h": age_h,
+                    "stale": stale, "outcome": outcome,
+                }).encode(), "application/json")
                 return
             # ---- NUIT / open Globex : aucune info options nouvelle. On ne
             #      recale QUE la partie daily (Daily Open + grille sigma), le
