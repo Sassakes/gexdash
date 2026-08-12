@@ -336,6 +336,42 @@ async function loadGoldBasis(){
   }
 }
 
+/* Clé API personnelle (extension Chrome, /api/mylevels) : masquée par
+   défaut, révélée à la demande (un appel /api/users?reveal=<user> par clic,
+   jamais toutes les clés en clair dans un seul listing). Les stats
+   (origines 24h, appels/1h, dernier appel) viennent du journal horo-daté
+   gex:apilog:<clé>:<AAAAMMDDHH> -- deux ou plus d'origines distinctes de
+   façon persistante = partage probable, cf. doc du chantier. */
+function apikeyCell(u, v){
+  if (!v.apikey_masked) return `<span class="mut">aucune</span>`;
+  const st = v.apikey_state || "active";
+  const stCls = st === "active" ? "ok" : st === "blocked" ? "" : "ko";
+  return `<span data-apikeymask="${u}" style="font-family:ui-monospace,monospace">${v.apikey_masked}</span>
+    <button data-reveal="${u}" style="font-size:10px;padding:2px 6px;margin-left:4px">Révéler</button>
+    <br><span class="${stCls}" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em">${st}</span>`;
+}
+function activityCell(v){
+  if (!v.apikey_masked) return `<span class="mut">—</span>`;
+  const s = v.apikey_stats || {};
+  const last = s.last_call ? s.last_call.replace("T", " ").slice(0, 16) : "jamais";
+  const originsCls = (s.origins_24h || 0) >= 2 ? "ko" : "ok";
+  return `origines 24h : <b class="${originsCls}">${s.origins_24h ?? 0}</b> · appels/1h : ${s.calls_1h ?? 0}
+    <br><span class="mut" style="font-size:10px">dernier appel : ${last}</span>`;
+}
+function apikeyActions(u, v){
+  const hasKey = !!v.apikey_masked;
+  const st = v.apikey_state || "active";
+  let h = "";
+  if (hasKey && st !== "revoked"){
+    h += st === "blocked"
+      ? `<button data-unblock="${u}" style="font-size:11px">Débloquer</button>`
+      : `<button data-block="${u}" style="font-size:11px">Bloquer</button>`;
+    h += `<button data-revokekey="${u}" style="font-size:11px;color:#EF5350">Révoquer clé</button>`;
+  }
+  h += `<button data-regen="${u}" style="font-size:11px">${hasKey ? "Régénérer" : "Générer"} clé</button>`;
+  return h;
+}
+
 async function loadUsers(){
   const box = document.getElementById("usersBox");
   if (!box) return;
@@ -347,15 +383,19 @@ async function loadUsers(){
     h += `<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;
           color:var(--muted);margin-bottom:6px">Comptes (${us.length})</div>`;
     h += us.length
-      ? `<table class="tb"><thead><tr><th>Identifiant</th><th>E-mail</th><th>Note</th><th>Créé</th>
+      ? `<div style="overflow-x:auto"><table class="tb"><thead><tr><th>Identifiant</th><th>E-mail</th><th>Note</th><th>Créé</th>
+         <th>Clé API</th><th>Activité (24h)</th>
          <th style="text-align:right">Actions</th></tr></thead><tbody>` +
         us.map(([u, v]) =>
           `<tr><td><b>${u}</b></td><td class="mut">${v.email || "—"}</td><td>${v.note || "—"}</td>
            <td class="mut">${(v.created || "").slice(0, 10)}</td>
+           <td>${apikeyCell(u, v)}</td>
+           <td style="font-size:10.5px">${activityCell(v)}</td>
            <td style="text-align:right;white-space:nowrap">
              <button data-reset="${u}" style="font-size:11px">Mot de passe</button>
+             ${apikeyActions(u, v)}
              <button data-del="${u}" style="font-size:11px;color:#EF5350">Supprimer</button>
-           </td></tr>`).join("") + "</tbody></table>"
+           </td></tr>`).join("") + "</tbody></table></div>"
       : `<div class="status">Aucun compte pour l'instant.</div>`;
     h += `<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;
           color:var(--muted);margin:16px 0 6px">Codes en attente (${inv.length})</div>`;
@@ -372,27 +412,6 @@ async function loadUsers(){
       await api("/api/users", {method: "POST",
         body: JSON.stringify({op: "delete", user: b.dataset.del})});
       loadUsers();
-  loadFeeds();
-  loadGoldBasis();
-  const fs = document.getElementById("feedsSave");
-  if (fs) fs.onclick = async () => {
-    const ta = document.getElementById("feedsTa");
-    const msg = document.getElementById("feedsMsg");
-    fs.disabled = true;
-    try{
-      const feeds = textToFeeds(ta.value);
-      const d = await api("/api/feeds", {method: "POST",
-        body: JSON.stringify({feeds})});
-      msg.textContent = `${d.n} source(s) enregistrée(s) ✓`;
-    }catch(e){ msg.textContent = "Échec : " + e.message; }
-    finally{ fs.disabled = false; }
-  };
-  const fr = document.getElementById("feedsReset");
-  if (fr) fr.onclick = () => {
-    document.getElementById("feedsTa").value = feedsToText(FEEDS_DEFAULTS);
-    document.getElementById("feedsMsg").textContent =
-      "Sources par défaut chargées — clique sur Enregistrer pour les appliquer.";
-  };
     });
     box.querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
       const p = prompt(`Nouveau mot de passe pour ${b.dataset.reset} (8 caractères min) :`);
@@ -407,6 +426,39 @@ async function loadUsers(){
       await api("/api/users", {method: "POST",
         body: JSON.stringify({op: "revoke", code: b.dataset.revoke})});
       loadUsers();
+    });
+    box.querySelectorAll("[data-reveal]").forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try{
+        const d = await api("/api/users?reveal=" + encodeURIComponent(b.dataset.reveal));
+        const span = box.querySelector(`[data-apikeymask="${b.dataset.reveal}"]`);
+        if (span && d.key){ span.textContent = d.key; b.remove(); }
+      }catch(e){ alert("Échec : " + e.message); b.disabled = false; }
+    });
+    box.querySelectorAll("[data-block]").forEach(b => b.onclick = async () => {
+      await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "apikey_block", user: b.dataset.block})});
+      loadUsers();
+    });
+    box.querySelectorAll("[data-unblock]").forEach(b => b.onclick = async () => {
+      await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "apikey_unblock", user: b.dataset.unblock})});
+      loadUsers();
+    });
+    box.querySelectorAll("[data-revokekey]").forEach(b => b.onclick = async () => {
+      if (!confirm(`Révoquer définitivement la clé API de ${b.dataset.revokekey} ?`)) return;
+      await api("/api/users", {method: "POST",
+        body: JSON.stringify({op: "apikey_revoke", user: b.dataset.revokekey})});
+      loadUsers();
+    });
+    box.querySelectorAll("[data-regen]").forEach(b => b.onclick = async () => {
+      if (!confirm(`Régénérer la clé API de ${b.dataset.regen} ? L'ancienne cessera immédiatement de fonctionner.`)) return;
+      try{
+        const d = await api("/api/users", {method: "POST",
+          body: JSON.stringify({op: "apikey_regenerate", user: b.dataset.regen})});
+        alert("Nouvelle clé pour " + b.dataset.regen + " :\n" + d.key);
+        loadUsers();
+      }catch(e){ alert("Échec : " + e.message); }
     });
   }catch(e){
     box.innerHTML = `<div class="status">Comptes indisponibles : ${e.message}</div>`;
@@ -575,6 +627,27 @@ refreshLock(); }
   loadStatus();
   refreshLock();
   loadUsers();
+  loadFeeds();
+  loadGoldBasis();
+  const fs = document.getElementById("feedsSave");
+  if (fs) fs.onclick = async () => {
+    const ta = document.getElementById("feedsTa");
+    const msg = document.getElementById("feedsMsg");
+    fs.disabled = true;
+    try{
+      const feeds = textToFeeds(ta.value);
+      const d = await api("/api/feeds", {method: "POST",
+        body: JSON.stringify({feeds})});
+      msg.textContent = `${d.n} source(s) enregistrée(s) ✓`;
+    }catch(e){ msg.textContent = "Échec : " + e.message; }
+    finally{ fs.disabled = false; }
+  };
+  const fr = document.getElementById("feedsReset");
+  if (fr) fr.onclick = () => {
+    document.getElementById("feedsTa").value = feedsToText(FEEDS_DEFAULTS);
+    document.getElementById("feedsMsg").textContent =
+      "Sources par défaut chargées — clique sur Enregistrer pour les appliquer.";
+  };
   const gb = document.getElementById("gbSave");
   if (gb) gb.onclick = async () => {
     gb.disabled = true;

@@ -938,6 +938,34 @@ def save_embed_keys(cfg):
 
 
 # --------------------------------------------------------------------------- #
+# Cles API personnelles -- /api/mylevels (extension Chrome)                    #
+# --------------------------------------------------------------------------- #
+# Meme forme que EMBED_KEYS_KEY (un blob JSON, pas un schema signe) : cette
+# cle n'est pas un secret cryptographique a proteger au sens fort, c'est un
+# jeton d'attribution par membre, revocable, INDEPENDANT du mot de passe
+# (jamais derive de gex:users) -- une cle qui fuite d'une machine tierce ne
+# doit jamais permettre de deduire ou de changer le mot de passe du compte.
+APIKEYS_KEY = "gex:apikeys"
+
+
+def fetch_api_keys():
+    """{"<cle>": {"user": str, "state": "active"|"blocked"|"revoked",
+    "created": iso str}, ...}. Dict vide si absent/illisible."""
+    v = kv_get(APIKEYS_KEY)
+    if not v:
+        return {}
+    try:
+        d = json.loads(v)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_api_keys(cfg):
+    return kv_set(APIKEYS_KEY, json.dumps(cfg))
+
+
+# --------------------------------------------------------------------------- #
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
 def discord_send(url, payload, note=None,

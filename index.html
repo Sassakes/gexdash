@@ -1074,7 +1074,7 @@ const T = {
     authFill:"Identifiant et mot de passe requis", authMail:"Adresse e-mail",
     authUser:"Identifiant", authPwd:"Mot de passe", authCode:"Code d'invitation",
     authWelcome:"Connecté ✓", authOutAsk:"Se déconnecter ?",
-    authInTip:"Accès membre", authOutTip:"Cliquer pour se déconnecter",
+    authInTip:"Accès membre", authOutTip:"Mon profil",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -1138,7 +1138,7 @@ const T = {
     authFill:"Username and password required", authMail:"Email address",
     authUser:"Username", authPwd:"Password", authCode:"Invitation code",
     authWelcome:"Signed in ✓", authOutAsk:"Sign out?",
-    authInTip:"Member access", authOutTip:"Click to sign out",
+    authInTip:"Member access", authOutTip:"My profile",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -1409,11 +1409,9 @@ async function authSubmit(){
   const btn = $("authBtn");
   if (!btn || btn._wired) return;
   btn._wired = true;
-  btn.onclick = async () => {
+  btn.onclick = () => {
     if (!AUTH_USER) return authOpen("login");
-    if (!confirm(t("authOutAsk"))) return;
-    await fetch("/api/auth?action=logout", {method: "POST"});
-    AUTH_USER = null; authPaint();
+    location.href = "/profile";
   };
   $("authClose").onclick = () => { $("authWrap").hidden = true; };
   $("authWrap").onclick = e => { if (e.target === $("authWrap")) $("authWrap").hidden = true; };

@@ -38,7 +38,8 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            fetch_webhooks, kv_get, kv_set,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
                            flow_gamma_matrix, flow_gamma_sanity, flow_volume_context,
-                           fetch_embed_keys, save_embed_keys)
+                           fetch_embed_keys, save_embed_keys,
+                           fetch_api_keys, save_api_keys)
 
 CRON_LOG_KEY = "gex:cron:log"
 # Journal SEPARE pour les tirs intrajournaliers (?intraday=1) : cadence 5-10
@@ -833,6 +834,83 @@ def _embed_rate_limited(given):
     return False
 
 
+# ═══════════════ CLES API PERSONNELLES (/api/mylevels) ═══════════════
+# Une cle par membre (blob APIKEYS_KEY, cf. _gex_core.py), consommee par une
+# extension Chrome qui remplit l'indicateur Pine -- lecture seule stricte,
+# aucun calcul declenche sur ce chemin (meme regle que /api/embed/flow).
+APIKEY_RATE_LIMIT = 20   # requetes/minute/cle -- tres au-dessus du polling normal d'une extension
+APILOG_TTL = 26 * 3600   # marge sur 24h pour que l'agregation admin voie toujours 24 tranches pleines
+APILOG_MAX = 4000        # garde-fou dur par tranche horaire, jamais atteint en usage normal
+
+
+def _check_api_key(given):
+    """(meta, code, motif). motif=None si la cle est utilisable."""
+    if not given:
+        return None, 401, "missing key"
+    keys = _news_cached("apikeys", 60, fetch_api_keys)
+    meta = keys.get(given)
+    if not meta:
+        return None, 401, "invalid key"
+    state = meta.get("state", "active")
+    if state in ("blocked", "revoked"):
+        return None, 403, f"key {state}"
+    return meta, 200, None
+
+
+def _apikey_rate_limited(given):
+    """Meme idiome non-atomique que _embed_rate_limited."""
+    bucket = int(time.time() // 60)
+    rl_key = f"gex:mlrl:{given}:{bucket}"
+    count = int(kv_get(rl_key) or 0)
+    if count >= APIKEY_RATE_LIMIT:
+        return True
+    kv_set(rl_key, str(count + 1), ex=90)
+    return False
+
+
+def _apikey_hour_key(given, when=None):
+    when = when or dt.datetime.now(dt.timezone.utc)
+    return f"gex:apilog:{given}:{when.strftime('%Y%m%d%H')}"
+
+
+def _apikey_stats(given):
+    """Agrege les 24 dernieres tranches horaires du journal (lecture admin
+    uniquement -- cout sans importance ici, cf. discussion de design). Chaque
+    tranche est une liste [{"t": epoch, "o": empreinte}], jamais un compteur
+    global en lecture-modification-ecriture : deux appels concurrents dans la
+    MEME tranche restent chacun un ajout independant, le signal de partage
+    (origines distinctes) ne se perd donc pas sur une collision d'ecriture."""
+    now = dt.datetime.now(dt.timezone.utc)
+    now_ts = now.timestamp()
+    origins, calls_1h, calls_24h, last_call = set(), 0, 0, None
+    for i in range(24):
+        raw = kv_get(_apikey_hour_key(given, now - dt.timedelta(hours=i)))
+        if not raw:
+            continue
+        try:
+            log = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(log, list):
+            continue
+        for e in log:
+            t = e.get("t")
+            if not isinstance(t, (int, float)) or now_ts - t > 24 * 3600:
+                continue
+            calls_24h += 1
+            origins.add(e.get("o"))
+            if now_ts - t <= 3600:
+                calls_1h += 1
+            if last_call is None or t > last_call:
+                last_call = t
+    return {
+        "calls_1h": calls_1h, "calls_24h": calls_24h,
+        "origins_24h": len(origins),
+        "last_call": (dt.datetime.fromtimestamp(last_call, dt.timezone.utc)
+                      .isoformat(timespec="seconds") if last_call else None),
+    }
+
+
 def _flow_grids(payload):
     """Grille prix (echelle produit), CENTREE SUR LE PRIX COURANT — pas sur
     l'ouverture du jour — pour que la colonne du controle de justesse
@@ -1367,6 +1445,17 @@ class handler(BaseHTTPRequestHandler):
         _, got = cls._pw_hash(password, salt)
         return hmac.compare_digest(got, expected)   # comparaison à temps constant
 
+    @staticmethod
+    def _valid_username(user):
+        return (3 <= len(user) <= 32) and user.replace("_", "").replace("-", "").isalnum()
+
+    @staticmethod
+    def _valid_email(email):
+        # validation volontairement simple : on veut une adresse exploitable
+        # pour recontacter le membre, pas un filtrage exhaustif
+        return not ("@" not in email or "." not in email.split("@")[-1]
+                    or len(email) < 6 or len(email) > 120 or " " in email)
+
     @classmethod
     def _mk_token(cls, user, days=30):
         exp = int(time.time()) + days * 86400
@@ -1418,6 +1507,78 @@ class handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _client_ip(self):
+        fwd = (self.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        return (fwd or self.headers.get("x-real-ip")
+                or (self.client_address[0] if self.client_address else "")
+                or "")
+
+    def _origin_hash(self):
+        """Empreinte non reversible (IP + user-agent), JAMAIS l'IP en clair --
+        prefixe de domaine pour ne pas reutiliser cette meme paire (secret,
+        message) que pour les jetons de session, meme si les deux partagent
+        _auth_secret()."""
+        raw = f"apiorigin|{self._client_ip()}|{self.headers.get('user-agent', '')}"
+        return hmac.new(self._auth_secret(), raw.encode(), hashlib.sha256).hexdigest()[:12]
+
+    def _apikey_log_call(self, given):
+        """Best-effort : une panne d'ecriture ici ne doit jamais faire
+        echouer l'appel /api/mylevels principal. Une seule tranche horaire
+        touchee (cf. _apikey_hour_key) -- lecture-modification-ecriture, mais
+        le risque de collision est borne a la meme cle ET la meme heure."""
+        hkey = _apikey_hour_key(given)
+        try:
+            raw = kv_get(hkey)
+            log = json.loads(raw) if raw else []
+            if not isinstance(log, list):
+                log = []
+        except Exception:
+            log = []
+        log.append({"t": int(time.time()), "o": self._origin_hash()})
+        if len(log) > APILOG_MAX:
+            log = log[-APILOG_MAX:]
+        try:
+            kv_set(hkey, json.dumps(log), ex=APILOG_TTL)
+        except Exception:
+            pass
+
+    def _apikey_regenerate(self, user):
+        """Cree ou remplace la cle d'un `user` (gex:users). L'ancienne cle
+        est retiree du blob APIKEYS_KEY -- invalide immediatement, comme pour
+        les cles du widget Flux. Retourne la nouvelle cle, ou None si le
+        compte n'existe pas."""
+        users = self._users()
+        if user not in users:
+            return None
+        keys = fetch_api_keys()
+        old = users[user].get("apikey")
+        if old:
+            keys.pop(old, None)
+        new_key = secrets.token_urlsafe(32)
+        keys[new_key] = {
+            "user": user, "state": "active",
+            "created": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        }
+        save_api_keys(keys)
+        users[user]["apikey"] = new_key
+        kv_set("gex:users", json.dumps(users))
+        return new_key
+
+    def _apikey_set_state(self, user, state):
+        """state in {"active", "blocked", "revoked"} -- reversible pour les
+        deux premiers, definitif pour "revoked" (la cle reste dans le blob
+        mais /api/mylevels la refusera pour toujours)."""
+        users = self._users()
+        key = (users.get(user) or {}).get("apikey")
+        if not key:
+            return False
+        keys = fetch_api_keys()
+        if key not in keys:
+            return False
+        keys[key]["state"] = state
+        save_api_keys(keys)
+        return True
+
     def _read_json(self):
         try:
             n = int(self.headers.get("Content-Length", 0) or 0)
@@ -1454,12 +1615,9 @@ class handler(BaseHTTPRequestHandler):
             if act == "register":
                 code = (body.get("code") or "").strip()
                 email = (body.get("email") or "").strip().lower()
-                if not (3 <= len(user) <= 32) or not user.replace("_", "").replace("-", "").isalnum():
+                if not self._valid_username(user):
                     return fail(400, "Identifiant invalide (3-32 caractères, lettres/chiffres)")
-                # validation volontairement simple : on veut une adresse
-                # exploitable pour te recontacter, pas un filtrage exhaustif
-                if ("@" not in email or "." not in email.split("@")[-1]
-                        or len(email) < 6 or len(email) > 120 or " " in email):
+                if not self._valid_email(email):
                     return fail(400, "Adresse e-mail invalide")
                 if any(v.get("email") == email for v in self._users().values()):
                     return fail(409, "Cette adresse est déjà utilisée")
@@ -1529,6 +1687,97 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"ok": True, "user": user}).encode())
             return
 
+        # ── page profil (membre connecté) : e-mail / mot de passe / pseudo /
+        # régénération de la clé API personnelle -- gardé par la SESSION
+        # (cookie gexauth), jamais la clé admin : c'est un compte qui gère
+        # son propre compte, pas une action d'administration. Indépendant du
+        # mot de passe : régénérer/bloquer/révoquer la clé API ne touche
+        # jamais gex:users (salt/hash), et changer le mot de passe ici ne
+        # touche jamais la clé API. ──
+        if path == "/api/profile":
+            me = self._current_user()
+            if not me:
+                self._send(401, json.dumps({"error": "connexion requise"}).encode(),
+                           "application/json")
+                return
+            users = self._users()
+            u = users.get(me)
+            if not u:
+                self._send(401, json.dumps({"error": "compte introuvable"}).encode(),
+                           "application/json")
+                return
+            body = self._read_json()
+            op = (body.get("op") or "").lower()
+
+            def fail(code, msg):
+                self._send(code, json.dumps({"error": msg}).encode(), "application/json")
+
+            if op == "email":
+                email = (body.get("email") or "").strip().lower()
+                if not self._valid_email(email):
+                    return fail(400, "Adresse e-mail invalide")
+                if any(k != me and v.get("email") == email for k, v in users.items()):
+                    return fail(409, "Cette adresse est déjà utilisée")
+                u["email"] = email
+                kv_set("gex:users", json.dumps(users))
+                self._send(200, json.dumps({"ok": True, "email": email}).encode(),
+                           "application/json")
+                return
+
+            if op == "password":
+                current = body.get("current") or ""
+                new = body.get("new") or ""
+                if not self._pw_verify(current, u.get("salt", ""), u.get("hash", "")):
+                    return fail(401, "Mot de passe actuel incorrect")
+                if len(new) < 8:
+                    return fail(400, "Nouveau mot de passe : 8 caractères minimum")
+                salt, h = self._pw_hash(new)
+                u.update({"salt": salt, "hash": h})
+                kv_set("gex:users", json.dumps(users))
+                self._send(200, json.dumps({"ok": True}).encode(), "application/json")
+                return
+
+            if op == "username":
+                new_user = (body.get("new_user") or "").strip().lower()
+                if not self._valid_username(new_user):
+                    return fail(400, "Identifiant invalide (3-32 caractères, lettres/chiffres)")
+                if new_user == me:
+                    return fail(400, "Identique à l'identifiant actuel")
+                if new_user in users:
+                    return fail(409, "Cet identifiant existe déjà")
+                users[new_user] = users.pop(me)
+                kv_set("gex:users", json.dumps(users))
+                apikey = users[new_user].get("apikey")
+                if apikey:
+                    api_keys = fetch_api_keys()
+                    if apikey in api_keys:
+                        api_keys[apikey]["user"] = new_user
+                        save_api_keys(api_keys)
+                tok = self._mk_token(new_user)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Set-Cookie",
+                                 f"gexauth={tok}; Path=/; Max-Age={30*86400}; "
+                                 "HttpOnly; Secure; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "user": new_user}).encode())
+                return
+
+            if op == "apikey_regenerate":
+                # un blocage/révocation admin doit garder ses dents : sinon
+                # l'auto-régénération le contournerait instantanément.
+                cur_key = u.get("apikey")
+                cur_state = fetch_api_keys().get(cur_key, {}).get("state") if cur_key else None
+                if cur_state in ("blocked", "revoked"):
+                    return fail(403, "Clé bloquée ou révoquée par un administrateur "
+                                     "— contacte-le pour la rétablir")
+                new_key = self._apikey_regenerate(me)
+                self._send(200, json.dumps({"ok": True, "key": new_key}).encode(),
+                           "application/json")
+                return
+
+            return fail(400, "opération inconnue")
+
         # ── administration des comptes (protégée par la clé admin) ──
         if path == "/api/users":
             if not self._auth_key():
@@ -1570,6 +1819,25 @@ class handler(BaseHTTPRequestHandler):
             elif op == "revoke":
                 invites.pop(body.get("code") or "", None)
                 kv_set("gex:invites", json.dumps(invites))
+            elif op in ("apikey_block", "apikey_unblock", "apikey_revoke"):
+                u = (body.get("user") or "").lower()
+                state = {"apikey_block": "blocked", "apikey_unblock": "active",
+                         "apikey_revoke": "revoked"}[op]
+                if not self._apikey_set_state(u, state):
+                    self._send(400, json.dumps(
+                        {"error": "utilisateur inconnu ou sans clé API"}).encode(),
+                        "application/json")
+                    return
+            elif op == "apikey_regenerate":
+                u = (body.get("user") or "").lower()
+                new_key = self._apikey_regenerate(u)
+                if new_key is None:
+                    self._send(400, json.dumps({"error": "utilisateur inconnu"}).encode(),
+                               "application/json")
+                    return
+                self._send(200, json.dumps({"ok": True, "key": new_key}).encode(),
+                           "application/json")
+                return
             else:
                 self._send(400, json.dumps({"error": "opération inconnue"}).encode(),
                            "application/json")
@@ -2219,6 +2487,28 @@ class handler(BaseHTTPRequestHandler):
                        "application/json")
             return
 
+        # ── page profil : lecture des infos + clé API en clair (le seul
+        # endroit qui la montre en entier — l'admin ne voit qu'une version
+        # masquée, cf. /api/users) ──
+        if path == "/api/profile":
+            me = self._current_user()
+            if not me:
+                self._send(401, json.dumps({"error": "connexion requise"}).encode(),
+                           "application/json")
+                return
+            u = self._users().get(me)
+            if not u:
+                self._send(401, json.dumps({"error": "compte introuvable"}).encode(),
+                           "application/json")
+                return
+            apikey = u.get("apikey")
+            state = fetch_api_keys().get(apikey, {}).get("state", "active") if apikey else None
+            self._send(200, json.dumps({
+                "user": me, "email": u.get("email", ""), "created": u.get("created", ""),
+                "apikey": apikey, "apikey_state": state,
+            }).encode(), "application/json")
+            return
+
         if path == "/api/goldbasis":
             if not self._auth_key():
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(),
@@ -2343,6 +2633,52 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        # ── cle API personnelle : Pine strings des 5 marches en un seul
+        # appel (extension Chrome qui remplit l'indicateur) -- lecture seule
+        # stricte, AUCUN calcul declenche ici (meme regle que /api/embed/flow) :
+        # on relit uniquement ce qui a deja ete publie, le verrou des niveaux
+        # n'est jamais concerne. Cle en parametre d'URL (jamais un header
+        # custom), meme raison CORS que le widget Flux -- pas de do_OPTIONS
+        # sur ce fichier, un GET ?key=... reste une requete CORS "simple".
+        # Cache-Control: no-store PARTOUT (succes compris) : un cache d'edge
+        # court-circuiterait le journal d'appels (_apikey_log_call) sur
+        # lequel repose toute la detection de partage de cle en admin. ──
+        if path == "/api/mylevels":
+            qs = parse_qs(parsed.query)
+            given_key = qs.get("key", [None])[0] or ""
+            meta, code, err = _check_api_key(given_key)
+            if err:
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": err}).encode())
+                return
+            if _apikey_rate_limited(given_key):
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "rate limited"}).encode())
+                return
+            self._apikey_log_call(given_key)
+            levels, parts = {}, []
+            for t in ("NQ", "ES", "SPX", "GC", "XAU"):
+                p = _latest_payload(t) or {}
+                pine = p.get("pine") or ""
+                levels[t] = {"pine": pine, "published_utc": p.get("generated_utc")}
+                parts.append(pine)
+            lot_hash = hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps({"levels": levels, "hash": lot_hash}).encode())
+            return
+
         # ── diagnostic des prix de reference (admin) ──
         # Un marche qui reste « en attente de refresh » vient presque toujours
         # d'un symbole de reference muet : ce point d'entree dit lequel repond.
@@ -2394,9 +2730,28 @@ class handler(BaseHTTPRequestHandler):
                 self._send(401, json.dumps({"error": "unauthorized"}).encode(),
                            "application/json")
                 return
-            users = {k: {"note": v.get("note", ""), "email": v.get("email", ""),
+            qs = parse_qs(parsed.query)
+            # ?reveal=<user> : la cle en clair n'est JAMAIS incluse dans le
+            # listing groupe ci-dessous -- action explicite separee, un
+            # appel par cle revelee, pour ne pas exposer toutes les cles en
+            # clair d'un coup dans une seule reponse/log.
+            reveal = (qs.get("reveal", [None])[0] or "").strip().lower()
+            if reveal:
+                self._send(200, json.dumps(
+                    {"key": (self._users().get(reveal) or {}).get("apikey")}
+                ).encode(), "application/json")
+                return
+            api_keys = fetch_api_keys()
+            users = {}
+            for k, v in self._users().items():
+                entry = {"note": v.get("note", ""), "email": v.get("email", ""),
                          "created": v.get("created", "")}
-                     for k, v in self._users().items()}
+                apikey = v.get("apikey")
+                if apikey:
+                    entry["apikey_masked"] = _mask(apikey)
+                    entry["apikey_state"] = api_keys.get(apikey, {}).get("state", "active")
+                    entry["apikey_stats"] = _apikey_stats(apikey)
+                users[k] = entry
             self._send(200, json.dumps({"users": users,
                                         "invites": self._invites()}).encode(),
                        "application/json")
@@ -2479,6 +2834,23 @@ class handler(BaseHTTPRequestHandler):
             fpath = ROOT / "news.html"
             if not fpath.is_file():
                 self._send(404, json.dumps({"error": "news.html absent"}).encode(),
+                           "application/json")
+                return
+            self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")
+            return
+
+        # ── /profile : page profil, réservée aux comptes connectés (même
+        # garde que /news) ──
+        if path == "/profile":
+            if not self._current_user():
+                self.send_response(302)
+                self.send_header("Location", "/?login=1&next=/profile")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            fpath = ROOT / "profile.html"
+            if not fpath.is_file():
+                self._send(404, json.dumps({"error": "profile.html absent"}).encode(),
                            "application/json")
                 return
             self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")

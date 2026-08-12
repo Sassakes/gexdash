@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHub - Profil</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
+  [hidden]{display:none !important}
+
+  :root{
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
+    --line:#212127; --line-strong:#2B2B33;
+    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
+    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12);
+    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350; --red-soft:rgba(239,83,80,.12);
+    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
+
+  header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line)}
+  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
+  .topnav a:hover{color:var(--gold)}
+  .topnav a::after{content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px; background:var(--gold); transform:scaleX(0); transform-origin:left; transition:transform .16s ease}
+  .topnav a:hover::after{transform:scaleX(1)}
+  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden; margin-left:12px}
+  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em; min-height:26px}
+  .langsel button+button{border-left:1px solid var(--line-strong)}
+  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
+
+  main{max-width:640px; margin:0 auto; padding:28px 20px 60px}
+  h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:30px 0 12px}
+  h2:first-child{margin-top:0}
+  section{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px 20px}
+  .row{display:grid; grid-template-columns:120px 1fr; gap:10px; align-items:center; margin-bottom:12px}
+  .row:last-child{margin-bottom:0}
+  label{font-size:12px; color:var(--muted)}
+  input{background:var(--surface2); color:var(--text); border:1px solid var(--line-strong); border-radius:6px; padding:9px 10px; font-family:var(--sans); font-size:13px; min-height:38px}
+  input:focus{outline:none; border-color:var(--gold)}
+  .actions{display:flex; gap:8px; justify-content:flex-end; margin-top:14px}
+  button{font-family:var(--sans); font-size:12.5px; padding:9px 16px; border-radius:6px; border:1px solid var(--line-strong); background:var(--surface2); color:var(--text); cursor:pointer; min-height:38px; transition:background .12s ease, color .12s ease}
+  button:hover{background:var(--surface3)}
+  button.primary{background:var(--gold); color:#0A0A0C; border-color:var(--gold); font-weight:600}
+  button.primary:hover{background:#ffd23f}
+  button.danger{color:var(--red); border-color:rgba(239,83,80,.4)}
+  button:disabled{opacity:.5; cursor:default}
+  .msg{font-size:12px; margin-top:10px; min-height:16px}
+  .msg.err{color:var(--red)} .msg.ok{color:var(--teal)}
+  .note{font-size:11.5px; color:var(--faint); margin-top:8px; line-height:1.5}
+
+  .keybox{display:flex; align-items:center; gap:8px; background:var(--surface2); border:1px solid var(--line-strong); border-radius:6px; padding:9px 10px}
+  .keybox code{flex:1; font-family:var(--mono); font-size:12px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .keybox code.empty{color:var(--faint)}
+  .keybox button{flex:none; padding:6px 12px; font-size:11.5px; min-height:auto}
+  .badge{display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.06em; padding:2px 8px; border-radius:4px; text-transform:uppercase; margin-left:8px; vertical-align:middle}
+  .badge.active{color:var(--teal); background:var(--teal-soft)}
+  .badge.blocked{color:var(--gold); background:var(--gold-soft)}
+  .badge.revoked{color:var(--red); background:var(--red-soft)}
+
+  #logoutBtn{display:block; margin:26px auto 0}
+  #gate{padding:60px 20px; text-align:center; color:var(--muted)}
+  @media(max-width:520px){
+    .row{grid-template-columns:1fr; gap:6px}
+    input{font-size:16px}   /* évite le zoom auto iOS */
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>GEX</b>DASH · <span id="hTitle">PROFIL</span></h1>
+  <nav class="topnav">
+    <a href="/" id="navTerm">Terminal</a>
+    <a href="/news" id="navNews">News</a>
+    <a href="/doc" id="navDoc">Doc</a>
+  </nav>
+  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+</header>
+
+<main id="app" hidden>
+  <h2 id="hAccount">Compte</h2>
+  <section>
+    <div class="row"><label id="lUser">Identifiant</label>
+      <div class="keybox"><code id="curUser">—</code></div>
+    </div>
+    <div class="row"><label id="lNewUser">Nouveau pseudo</label>
+      <input id="inUser" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="actions"><button id="userSave">Enregistrer</button></div>
+    <div class="msg" id="userMsg"></div>
+  </section>
+
+  <h2 id="hEmail">E-mail</h2>
+  <section>
+    <div class="row"><label id="lEmail">Adresse</label>
+      <input id="inEmail" type="email" autocomplete="email" spellcheck="false">
+    </div>
+    <div class="actions"><button id="emailSave">Enregistrer</button></div>
+    <div class="msg" id="emailMsg"></div>
+  </section>
+
+  <h2 id="hPwd">Mot de passe</h2>
+  <section>
+    <div class="row"><label id="lCur">Actuel</label>
+      <input id="inCur" type="password" autocomplete="current-password">
+    </div>
+    <div class="row"><label id="lNew">Nouveau</label>
+      <input id="inNew" type="password" autocomplete="new-password">
+    </div>
+    <div class="actions"><button id="pwdSave">Enregistrer</button></div>
+    <div class="msg" id="pwdMsg"></div>
+  </section>
+
+  <h2 id="hApi">Clé API personnelle <span class="badge" id="apiBadge" hidden></span></h2>
+  <section>
+    <div class="keybox">
+      <code id="apiKey" class="empty">—</code>
+      <button id="apiCopy">Copier</button>
+    </div>
+    <div class="note" id="apiNote">Utilisée par l'extension Chrome pour remplir automatiquement l'indicateur Pine. Régénérer invalide immédiatement l'ancienne clé.</div>
+    <div class="actions"><button id="apiRegen" class="danger">Régénérer</button></div>
+    <div class="msg" id="apiMsg"></div>
+  </section>
+
+  <button id="logoutBtn">Se déconnecter</button>
+</main>
+
+<div id="gate">Chargement…</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+const T = {
+  fr: {
+    title:"PROFIL", account:"Compte", user:"Identifiant", newUser:"Nouveau pseudo", save:"Enregistrer",
+    email:"E-mail", emailLbl:"Adresse", pwd:"Mot de passe", cur:"Actuel", new:"Nouveau",
+    api:"Clé API personnelle", copy:"Copier", copied:"Copié ✓", regen:"Régénérer",
+    apiNote:"Utilisée par l'extension Chrome pour remplir automatiquement l'indicateur Pine. Régénérer invalide immédiatement l'ancienne clé.",
+    logout:"Se déconnecter", logoutAsk:"Se déconnecter ?", needLogin:"Connexion requise — redirection…",
+    gone:"Compte introuvable.", loadErr:"Chargement impossible : ",
+    userSaved:"Pseudo mis à jour ✓ (déconnexions ailleurs possibles)", emailSaved:"E-mail mis à jour ✓",
+    pwdSaved:"Mot de passe mis à jour ✓", regenAsk:"Régénérer la clé ? L'ancienne cessera immédiatement de fonctionner.",
+    regenDone:"Nouvelle clé générée ✓ — copie-la maintenant, la page ne la réaffichera pas différemment.",
+    none:"aucune clé pour l'instant",
+    active:"active", blocked:"bloquée", revoked:"révoquée",
+  },
+  en: {
+    title:"PROFILE", account:"Account", user:"Username", newUser:"New username", save:"Save",
+    email:"Email", emailLbl:"Address", pwd:"Password", cur:"Current", new:"New",
+    api:"Personal API key", copy:"Copy", copied:"Copied ✓", regen:"Regenerate",
+    apiNote:"Used by the Chrome extension to auto-fill the Pine indicator. Regenerating invalidates the old key immediately.",
+    logout:"Sign out", logoutAsk:"Sign out?", needLogin:"Login required — redirecting…",
+    gone:"Account not found.", loadErr:"Could not load: ",
+    userSaved:"Username updated ✓ (may sign you out elsewhere)", emailSaved:"Email updated ✓",
+    pwdSaved:"Password updated ✓", regenAsk:"Regenerate the key? The old one stops working immediately.",
+    regenDone:"New key generated ✓ — copy it now, this page won't show it differently later.",
+    none:"no key yet",
+    active:"active", blocked:"blocked", revoked:"revoked",
+  },
+};
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+if (!T[LANG]) LANG = "fr";
+const t = k => T[LANG][k];
+
+function applyLang(){
+  document.documentElement.lang = LANG;
+  $("hTitle").textContent = t("title");
+  $("hAccount").textContent = t("account");
+  $("lUser").textContent = t("user");
+  $("lNewUser").textContent = t("newUser");
+  $("userSave").textContent = t("save");
+  $("hEmail").textContent = t("email");
+  $("lEmail").textContent = t("emailLbl");
+  $("emailSave").textContent = t("save");
+  $("hPwd").textContent = t("pwd");
+  $("lCur").textContent = t("cur");
+  $("lNew").textContent = t("new");
+  $("pwdSave").textContent = t("save");
+  $("hApi").childNodes[0].textContent = t("api") + " ";
+  $("apiCopy").textContent = t("copy");
+  $("apiNote").textContent = t("apiNote");
+  $("apiRegen").textContent = t("regen");
+  $("logoutBtn").textContent = t("logout");
+  document.querySelectorAll("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
+}
+document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
+  LANG = b.dataset.l;
+  try{ localStorage.setItem("gexLang", LANG); }catch(_){}
+  applyLang();
+});
+
+function msg(id, text, ok){
+  const m = $(id);
+  m.textContent = text;
+  m.className = "msg " + (ok ? "ok" : "err");
+}
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({headers: {"Content-Type": "application/json"}}, opts || {}));
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
+  return d;
+}
+
+function paintApiKey(d){
+  const el = $("apiKey");
+  if (d.apikey){
+    el.textContent = d.apikey;
+    el.classList.remove("empty");
+  } else {
+    el.textContent = t("none");
+    el.classList.add("empty");
+  }
+  const badge = $("apiBadge");
+  if (d.apikey_state){
+    badge.hidden = false;
+    badge.textContent = t(d.apikey_state) || d.apikey_state;
+    badge.className = "badge " + d.apikey_state;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+let ME = null;
+
+async function load(){
+  try{
+    const d = await api("/api/profile");
+    ME = d;
+    $("curUser").textContent = d.user;
+    $("inEmail").value = d.email || "";
+    paintApiKey(d);
+    $("gate").hidden = true;
+    $("app").hidden = false;
+  }catch(e){
+    $("gate").textContent = t("needLogin");
+    location.href = "/?login=1&next=/profile";
+  }
+}
+
+$("userSave").onclick = async () => {
+  const new_user = $("inUser").value.trim().toLowerCase();
+  if (!new_user) return;
+  $("userSave").disabled = true;
+  try{
+    const d = await api("/api/profile", {method: "POST", body: JSON.stringify({op: "username", new_user})});
+    msg("userMsg", t("userSaved"), true);
+    $("curUser").textContent = d.user;
+    $("inUser").value = "";
+  }catch(e){ msg("userMsg", e.message, false); }
+  finally{ $("userSave").disabled = false; }
+};
+
+$("emailSave").onclick = async () => {
+  const email = $("inEmail").value.trim();
+  $("emailSave").disabled = true;
+  try{
+    await api("/api/profile", {method: "POST", body: JSON.stringify({op: "email", email})});
+    msg("emailMsg", t("emailSaved"), true);
+  }catch(e){ msg("emailMsg", e.message, false); }
+  finally{ $("emailSave").disabled = false; }
+};
+
+$("pwdSave").onclick = async () => {
+  const current = $("inCur").value, next = $("inNew").value;
+  if (!current || !next) return;
+  $("pwdSave").disabled = true;
+  try{
+    await api("/api/profile", {method: "POST", body: JSON.stringify({op: "password", current, new: next})});
+    msg("pwdMsg", t("pwdSaved"), true);
+    $("inCur").value = ""; $("inNew").value = "";
+  }catch(e){ msg("pwdMsg", e.message, false); }
+  finally{ $("pwdSave").disabled = false; }
+};
+
+$("apiCopy").onclick = async () => {
+  const key = $("apiKey").textContent;
+  if (!key || $("apiKey").classList.contains("empty")) return;
+  try{
+    await navigator.clipboard.writeText(key);
+    msg("apiMsg", t("copied"), true);
+  }catch(_){ msg("apiMsg", key, true); }
+};
+
+$("apiRegen").onclick = async () => {
+  if (!confirm(t("regenAsk"))) return;
+  $("apiRegen").disabled = true;
+  try{
+    const d = await api("/api/profile", {method: "POST", body: JSON.stringify({op: "apikey_regenerate"})});
+    paintApiKey({apikey: d.key, apikey_state: "active"});
+    msg("apiMsg", t("regenDone"), true);
+  }catch(e){ msg("apiMsg", e.message, false); }
+  finally{ $("apiRegen").disabled = false; }
+};
+
+$("logoutBtn").onclick = async () => {
+  if (!confirm(t("logoutAsk"))) return;
+  await fetch("/api/auth?action=logout", {method: "POST"});
+  location.href = "/";
+};
+
+applyLang();
+load();
+</script>
+</body>
+</html>
