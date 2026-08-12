@@ -25,6 +25,7 @@ import math
 import base64
 import secrets
 import hashlib
+import mimetypes
 import os
 import time
 import traceback
@@ -2631,6 +2632,32 @@ class handler(BaseHTTPRequestHandler):
                            "application/json")
                 return
             self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")
+            return
+
+        # ── /demo : export statique Next.js (demo/out, cf. demo/next.config.mjs
+        #    basePath:"/demo") -- volontairement non lie depuis la nav du site,
+        #    juste un chemin direct pour travailler dessus "underground" avant
+        #    de decider si/comment il rejoint le site public. Aucun rapport
+        #    avec le reste de gexdash : simple mini-serveur de fichiers statiques
+        #    prefixe, jamais de calcul ici. ──
+        if path == "/demo" or path.startswith("/demo/"):
+            rel = path[len("/demo"):].lstrip("/") or "index.html"
+            demo_root = (ROOT / "demo" / "out").resolve()
+            try:
+                fpath = (demo_root / rel).resolve()
+                fpath.relative_to(demo_root)   # leve ValueError si ca sort de demo/out
+            except ValueError:
+                self._send(404, json.dumps({"error": "not found"}).encode(), "application/json")
+                return
+            if fpath.is_dir():
+                fpath = fpath / "index.html"
+            if not fpath.is_file():
+                self._send(404, json.dumps({"error": "not found"}).encode(), "application/json")
+                return
+            ctype = mimetypes.guess_type(str(fpath))[0] or "application/octet-stream"
+            if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
+                ctype += "; charset=utf-8"
+            self._send(200, fpath.read_bytes(), ctype)
             return
 
         if path in STATIC:
