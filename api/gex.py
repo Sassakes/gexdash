@@ -214,7 +214,11 @@ def _news_fj_shared():
         except Exception:
             return []
 
-    rows, err = _fetch_status(FJ_RSS, "FinancialJuice")
+    # "Live" plutot que le nom du fournisseur : c'est ce texte qui finit tel
+    # quel dans le champ "source" de chaque depeche (_feed_parse), affiche a
+    # l'utilisateur sur /news et sur la carte Actualites du dashboard -- pas
+    # une marque a exposer, juste indiquer que c'est le fil temps reel.
+    rows, err = _fetch_status(FJ_RSS, "Live")
     if err.startswith("HTTP 429") or err.startswith("HTTP 5"):
         _FJ_BACKOFF["until"] = now + 300
         try:                              # on ressert le dernier fil connu

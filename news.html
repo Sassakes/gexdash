@@ -722,7 +722,7 @@ async function loadNews(){
   if (NEWS_SRC === "fallback") return loadNewsList();
   mountFJ("fjNews", {mode: "Dark", widgetType: "NEWS"}, newsFallback);
   const c = $("#newsCnt");
-  if (c && NEWS_SRC !== "fallback") c.textContent = "FinancialJuice";
+  if (c && NEWS_SRC !== "fallback") c.textContent = "Live";
 }
 
 function newsFallback(){
@@ -749,7 +749,8 @@ async function loadNewsList(){
       }).join("")
     : `<div class="empty">${t("unavail")}</div>`;
   $("#newsCnt").textContent = NEWS.length
-    ? `${NEWS.length} · ${(d && d.src) === "finnhub" ? "Finnhub" : t("instSrc")}`
+    ? `${NEWS.length} · ${(d && d.src) === "finnhub" ? "Finnhub"
+        : (d && d.src) === "fj" ? "Live" : t("instSrc")}`
     : "";
 }
 async function loadCal(){ renderCal(); }   // le widget gère ses propres données
