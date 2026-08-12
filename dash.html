@@ -1051,9 +1051,16 @@ async function mountNewsCard(cfg, host){
   }
 
   const TYPE = {feed: "feed", news: "news", mag7: "mag7"}[cfg.iv];
+  // Le parametre envoye au serveur differe de la cle lue dans la reponse pour
+  // "news" : /api/news?type=fj tente FinancialJuice puis Finnhub puis le flux
+  // institutionnel en repli -- MEME pipeline que loadNews() sur /news -- mais
+  // repond toujours sous la cle "news". ?type=news tout court retombe sur
+  // UNIQUEMENT Finnhub "general", un flux distinct qui affichait des depeches
+  // differentes de l'onglet "Market News" de /news pour la meme carte.
+  const QTYPE = TYPE === "news" ? "fj" : TYPE;
   const draw = async () => {
     try{
-      const r = await fetch(`/api/news?type=${TYPE}`);
+      const r = await fetch(`/api/news?type=${QTYPE}`);
       if (r.status === 401){
         box.innerHTML = `<div class="nload">${tx("needAuth")}
           <br><a href="/" style="color:var(--gold)">${tx("goSignIn")}</a></div>`;
