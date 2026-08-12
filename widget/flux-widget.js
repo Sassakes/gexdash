@@ -1073,7 +1073,8 @@ class TheHubFluxWidget{
     }
 
     this.state.layout = {w, h, dpr, padL, padT, gw, gh, priceMin, priceMax, nH, nP,
-                          hours: d.hours, rows: mat, spot: lay.spot, markers: order};
+                          hours: d.hours, rows: mat, spot: lay.spot, markers: order,
+                          viewMin: lay.viewMin, viewMax: lay.viewMax};
   }
 
   hoverTimeLabel(hVal, hours){
@@ -1217,9 +1218,15 @@ class TheHubFluxWidget{
   }
 
   // ───── pan/zoom ─────
+  // Bornes externes du pan/zoom : viewMin/viewMax (recalculées à chaque
+  // layout() depuis price_grid brut, cf. layout()) -- PAS priceMin/priceMax,
+  // qui sont la fenêtre COURANTE affichée (rétrécit à chaque zoom avant).
+  // Les confondre clampait le zoom/pan sur la vue déjà zoomée au lieu de la
+  // plage complète : impossible de dézoomer ou de continuer à se déplacer
+  // une fois zoomé.
   outerBounds(){
     const L = this.state.layout, d = this.state.data;
-    if (L) return {min: L.priceMin, max: L.priceMax};
+    if (L) return {min: L.viewMin, max: L.viewMax};
     return {min: d.price_grid[0], max: d.price_grid[d.price_grid.length - 1]};
   }
   clampView(newMin, newMax){
