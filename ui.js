@@ -8,7 +8,7 @@ let PREFS = {...DEF_PREFS};
 try{ PREFS = {...DEF_PREFS, ...JSON.parse(localStorage.getItem("gexPrefs") || "{}")}; }catch(_){}
 function savePrefs(){ try{ localStorage.setItem("gexPrefs", JSON.stringify(PREFS)); }catch(_){} }
 
-let LVSHOW = {gex: true, em: true, open: true, cone: false};
+let LVSHOW = {gex: true, em: true, open: true};
 try{ LVSHOW = Object.assign(LVSHOW, JSON.parse(localStorage.getItem("gexLvShow") || "{}")); }catch(_){}
 function saveLvShow(){ try{ localStorage.setItem("gexLvShow", JSON.stringify(LVSHOW)); }catch(_){} }
 

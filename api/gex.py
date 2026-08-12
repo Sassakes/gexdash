@@ -675,46 +675,6 @@ def _build_vol_profile(target):
     return {str(b): round(v / tot, 6) for b, v in sorted(var.items())}
 
 
-# Profil par defaut, calibre sur la forme classique d'une seance indices US :
-# nuit Globex tres calme, reveil europeen, pic a l'ouverture cash, creux de
-# midi, remontee en cloture. Sert tant que la calibration reelle n'a pas
-# tourne — et evite tout appel reseau sur le chemin utilisateur.
-def _default_vol_profile():
-    shape = []
-    for b in range(0, 1440, 30):
-        h = b / 60.0
-        if 9.5 <= h < 10.5:      w = 9.0      # ouverture cash
-        elif 10.5 <= h < 11.5:   w = 6.0
-        elif 11.5 <= h < 14.0:   w = 3.5      # creux de midi
-        elif 14.0 <= h < 15.5:   w = 5.5
-        elif 15.5 <= h < 16.0:   w = 7.0      # cloture
-        elif 8.0 <= h < 9.5:     w = 3.0      # pre-marche US
-        elif 3.0 <= h < 8.0:     w = 1.8      # seance europeenne
-        else:                    w = 0.5      # nuit Globex
-        shape.append((str(b), w))
-    tot = sum(w for _, w in shape)
-    return {k: round(w / tot, 6) for k, w in shape}
-
-
-def _vol_profile(target):
-    """LECTURE SEULE. La calibration est faite par le cron (voir
-    _refresh_vol_profile) : telecharger un mois de bougies 5 min sur le chemin
-    utilisateur depassait le delai d'execution, l'endpoint echouait et la
-    carte restait vide."""
-    try:
-        cached = json.loads(kv_get(VOLPROF_KEY.format(t=target)) or "null")
-        if cached and cached.get("p"):
-            # le drapeau "cal" est absent des entrees ecrites par une version
-            # anterieure du cache : on le deduit du contenu plutot que de lui
-            # faire confiance aveuglement (une entree sans "cal" mais dont le
-            # profil differe du gabarit par defaut EST calibree).
-            calibrated = bool(cached.get("cal")) or cached["p"] != _default_vol_profile()
-            return cached["p"], calibrated
-    except Exception:
-        pass
-    return _default_vol_profile(), False
-
-
 def _refresh_vol_profile(target):
     """Calibration reelle, appelee par le cron uniquement."""
     try:
@@ -750,54 +710,6 @@ def _vol_profile_unused(target):
         except Exception:
             pass
     return prof
-
-
-SESSION_START_ET = 18 * 60      # ouverture Globex la veille
-
-
-def _session_progress(now_min):
-    """Minutes ecoulees depuis l'ouverture Globex et duree totale de seance.
-    La seance chevauche minuit : sans ce recalage, tout calcul retombait a
-    zero des la cloture cash et la carte n'affichait plus rien."""
-    end = SESSION_END_ET[0] * 60 + SESSION_END_ET[1]      # 16:00 ET
-    total = (1440 - SESSION_START_ET) + end               # 22 h
-    if now_min >= SESSION_START_ET:
-        elapsed = now_min - SESSION_START_ET
-    elif now_min <= end:
-        elapsed = (1440 - SESSION_START_ET) + now_min
-    else:
-        return None, total                                # 16h-18h : hors seance
-    return elapsed, total
-
-
-def _variance_remaining(prof, now_min):
-    """Part de la variance du jour encore devant nous, selon l'horloge
-    ponderee. Sans profil, on retombe sur le temps calendaire."""
-    elapsed, total = _session_progress(now_min)
-    if elapsed is None:
-        return None                            # hors seance : rien a projeter
-    if not prof:
-        return max(0.0, min(1.0, 1.0 - elapsed / total))
-    tot = sum(prof.values())
-    if tot <= 0:
-        return 0.0
-    # rang de chaque tranche DANS la seance (18h ET = rang 0), pour que la
-    # somme du restant traverse minuit correctement
-    def rank(b):
-        return b - SESSION_START_ET if b >= SESSION_START_ET else \
-               (1440 - SESSION_START_ET) + b
-    now_rank = rank(now_min)
-    rest = 0.0
-    for k, w in prof.items():
-        b = int(k)
-        r = rank(b)
-        if r > total:                        # tranche 16h-18h : hors seance
-            continue
-        if r >= now_rank:
-            rest += w
-        elif r + 30 > now_rank:              # tranche en cours, au prorata
-            rest += w * (r + 30 - now_rank) / 30.0
-    return max(0.0, min(1.0, rest / tot))
 
 
 INTRA_KEY = "gex:intra:{t}:{d}"
@@ -923,9 +835,8 @@ def _flow_grids(payload):
     fondues dans une colonne trop large.
     Grille temps : heures pleines de maintenant jusqu'a la cloture cash
     (16h ET), plus le point exact de cloture si ce n'est pas deja un entier —
-    l'heure de fin reprend SESSION_END_ET, le meme repere que
-    _session_progress/_variance_remaining (module EM), pas un calcul
-    independant."""
+    l'heure de fin reprend SESSION_END_ET, la meme constante que le reste
+    du fichier, pas un calcul independant."""
     spot_prod = payload.get("nq_price")
     unit = (payload.get("open_grid") or {}).get("unit")
     if not spot_prod or not unit:
@@ -1401,9 +1312,10 @@ class handler(BaseHTTPRequestHandler):
     def _stamp_iv_ref(new_p, old_p, canonical):
         """iv_atm FIGE au moment de la publication canonique (15h25) —
         distinct de new_p["iv_atm"], qui continue lui de bouger à chaque
-        refresh intrajournalier. /api/emlive compare les deux pour mesurer
-        le crush de vol en cours de séance ; sans ce gel, la référence
-        dériverait avec le marché et le ratio resterait toujours à 1."""
+        refresh intrajournalier. /api/flow compare les deux (dsigma) pour
+        mesurer le crush de vol en cours de séance ; sans ce gel, la
+        référence dériverait avec le marché et l'écart resterait toujours
+        à zéro."""
         same_day = bool(old_p) and old_p.get("date") == new_p.get("date")
         if canonical or not same_day or old_p.get("iv_ref") is None:
             new_p["iv_ref"] = new_p.get("iv_atm")
@@ -2314,88 +2226,12 @@ class handler(BaseHTTPRequestHandler):
                        "application/json")
             return
 
-        # ── EM restant : ce qu'il reste a parcourir d'ici la cloture ──
-        if path == "/api/emlive":
-            qs = parse_qs(parsed.query)
-            target = (qs.get("target", ["NQ"])[0] or "NQ").upper()
-            if target not in TARGETS:
-                self._send(400, json.dumps({"error": "target inconnu"}).encode(),
-                           "application/json")
-                return
-            pay = _latest_payload(target) or {}
-            em = (pay.get("expected_move") or {}).get("straddle")
-            anchor = (pay.get("open_grid") or {}).get("anchor")
-            px = pay.get("nq_price")
-            try:                                  # prix courant si disponible
-                live = _quote_price(target)
-                if live:
-                    px = live
-            except Exception:
-                pass
-            if not em or not px:
-                self._send(200, json.dumps({"ready": False}).encode(),
-                           "application/json")
-                return
-            # Ratio d'IV : la contraction de la portee restante vient du temps
-            # ET de l'IV qui s'effondre en seance (surtout en 0DTE) — l'horloge
-            # seule est structurellement optimiste un jour de crush de vol.
-            # iv_now vient du DERNIER refresh (canonique ou intraday, tous deux
-            # recalculent iv_atm depuis la chaine) : aucun appel reseau ici.
-            # iv_ref est figee a la publication canonique de 15h25 (_stamp_iv_ref).
-            iv_now = pay.get("iv_atm")
-            iv_ref = pay.get("iv_ref") or iv_now
-            iv_ratio = 1.0
-            if iv_ref and iv_now and iv_ref > 0:
-                iv_ratio = max(0.5, min(1.5, iv_now / iv_ref))
-            prof, calibrated = _vol_profile(target)
-            nowm = _et_now_minutes()
-            frac = _variance_remaining(prof, nowm)
-            # "prof" (poids par tranche de 30 min) ne change qu'1x/jour, via
-            # le cron de calibration : le client le met en cache et recalcule
-            # ensuite var_remaining localement, sans re-solliciter cet
-            # endpoint à chaque tick (voir emVarianceRemaining côté JS).
-            if frac is None:                       # entre 16h et 18h ET
-                self._send(200, json.dumps({
-                    "ready": True, "closed": True, "target": target,
-                    "em_day": round(em, 2), "anchor": anchor,
-                    "price": round(px, 2),
-                    "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
-                    "iv_source": pay.get("iv_source"),
-                    "prof": prof, "calibrated": calibrated}).encode(), "application/json")
-                return
-            rem = em * iv_ratio * math.sqrt(frac)
-            travel = abs(px - anchor) if anchor else None
-            out = {
-                "ready": True, "target": target, "price": round(px, 2),
-                "em_day": round(em, 2), "anchor": anchor,
-                "var_remaining": round(frac, 4),
-                "em_remaining": round(rem, 2),
-                "cone_high": round(px + rem, 2),
-                "cone_low": round(px - rem, 2),
-                "band_high": round(anchor + em, 2) if anchor else None,
-                "band_low": round(anchor - em, 2) if anchor else None,
-                "travelled": round(travel, 2) if travel is not None else None,
-                "used_pct": round(100.0 * travel / em, 1) if travel is not None else None,
-                "calibrated": calibrated, "closed": False,
-                "et_minutes": nowm,
-                "iv_ref": iv_ref, "iv_now": iv_now, "iv_ratio": round(iv_ratio, 4),
-                "iv_source": pay.get("iv_source"),
-                "prof": prof,
-            }
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "public, s-maxage=30, "
-                                              "stale-while-revalidate=30")
-            self.end_headers()
-            self.wfile.write(json.dumps(out).encode())
-            return
-
         # ── FLUX : matrice gamma prix x temps (ETAPE 1, cf. docs/BRIEF-flux.md) ──
         # Lecture seule : le calcul vit dans le cron intrajournalier
-        # (_refresh_flow), jamais sur ce chemin. Meme convention que
-        # /api/emlive pour l'absence de donnee : 200 {"ready": false}, pas
-        # une 503 -- l'absence (avant le premier tir intraday du jour, hors
-        # seance) est un etat normal, pas une panne de source.
+        # (_refresh_flow), jamais sur ce chemin. Absence de donnee : 200
+        # {"ready": false}, pas une 503 -- l'absence (avant le premier tir
+        # intraday du jour, hors seance) est un etat normal, pas une panne
+        # de source.
         if path == "/api/flow":
             qs = parse_qs(parsed.query)
             target = (qs.get("target", ["NQ"])[0] or "NQ").upper()

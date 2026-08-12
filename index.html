@@ -416,14 +416,6 @@
     background:linear-gradient(180deg, rgba(139,92,246,.15), rgba(139,92,246,.05));
   }
   .chips button[data-g="open"].on .led{background:#8B5CF6; box-shadow:0 0 8px rgba(139,92,246,.6)}
-  .chips button[data-g="cone"] .led{background:rgba(239,83,80,.28)}
-  .chips button[data-g="cone"]:hover{border-color:rgba(239,83,80,.45)}
-  .chips button[data-g="cone"].on{
-    color:#EF5350; border-color:rgba(239,83,80,.5);
-    background:linear-gradient(180deg, rgba(239,83,80,.15), rgba(239,83,80,.05));
-  }
-  .chips button[data-g="cone"].on .led{background:#EF5350; box-shadow:0 0 8px rgba(239,83,80,.6)}
-
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
   thead th{
@@ -917,7 +909,6 @@
         <button data-g="gex"><i class="led"></i>GEX</button>
         <button data-g="em"><i class="led"></i>EM · 1D</button>
         <button data-g="open"><i class="led"></i>Open</button>
-        <button data-g="cone"><i class="led"></i>EM · Live</button>
       </span>
       <span style="display:inline-flex; gap:8px; align-items:center; flex:none">
         <span class="ivs" id="ivs">
@@ -1089,7 +1080,6 @@ const T = {
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — outil éducatif, pas un conseil financier.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
-    tipCone:"Cône EM restant : prix courant ± EM restant, se resserre en séance",
     dpNote:"FINRA off-exchange · publié J-1",
     dpBuild:"historique en construction — première donnée au prochain jour ouvré",
     dpUnavail:"indisponible", dpAvg:"moy. 20j",
@@ -1154,7 +1144,6 @@ const T = {
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
       +"<br>Made with <span style='color:#EF5350'>&hearts;</span> by Max &amp; Micka — educational tool, not financial advice.",
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
-    tipCone:"Remaining EM cone: current price ± remaining EM, narrows through the session",
     dpNote:"FINRA off-exchange · published T-1",
     dpBuild:"history building — first data next trading day",
     dpUnavail:"unavailable", dpAvg:"20d avg",
@@ -1325,7 +1314,6 @@ async function loadTarget(){
   $("status").style.display = "block";
   $("status").textContent = t("loading") + " " + TARGET + "…";
   $("app").style.display = "none";
-  loadEmProfile();     // en parallèle : horloge calibrée, 1x/cible/jour, mise en cache
   // levels.json et les bougies (/api/chart, /api/quote) sont trois payloads
   // indépendants -- les enchaîner (comme avant : levels -> chart -> quote)
   // coûtait 3 allers-retours réseau au switch de marché. Démarrer les
@@ -1494,7 +1482,7 @@ function applyLang(){
   $("donateLink").title = t("donTip");
   const th = t("th");
   $("th1").textContent = th[0]; $("th2").textContent = th[1]; $("th3").textContent = th[2];
-  const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen"), cone:t("tipCone")};
+  const tips = {gex:t("tipGex"), em:t("tipEm"), open:t("tipOpen")};
   document.querySelectorAll("#lvChips button").forEach(b => b.title = tips[b.dataset.g] || "");
   $("dpNoteTxt").textContent = t("dpNote");
   loadDark();
@@ -2091,7 +2079,6 @@ async function pollQuote(){
       animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100, FLUX_ON ? drawFlux : null);
     }
     if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
-    updateEmCone();          // le cône se resserre au même rythme que le prix
     // Synthèse texte du Flux : une fois par tick (pas par frame d'anim, ça
     // ferait clignoter les chiffres) ; la matrice elle-même ne bouge qu'au
     // recalcul intrajournalier, seule la position du prix dedans vit ici.
@@ -2102,9 +2089,9 @@ async function pollQuote(){
 /* Tracé générique de lignes DÉRIVÉES sur le chart : chaque appelant possède
    un GROUPE indépendant de price lines (retracé sans toucher aux autres
    groupes), et alimente le même calque d'étiquettes (drawLevelLabels) que
-   les niveaux GEX/EM/Open. Groupes actuels : "levels" (payload serveur,
-   géré par applyLevelLines) et "emcone" (cône EM restant, calculé en
-   local) — support direct pour de futurs tracés dérivés du même genre. */
+   les niveaux GEX/EM/Open. Groupe actuel : "levels" (payload serveur, géré
+   par applyLevelLines) — support direct pour de futurs tracés dérivés du
+   même genre. */
 function setLineGroup(group, specs){
   if (!CHART.series) return;
   for (const pl of (CHART.lineGroups[group] || [])) CHART.series.removePriceLine(pl);
@@ -2149,121 +2136,6 @@ function applyLevelLines(){
     }
   }
   setLineGroup("levels", specs);
-  updateEmCone();
-}
-
-/* ═══ CÔNE EM RESTANT ═════════════════════════════════════════════════
-   Tracé directement sur le chart plutôt qu'en carte séparée (la carte
-   #emCard avait un id dupliqué avec le panneau "Expected move" existant —
-   getElementById résolvait toujours vers le mauvais élément, la carte
-   restait muette). Deux repères, groupe "emcone" via setLineGroup :
-     · bande du jour  : déjà tracée par applyLevelLines (niveaux emh/eml,
-       ancre ± EM du jour) — statique, style discret (pointillés) ;
-     · cône restant   : prix courant ± EM restant — dynamique, tracé ici,
-       style marqué (trait plein), se resserre au fil de la séance.
-   L'EM du jour et l'ancre viennent du payload déjà polled (LAST_D) : aucun
-   appel serveur dédié. Seule l'horloge calibrée ("prof", ne change qu'1x/jour
-   via le cron) vient de /api/emlive — récupérée une fois par cible et par
-   jour, mise en cache localStorage. */
-const EMCONE = {prof: null, calibrated: false, target: null, day: null};
-
-function etMinutesNow(){
-  const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
-      hour: "2-digit", minute: "2-digit"}).formatToParts(new Date())
-    .reduce((a, x) => (a[x.type] = x.value, a), {});
-  return (+p.hour % 24) * 60 + (+p.minute);
-}
-
-function etDateNow(){
-  const p = new Intl.DateTimeFormat("en-CA", {timeZone: "America/New_York",
-      year: "numeric", month: "2-digit", day: "2-digit"}).formatToParts(new Date())
-    .reduce((a, x) => (a[x.type] = x.value, a), {});
-  return `${p.year}-${p.month}-${p.day}`;
-}
-
-const EM_SESSION_START = 18 * 60;      // ouverture Globex, minutes ET depuis minuit
-const EM_SESSION_END   = 16 * 60;      // clôture cash US, minutes ET depuis minuit
-
-/* Port fidèle de _session_progress (api/gex.py) : même horloge des deux
-   côtés, ne pas modifier une formule sans revalider l'autre. La séance
-   traverse minuit, d'où le recalage en trois cas. */
-function emSessionProgress(nowMin){
-  const end = EM_SESSION_END, total = (1440 - EM_SESSION_START) + end;
-  if (nowMin >= EM_SESSION_START) return [nowMin - EM_SESSION_START, total];
-  if (nowMin <= end) return [(1440 - EM_SESSION_START) + nowMin, total];
-  return [null, total];                // 16h-18h ET : hors séance
-}
-
-/* Port fidèle de _variance_remaining (api/gex.py). */
-function emVarianceRemaining(prof, nowMin){
-  const [elapsed, total] = emSessionProgress(nowMin);
-  if (elapsed == null) return null;                     // hors séance
-  if (!prof) return Math.max(0, Math.min(1, 1 - elapsed / total));
-  const tot = Object.values(prof).reduce((a, b) => a + b, 0);
-  if (tot <= 0) return 0;
-  const rank = b => b >= EM_SESSION_START ? b - EM_SESSION_START : (1440 - EM_SESSION_START) + b;
-  const nowRank = rank(nowMin);
-  let rest = 0;
-  for (const k in prof){
-    const b = +k, r = rank(b), w = prof[k];
-    if (r > total) continue;           // tranche 16h-18h : hors séance
-    if (r >= nowRank) rest += w;
-    else if (r + 30 > nowRank) rest += w * (r + 30 - nowRank) / 30;
-  }
-  return Math.max(0, Math.min(1, rest / tot));
-}
-
-async function loadEmProfile(){
-  const tgt = TARGET, day = etDateNow();
-  let cached = null;
-  try{ cached = JSON.parse(localStorage.getItem("gexEmProf:" + tgt) || "null"); }catch(_){}
-  if (cached && cached.day === day && cached.prof){
-    EMCONE.prof = cached.prof; EMCONE.calibrated = !!cached.calibrated;
-    EMCONE.target = tgt; EMCONE.day = day;
-    updateEmCone();
-    return;
-  }
-  try{
-    const r = await fetch(`/api/emlive?target=${tgt}`);
-    const d = await r.json();
-    if (d && d.prof){
-      EMCONE.prof = d.prof; EMCONE.calibrated = !!d.calibrated;
-      EMCONE.target = tgt; EMCONE.day = day;
-      try{
-        localStorage.setItem("gexEmProf:" + tgt,
-          JSON.stringify({day, prof: d.prof, calibrated: d.calibrated}));
-      }catch(_){}
-    }
-  }catch(_){}
-  updateEmCone();
-}
-
-function updateEmCone(){
-  if (!CHART.series) return;
-  if (!LVSHOW.cone || !EMCONE.prof || EMCONE.target !== TARGET){
-    setLineGroup("emcone", []);
-    return;
-  }
-  const d = LAST_D;
-  const emDay = d && d.expected_move && d.expected_move.straddle;
-  const anchor = d && d.open_grid && d.open_grid.anchor;
-  const price = CHART.lastBar ? CHART.lastBar.close : (d ? d.nq_price : null);
-  if (!emDay || !anchor || price == null){ setLineGroup("emcone", []); return; }
-  const frac = emVarianceRemaining(EMCONE.prof, etMinutesNow());
-  if (frac == null){ setLineGroup("emcone", []); return; }    // hors séance
-  const rem = emDay * Math.sqrt(frac);
-  const coneHigh = price + rem, coneLow = price - rem;
-  const bandHigh = anchor + emDay, bandLow = anchor - emDay;
-  // signal : une borne du cône dépasse la bande du jour -> extension encore
-  // possible au-delà de l'EM du jour. Réutilise l'or déjà employé pour les
-  // niveaux "majeurs" (flip/HGEX/Max Pain/Open) comme code couleur d'alerte.
-  const overHigh = coneHigh > bandHigh, overLow = coneLow < bandLow;
-  setLineGroup("emcone", [
-    {price: coneHigh, color: overHigh ? C.gold : C.teal, solid: true, width: overHigh ? 2 : 1,
-     code: "EM↑", tier: 1},
-    {price: coneLow, color: overLow ? C.gold : C.red, solid: true, width: overLow ? 2 : 1,
-     code: "EM↓", tier: 1},
-  ]);
 }
 
 async function show(d, barsFetch){
