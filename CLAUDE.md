@@ -147,8 +147,11 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 `FINNHUB_API_KEY`, `KV_*` / `UPSTASH_*`.
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
-de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques,
-recalculent uniquement le flux) toutes les 5 min de 12h30 (8h30 ET — pas
+de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques :
+niveaux/gex_by_strike/open_grid/expected_move/pine gelés sur ceux déjà
+publiés aujourd'hui, mais prix/basis/net_gex/régime/P·C OI/IV et le flux se
+rafraîchissent à chaque tir — cf. garde de fraîcheur ci-dessous) toutes les
+5 min de 12h30 (8h30 ET — pas
 l'ouverture cash à 9h30 ET, une heure plus tôt pour couvrir les publications
 macro US type CPI/NFP qui bougent déjà le future) à 13h30 (première heure)
 et de 19h00 à 20h00 (dernière heure, clôture cash 16h ET inchangée), toutes
@@ -170,18 +173,24 @@ tout seul après 16h ET et le week-end (bug vu en prod le 2026-08-08).
 QStash : 00h11 daily, 15h25 publication. GitHub Actions : niveaux et macro.
 
 **Garde de fraîcheur `/api/cron`.** Une cible dont le payload publié date
-d'aujourd'hui et a été généré après `11:30:00` UTC est `{"skipped": true}` —
-sinon chaque tir intrajournalier referait un `build_payload` (fetch CBOE)
-inutile. `?force=1` republie tout (niveaux + Pine compris) en ignorant cette
-garde.
+d'aujourd'hui et a été généré après `11:30:00` UTC ne redéclenche jamais un
+recalcul CANONIQUE — niveaux/gex_by_strike/open_grid/expected_move/pine
+restent ceux déjà publiés, `_freeze_levels` est inconditionnel sur ce
+chemin, string Pine figée. `?force=1` republie tout (niveaux + Pine compris)
+en ignorant cette garde.
 
-`?intraday=1&flowforce=1&key=...` contourne la même garde **uniquement** pour
-recalculer le flux (module `docs/BRIEF-flux.md`) — utile pour vérifier
-l'affichage ou lire l'écart contre `net_gex_bn` sans attendre le prochain tir
-programmé. Réservé admin (même clé que le reste de `/api/cron`). Ne passe
-jamais par `_upstash_set` : le payload construit pour ce recalcul est
-transitoire, jamais publié — niveaux et Pine ne peuvent pas bouger, quel que
-soit l'état du verrou GEX.
+Ce n'est PAS un no-op pour autant : un tir intrajournalier (`?intraday=1`)
+qui tombe sur une cible déjà fraîche republie quand même prix/basis/
+net_gex/régime/P·C OI/IV/flux (le fetch CBOE est de toute façon nécessaire
+pour recalculer le flux — republier ne coûte qu'un `SET` Redis de plus par
+cible et par tir, aucun appel réseau en plus). Sans ce republishing, le
+bandeau et `_track_intraday` restent figés sur les valeurs de la
+publication canonique jusqu'au lendemain (bug vu en prod le 2026-08-13 :
+plus aucune métrique n'avait bougé depuis la publication de 13h25 UTC —
+la garde de fraîcheur sautait la cible en entier au lieu de ne sauter que
+le recalcul des niveaux). Ce chemin ne notifie JAMAIS Discord — ni l'embed
+(`?notify=1` uniquement), ni le canal News (ces payloads n'alimentent
+jamais `computed`, seule liste qui déclenche ce ping).
 
 ---
 

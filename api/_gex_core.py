@@ -238,8 +238,14 @@ def atm_straddle(data, spot, today=None):
     return None
 
 
-STRADDLE_SIGMA = 0.7979  # ATM straddle ~= 0.8 * sigma_daily * spot (BS)
-STRADDLE_EM = 0.8        # facteur EM affiché (validé contre référence externe)
+# ATM straddle ~= sqrt(2/pi) ~= 0.7979 * sigma_daily * spot (BS) ; arrondi a
+# 0.8 et validé contre référence externe pour le $ affiché. em_band_stats()
+# DOIT reconvertir avec cette même constante (pas 0.7979) : le straddle
+# publié partout ailleurs (build_payload, refresh_daily_anchor) vaut
+# STRADDLE_EM x sigma, donc une bande de fraction*straddle correspond à un
+# quantile de fraction*STRADDLE_EM sigma -- réutiliser 0.7979 ici décale
+# légèrement les probabilités affichées par rapport au $ réellement publié.
+STRADDLE_EM = 0.8
 
 
 def _phi(x):
@@ -249,7 +255,7 @@ def _phi(x):
 def em_band_stats(fraction):
     """Theoretical stats for a +/- fraction*straddle band (normal, no drift).
     prob_inside: close inside the band; prob_touch: touch of ONE side."""
-    z = fraction * STRADDLE_SIGMA
+    z = fraction * STRADDLE_EM
     inside = 2.0 * _phi(z) - 1.0
     touch = 2.0 * (1.0 - _phi(z))
     return round(100 * inside, 1), round(100 * min(touch, 1.0), 1)

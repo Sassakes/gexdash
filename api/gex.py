@@ -1398,7 +1398,17 @@ class handler(BaseHTTPRequestHandler):
     def _freeze_levels(new_p, old_p):
         """Verrou GEX actif : le nouveau payload garde les NIVEAUX du
         précédent (GEX, grille Open, EM, pine) — prix/basis/IV/badges
-        continuent de se rafraîchir."""
+        continuent de se rafraîchir.
+
+        Piège : expected_move.anchor/anchor_idx sont figés avec le `basis`
+        du moment du calcul original, alors que new_p["basis"] (top-niveau)
+        continue lui de bouger à chaque refresh. `anchor - anchor_idx` ne
+        redonnera donc PLUS le basis courant une fois gelé -- ce n'est pas
+        une incohérence de calcul (straddle/em_pct/bandes restent tous
+        cohérents ENTRE EUX), juste ce champ diagnostic isolé qui devient
+        irreconstituable depuis payload["basis"]. Ne pas "corriger" en
+        recalculant anchor_idx à la volée : ça romprait la cohérence avec
+        le straddle/em_pct déjà gelés à côté."""
         for k in ("levels", "gex_by_strike", "open_grid",
                   "expected_move", "pine"):
             if old_p.get(k) is not None:
@@ -2248,47 +2258,71 @@ class handler(BaseHTTPRequestHandler):
                 }).encode(), "application/json")
                 return
             force = "force" in qs
-            # ?flowforce=1 (+ ?intraday=1) : contourne UNIQUEMENT le "skipped"
-            # ci-dessous pour recalculer le flux hors de son cron habituel
-            # (ex. verifier l'ecart contre net_gex_bn en fin de journee, sans
-            # attendre le prochain tir programme). Protege par la meme cle
-            # admin que le reste de /api/cron (verifiee plus haut). Contrai-
-            # rement a ?force=1, ne repasse JAMAIS par build_payload+_upstash_
-            # set : rien n'est publie, les niveaux/Pine ne peuvent pas bouger.
-            flow_force = "flowforce" in qs and "intraday" in qs
             for target in TARGETS:
                 latest = _latest_payload(target)
                 fresh = (latest is not None
                          and latest.get("date") == today
                          and latest.get("generated_utc", "") >= f"{today}T11:30:00")
                 if fresh and not force:
-                    results[target] = {"skipped": True}
-                    if flow_force:
+                    # Niveaux deja publies aujourd'hui : cette branche ne les
+                    # retouche JAMAIS -- _freeze_levels est inconditionnel ici,
+                    # etre dans cette branche EST la definition de "deja
+                    # canonique aujourd'hui", donc la string Pine ne peut pas
+                    # bouger. Mais prix/basis/net_gex/regime/pc_oi/iv doivent
+                    # continuer a se rafraichir a chaque tir intrajournalier
+                    # -- sinon _track_intraday et le bandeau restent figes
+                    # toute la journee des la publication canonique (bug vu
+                    # en prod le 2026-08-13 : plus aucune metrique n'avait
+                    # bouge depuis la publication de 13h25 UTC, faute de ce
+                    # republishing). Le fetch CBOE est deja necessaire pour
+                    # recalculer le flux (comme avant ce correctif) :
+                    # republier ne coute qu'un SET Redis de plus par cible
+                    # et par tir, aucun appel reseau supplementaire.
+                    #
+                    # AUCUN payload de cette branche n'alimente `computed` :
+                    # c'est la seule liste qui declenche le ping Discord
+                    # "canal News" plus bas (un message par tir de 5-10 min
+                    # rendrait le canal inutilisable). L'embed Discord
+                    # (want_notify) reste lui gate uniquement par ?notify=1
+                    # ou le creneau de secours Vercel -- jamais atteint sur
+                    # ce chemin, quelle que soit la valeur du payload.
+                    try:
+                        pre_open_iv = (latest.get("iv_atm")
+                                       if _et_now_minutes() < OPTIONS_OPEN_ET_MIN
+                                       else None)
+                        flow_capture = {} if "intraday" in qs else None
+                        payload = build_payload(target=target, mode="snapshot",
+                                                chain_cache=cache,
+                                                iv_override=pre_open_iv,
+                                                capture=flow_capture)
+                        payload["iv_source"] = "close" if pre_open_iv else "session"
+                        self._preserve_daily(payload, latest)
+                        self._freeze_levels(payload, latest)
+                        self._stamp_iv_ref(payload, latest, False)
+                        if flow_capture:
+                            try:
+                                chk, reason = _refresh_flow(target, payload, flow_capture)
+                                if reason:
+                                    journal_flow(f"flow {target} : rien calcule ({reason})")
+                                elif chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
+                                    journal_flow(f"flow {target} controle de "
+                                                 f"justesse KO : cboe_gross="
+                                                 f"{chk['cboe_gross_bn']}Bn vs "
+                                                 f"flow={chk['flow_gross_bn']}Bn "
+                                                 f"(ecart {chk['deviation_pct']}%)")
+                            except Exception as e:
+                                journal_flow(f"flow {target} KO: {e}")
                         try:
-                            fc = {}
-                            # payload transitoire, jamais publie : sert
-                            # uniquement a fournir a _refresh_flow les opts
-                            # (blend ETF + scale deja appliques) et l'open_grid
-                            # courants, sans toucher au "latest" stocke.
-                            fp = build_payload(target=target, mode="snapshot",
-                                               chain_cache=cache, capture=fc)
-                            if latest:
-                                self._preserve_daily(fp, latest)  # lecture seule
-                            chk, reason = _refresh_flow(target, fp, fc)
-                            results[target]["flow_forced"] = True
-                            results[target]["flow_check"] = chk
-                            if reason:
-                                results[target]["flow_skip_reason"] = reason
-                            if chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
-                                journal_flow(f"flow {target} (force) controle de "
-                                             f"justesse KO : cboe_gross="
-                                             f"{chk['cboe_gross_bn']}Bn vs flow="
-                                             f"{chk['flow_gross_bn']}Bn "
-                                             f"(ecart {chk['deviation_pct']}%)")
-                        except Exception as e:
-                            results[target]["flow_forced"] = False
-                            results[target]["flow_error"] = str(e)
-                            journal_flow(f"flow {target} (force) KO: {e}")
+                            _track_intraday(payload)
+                        except Exception:
+                            pass
+                        ok, why = _upstash_set(payload)
+                        results[target] = {"skipped": True, "metrics_refreshed": ok,
+                                           "publish_info": why}
+                    except Exception as e:
+                        results[target] = {"skipped": True, "metrics_refreshed": False,
+                                           "metrics_error": str(e)}
+                        journal_flow(f"metrics refresh {target} KO: {e}")
                     continue
                 # Pre-ouverture (< 9h30 ET) : la publication canonique de
                 # 15h25 Paris tombe 5 minutes AVANT l'ouverture des cotations
