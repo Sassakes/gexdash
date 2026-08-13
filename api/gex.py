@@ -3373,9 +3373,25 @@ class handler(BaseHTTPRequestHandler):
                 payload["published"] = ok
                 payload["publish_info"] = why
                 # Silencieux par défaut (le run planifié de 15h25 reste la seule
-                # notification automatique). ?notify=1 = envoi Discord explicite.
+                # notification automatique). ?notify=1 = envoi Discord explicite
+                # (bouton "Refresh" + case "notify" de /admin). Une fois des
+                # niveaux annoncés publiquement, ils ne doivent plus dériver en
+                # arrière-plan sans nouvelle annonce -- même verrou que pose
+                # le chemin cron canonique après un notify réussi (cf. _cron
+                # ci-dessus). Sans lui, un notify=1 manuel publie un
+                # instantané puis les tirs intrajournaliers suivants
+                # continuent de faire flotter les niveaux : le terminal
+                # s'écarte silencieusement de ce qui vient d'être posté sur
+                # Discord (observé en prod le 2026-08-13 : flip Discord
+                # 29707 vs terminal 29673 quelques minutes plus tard).
                 if q("notify") == "1" and ok:
-                    payload["notified"] = bool(discord_notify([payload]))
+                    notified = discord_notify([payload])
+                    payload["notified"] = bool(notified)
+                    if notified:
+                        try:
+                            kv_set("gex:lock", "1")
+                        except Exception:
+                            pass
                 self._send(200, json.dumps(payload).encode(), "application/json")
             except ValueError as e:
                 # Donnee manquante ou chaine inexploitable : ce n'est PAS une
