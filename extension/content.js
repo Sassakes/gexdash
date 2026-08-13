@@ -16,6 +16,17 @@
  * les sélecteurs ci-dessous dans les devtools. Chaque étape logge sous le
  * préfixe [GEX] dans la console de la page — c'est la première chose à
  * regarder en cas d'échec.
+ *
+ * TradingView ignore les événements souris purement synthétiques
+ * (isTrusted:false) pour ouvrir la fenêtre de paramètres — vérifié
+ * empiriquement, pas une hypothèse. Les clics qui doivent réellement
+ * déclencher une action TradingView (double-clic légende, bouton
+ * réglages, onglet, validation) passent donc par nativeClick(), qui
+ * délègue à background.js un clic généré au niveau navigateur via Chrome
+ * DevTools Protocol (permission "debugger"). Chaque nativeClick() vérifie
+ * d'abord par elementFromPoint que le point calculé retombe bien sur
+ * l'élément visé avant de cliquer — ce site a des boutons d'exécution
+ * BUY/SELL juste à côté de la légende, cliquer à l'aveugle est exclu.
  */
 "use strict";
 
@@ -107,11 +118,63 @@ function findIndicatorLegendItem(name) {
   return null;
 }
 
+// TradingView ignore les événements souris synthétiques (dispatchEvent/
+// .click() depuis un content script ont toujours isTrusted:false) pour
+// ouvrir la fenêtre de paramètres — vérifié empiriquement : un double-clic
+// dispatché ne fait absolument rien, alors qu'un double-clic réel sur le
+// même élément fonctionne à l'identique. Seul un clic généré au niveau
+// navigateur (CDP, via background.js) passe ce filtre.
+function pageCenter(el) {
+  const r = el.getBoundingClientRect();
+  return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+}
+
+// Un point de clic n'est fiable que si l'élément visé est réellement celui
+// qui recevra l'événement à cet endroit. Relevé en prod : certaines lignes
+// de légende ont une largeur de boîte qui déborde largement sur le canvas
+// du chart (leur centre géométrique tombe alors sur une bougie, pas sur le
+// texte). À proximité immédiate de la légende se trouvent aussi les
+// boutons d'exécution BUY/SELL — cliquer à l'aveugle sur ce site n'est
+// jamais acceptable. On ne clique donc qu'après avoir vérifié que le point
+// calculé retombe bien sur l'élément visé (ou un de ses descendants).
+function verifiedPoint(el) {
+  el.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const { x, y } = pageCenter(el);
+  const hit = document.elementFromPoint(x, y);
+  if (!hit || !el.contains(hit)) return null;
+  return { x, y };
+}
+
+async function nativeClick(el, { double = false } = {}) {
+  const point = verifiedPoint(el);
+  if (!point) {
+    log("clic natif annulé : le point calculé ne retombe pas sur l'élément visé (mise en page instable)");
+    return false;
+  }
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "CDP_CLICK", x: point.x, y: point.y, double });
+    if (res && res.ok) return true;
+    log("clic natif (CDP) indisponible :", (res && res.error) || "réponse vide");
+  } catch (e) {
+    log("clic natif (CDP) — erreur d'envoi du message :", String((e && e.message) || e));
+  }
+  return false;
+}
+
 async function openSettingsDialog(item) {
   // 1) Geste utilisateur habituel pour ouvrir les paramètres d'un
-  //    indicateur : double-clic sur la légende. Testé en premier.
-  log("ouverture des paramètres — tentative : double-clic sur la légende");
-  item.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  //    indicateur : double-clic sur la légende. On cible le libellé de
+  //    titre (boîte resserrée autour du texte visible) plutôt que la ligne
+  //    entière, dont la largeur peut déborder sur le chart.
+  log("ouverture des paramètres — tentative : double-clic natif sur la légende");
+  const title = item.querySelector('[class*="title-"]') || item;
+  let ok = await nativeClick(title, { double: true });
+  if (!ok) {
+    // Repli best-effort : ne fonctionnera vraisemblablement pas (cf. note
+    // ci-dessus) mais ne coûte rien à tenter si le clic natif est
+    // indisponible (ex. devtools déjà ouverts sur cet onglet).
+    item.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  }
   let dialog = await waitForDialog(1500, 100);
   if (dialog) return dialog;
 
@@ -133,20 +196,23 @@ async function openSettingsDialog(item) {
     '[class*="settings"]',
   ];
   const searchRoots = [item, item.parentElement, item.closest('[class*="item-"]')].filter(Boolean);
-  let clicked = false;
-  for (const root of searchRoots) {
+  let btn = null;
+  outer: for (const root of searchRoots) {
     for (const sel of gearSelectors) {
-      const btn = root.querySelector(sel);
-      if (btn) {
-        log("clic sur le bouton de réglages via le sélecteur", sel);
-        btn.click();
-        clicked = true;
-        break;
+      const found = root.querySelector(sel);
+      if (found) {
+        btn = found;
+        log("bouton de réglages trouvé via le sélecteur", sel);
+        break outer;
       }
     }
-    if (clicked) break;
   }
-  if (!clicked) log("aucune icône de réglages trouvée au survol");
+  if (btn) {
+    const clicked = await nativeClick(btn, { double: false });
+    if (!clicked) btn.click();
+  } else {
+    log("aucune icône de réglages trouvée au survol");
+  }
 
   dialog = await waitForDialog();
   return dialog;
@@ -187,7 +253,8 @@ async function ensureInputsTabWithTextFields(dialog) {
   const tabs = dialog.querySelectorAll('[role="tab"]');
   log("onglet Inputs non actif par défaut, essai de", tabs.length, "onglet(s)");
   for (const tab of tabs) {
-    tab.click();
+    const ok = await nativeClick(tab, { double: false });
+    if (!ok) tab.click();
     await sleep(150);
     const n = textInputs(dialog).length;
     if (n >= 5) {
@@ -352,8 +419,9 @@ async function applyLevels(levels) {
 
     const submit = findSubmitButton(dialog);
     if (!submit) return fail("Bouton de validation introuvable dans la fenêtre de paramètres");
-    log("validation — clic sur le bouton :", (submit.textContent || "").trim() || "(sans libellé)");
-    submit.click();
+    log("validation — clic natif sur le bouton :", (submit.textContent || "").trim() || "(sans libellé)");
+    const submitted = await nativeClick(submit, { double: false });
+    if (!submitted) submit.click();
 
     log("remplissage terminé avec succès, champs mis à jour :", order.join(", "));
     return { ok: true, filled: order.length };
