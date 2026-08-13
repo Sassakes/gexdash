@@ -2299,26 +2299,36 @@ class handler(BaseHTTPRequestHandler):
                         self._preserve_daily(payload, latest)
                         self._freeze_levels(payload, latest)
                         self._stamp_iv_ref(payload, latest, False)
+                        flow_check, flow_skip_reason = None, None
                         if flow_capture:
                             try:
-                                chk, reason = _refresh_flow(target, payload, flow_capture)
-                                if reason:
-                                    journal_flow(f"flow {target} : rien calcule ({reason})")
-                                elif chk and chk["deviation_pct"] > FLOW_CHECK_TOL_PCT:
+                                flow_check, flow_skip_reason = _refresh_flow(
+                                    target, payload, flow_capture)
+                                if flow_skip_reason:
+                                    journal_flow(f"flow {target} : rien calcule "
+                                                 f"({flow_skip_reason})")
+                                elif (flow_check and flow_check["deviation_pct"]
+                                      > FLOW_CHECK_TOL_PCT):
                                     journal_flow(f"flow {target} controle de "
                                                  f"justesse KO : cboe_gross="
-                                                 f"{chk['cboe_gross_bn']}Bn vs "
-                                                 f"flow={chk['flow_gross_bn']}Bn "
-                                                 f"(ecart {chk['deviation_pct']}%)")
+                                                 f"{flow_check['cboe_gross_bn']}Bn vs "
+                                                 f"flow={flow_check['flow_gross_bn']}Bn "
+                                                 f"(ecart {flow_check['deviation_pct']}%)")
                             except Exception as e:
+                                flow_skip_reason = f"{type(e).__name__}: {e}"
                                 journal_flow(f"flow {target} KO: {e}")
                         try:
                             _track_intraday(payload)
                         except Exception:
                             pass
                         ok, why = _upstash_set(payload)
+                        # flow_check/flow_skip_reason : seul moyen de lire l'ecart
+                        # de controle de justesse (vs net_gex_bn) depuis un appel
+                        # ?intraday=1&key=... manuel, sans fouiller les journaux --
+                        # a garder dans la reponse.
                         results[target] = {"skipped": True, "metrics_refreshed": ok,
-                                           "publish_info": why}
+                                           "publish_info": why, "flow_check": flow_check,
+                                           "flow_skip_reason": flow_skip_reason}
                     except Exception as e:
                         results[target] = {"skipped": True, "metrics_refreshed": False,
                                            "metrics_error": str(e)}

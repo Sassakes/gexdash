@@ -147,7 +147,7 @@ Variables Vercel : `GEX_REFRESH_KEY` (admin), `GEX_AUTH_SECRET` (sessions),
 `FINNHUB_API_KEY`, `KV_*` / `UPSTASH_*`.
 
 Crons Vercel (UTC) : `30 14` publication de secours, `30 23` recalcul nocturne
-de secours, intrajournaliers `?intraday=1&flowforce=1` (jamais canoniques :
+de secours, intrajournaliers `?intraday=1` (jamais canoniques :
 niveaux/gex_by_strike/open_grid/expected_move/pine gelés sur ceux déjà
 publiés aujourd'hui, mais prix/basis/net_gex/régime/P·C OI/IV et le flux se
 rafraîchissent à chaque tir — cf. garde de fraîcheur ci-dessous) toutes les
@@ -191,6 +191,20 @@ la garde de fraîcheur sautait la cible en entier au lieu de ne sauter que
 le recalcul des niveaux). Ce chemin ne notifie JAMAIS Discord — ni l'embed
 (`?notify=1` uniquement), ni le canal News (ces payloads n'alimentent
 jamais `computed`, seule liste qui déclenche ce ping).
+
+Réponse JSON de `/api/cron` sur ce chemin : `results[target]` porte
+`flow_check`/`flow_skip_reason` (l'écart de contrôle de justesse vs
+`net_gex_bn`, cf. `_refresh_flow`) — seul moyen de le lire depuis un appel
+manuel sans fouiller `FLOW_CRON_LOG_KEY`. Ne pas les retirer de la réponse.
+
+`flowforce` (ancien paramètre `?intraday=1&flowforce=1`) est **retiré
+partout** (code, `vercel.json`, appels manuels) : il ne gate plus rien
+depuis que le republishing de métriques ci-dessus tourne pour tout tir
+`?intraday=1`, `flowforce=1` seul n'aurait plus déclenché que le même
+recalcul de flux — un paramètre qui ne fait rien de plus que sans lui
+laisse croire à tort qu'il contrôle quelque chose. Choix tranché plutôt
+que de le garder inerte : `?intraday=1&key=...` suffit pour un test
+manuel hors cron.
 
 ---
 
