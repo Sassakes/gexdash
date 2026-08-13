@@ -142,7 +142,7 @@ fr: {
       {t:"ul", items:[
         "<b>Clé API personnelle</b> — saisie dans la popup de l'extension, stockée uniquement dans le stockage local du navigateur (<code>chrome.storage.local</code>), jamais dans le code de l'extension ni dans un journal. Envoyée en paramètre d'URL à <code>gexdash.wealthbuilders.group/api/mylevels</code> pour récupérer tes niveaux, et à aucun autre destinataire.",
         "<b>Contenu de la page TradingView</b> — l'extension lit et modifie le DOM de la fenêtre de paramètres de l'indicateur GEX Daily Levels sur tradingview.com, uniquement pour y écrire les 5 chaînes de niveaux. Aucune autre partie de la page n'est lue, collectée ni transmise."]},
-      {t:"note", x:"La permission <b>debugger</b> (Chrome DevTools Protocol) sert exclusivement à simuler un clic utilisateur réel et bref sur l'élément de légende de l'indicateur GEX Daily Levels, parce que TradingView ignore les clics générés par script pour ouvrir cette fenêtre. Elle n'est jamais utilisée pour inspecter du trafic réseau, lire le contenu d'un autre onglet, ou toute action hors de ce remplissage."}]},
+      {t:"note", x:"L'extension ne demande aucune permission d'inspection réseau ni de débogage du navigateur : le remplissage automatique passe uniquement par des interactions standard avec la page (lecture/écriture du DOM), rien de plus."}]},
 
     {id:"never", t:"Ce que nous ne faisons jamais", b:[
       {t:"ul", items:[
@@ -186,7 +186,7 @@ en: {
       {t:"ul", items:[
         "<b>Personal API key</b> — entered in the extension popup, stored only in the browser's local storage (<code>chrome.storage.local</code>), never in the extension's source code or in a log. Sent as a URL parameter to <code>gexdash.wealthbuilders.group/api/mylevels</code> to fetch your levels, and nowhere else.",
         "<b>TradingView page content</b> — the extension reads and modifies the DOM of the GEX Daily Levels indicator's settings dialog on tradingview.com, only to write the 5 level strings into it. No other part of the page is read, collected, or transmitted."]},
-      {t:"note", x:"The <b>debugger</b> permission (Chrome DevTools Protocol) is used exclusively to simulate a real, brief user click on the GEX Daily Levels indicator's legend element, because TradingView ignores script-generated clicks for opening that dialog. It is never used to inspect network traffic, read another tab's content, or anything outside this autofill."}]},
+      {t:"note", x:"The extension requests no network-inspection or browser-debugging permission: autofill relies solely on standard page interactions (reading/writing the DOM), nothing more."}]},
 
     {id:"never", t:"What we never do", b:[
       {t:"ul", items:[

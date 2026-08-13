@@ -85,60 +85,6 @@ async function broadcastLevels(levels) {
   return { applied, failed: outcomes.length - applied, outcomes };
 }
 
-const CDP_PROTOCOL_VERSION = "1.3";
-
-function cdpAttach(tabId) {
-  return new Promise((resolve, reject) => {
-    chrome.debugger.attach({ tabId }, CDP_PROTOCOL_VERSION, () => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve();
-    });
-  });
-}
-
-function cdpDetach(tabId) {
-  return new Promise((resolve) => {
-    chrome.debugger.detach({ tabId }, () => resolve());
-  });
-}
-
-function cdpSendCommand(tabId, method, params) {
-  return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
-      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-      else resolve(result);
-    });
-  });
-}
-
-/**
- * Clic (ou double-clic) réellement "trusted" au niveau navigateur, via
- * Chrome DevTools Protocol. Nécessaire car TradingView ignore les
- * événements souris synthétiques (dispatchEvent/.click() depuis un content
- * script ont toujours isTrusted:false) pour ouvrir la fenêtre de paramètres
- * de l'indicateur — vérifié empiriquement, pas une hypothèse. attach/detach
- * sont brefs (une poignée de commandes) pour limiter le temps d'affichage
- * du bandeau Chrome "ce navigateur est en cours de débogage".
- */
-async function cdpClickAt(tabId, x, y, double) {
-  await cdpAttach(tabId);
-  try {
-    const dispatch = (type, clickCount) =>
-      cdpSendCommand(tabId, "Input.dispatchMouseEvent", {
-        type, x, y, button: "left", buttons: 1, clickCount,
-      });
-    await cdpSendCommand(tabId, "Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-    await dispatch("mousePressed", 1);
-    await dispatch("mouseReleased", 1);
-    if (double) {
-      await dispatch("mousePressed", 2);
-      await dispatch("mouseReleased", 2);
-    }
-  } finally {
-    await cdpDetach(tabId);
-  }
-}
-
 async function notify(id, title, message) {
   try {
     await chrome.notifications.create(id, {
@@ -286,18 +232,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "NOTIFY") {
     notify(msg.id || "gex-content-notify", msg.title, msg.message);
     return false;
-  }
-
-  if (msg.type === "CDP_CLICK") {
-    const tabId = sender.tab && sender.tab.id;
-    if (!tabId) {
-      sendResponse({ ok: false, error: "id d'onglet manquant" });
-      return false;
-    }
-    cdpClickAt(tabId, msg.x, msg.y, !!msg.double)
-      .then(() => sendResponse({ ok: true }))
-      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
-    return true;
   }
 
   if (msg.type === "TEST_KEY") {

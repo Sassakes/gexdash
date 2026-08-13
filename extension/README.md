@@ -77,23 +77,28 @@ recasser un correctif déjà validé :
   champs de niveaux sont les 5 **premiers** champs texte trouvés, dans
   l'ordre de déclaration du script Pine (NQ, ES, SPX, GOLD GC, GOLD
   XAUUSD) — vérifié en prod, ce ne sont pas des `<textarea>`.
-- **TradingView ignore les événements souris purement synthétiques**
-  (`dispatchEvent`/`.click()` depuis un content script ont toujours
-  `isTrusted:false`) pour ouvrir la fenêtre de paramètres — vérifié
-  empiriquement : un double-clic dispatché sur la légende ne fait
-  strictement rien, alors qu'un vrai double-clic sur le même élément
-  fonctionne à l'identique. Aucun sélecteur ne peut contourner ce filtre de
-  confiance du navigateur.
+- **TradingView n'ouvre sa fenêtre de paramètres ni sur un simple
+  `dispatchEvent(dblclick)` ni sur un `.click()` isolé.** Piste initialement
+  suivie (13/08/2026) : `isTrusted:false`, écarté par A/B testing point par
+  point — les événements synthétiques restent `isTrusted:false` du début à
+  la fin et fonctionnent quand même. La vraie cause : le système interne de
+  gestion de pointeur de TradingView attend la **chorégraphie complète d'un
+  vrai geste** (`pointerdown` → `mousedown` → `pointerup` → `mouseup` →
+  `click`, avec de vrais objets `PointerEvent` porteurs de
+  `pointerId`/`pointerType`/`isPrimary`), et seulement sur le **bon élément
+  cible** (le libellé de titre `[class*="title-"]` à l'intérieur de la
+  ligne de légende, pas la ligne entière — dont la largeur peut déborder
+  sur le canvas du chart). Ni la cible seule ni la séquence seule ne
+  suffisent ; vérifié en isolant chaque variable séparément (4 tests
+  A/B/C/D croisant cible × complétude de la séquence, un seul combo marche).
 
-La conséquence directe du deuxième point : tout clic qui doit réellement
-déclencher une action TradingView (double-clic sur la légende, bouton
-réglages, changement d'onglet, validation finale) passe par
-**`nativeClick()`**, qui délègue à `background.js` un clic généré au niveau
-navigateur via **Chrome DevTools Protocol** (`Input.dispatchMouseEvent`,
-permission `"debugger"`). C'est le seul mécanisme capable de produire un
-événement `isTrusted:true` depuis une extension.
+La conséquence directe : tout clic qui doit réellement déclencher une
+action TradingView (double-clic sur la légende, bouton réglages) passe par
+**`syntheticClick()`** (`fireSequence()` pour la chorégraphie). Le
+changement d'onglet et la validation finale, eux, répondent très bien à un
+simple `.click()` — vérifié séparément, pas besoin d'alourdir ces deux-là.
 
-Avant chaque `nativeClick()`, une garde de sécurité (`verifiedPoint()`)
+Avant chaque `syntheticClick()`, une garde de sécurité (`verifiedPoint()`)
 vérifie par `document.elementFromPoint()` que le point de clic calculé
 retombe bien sur l'élément visé (ou un de ses descendants) — jamais de clic
 à l'aveugle sur une coordonnée. Cette garde n'est pas cosmétique : les
@@ -101,32 +106,29 @@ boutons d'exécution **BUY/SELL** sont physiquement juste à côté de la
 légende dans l'UI TradingView, et une ligne de légende peut avoir une boîte
 qui déborde largement sur le canvas du chart (son centre géométrique tombe
 alors sur une bougie, pas sur le texte). Si le point ne vérifie pas, le clic
-natif est annulé et le code retombe sur l'ancien `dispatchEvent`/`.click()`
-synthétique en dernier repli (best-effort, ne fonctionnera vraisemblablement
-pas contre le filtre `isTrusted`, mais ne coûte rien à tenter si le clic
-natif est indisponible — ex. devtools déjà ouverts sur l'onglet, ce qui fait
-échouer `chrome.debugger.attach`).
+est annulé plutôt que tenté à l'aveugle.
 
-`chrome.debugger.attach`/`detach` encadrent chaque clic le plus brièvement
-possible (une poignée de commandes CDP) pour limiter le temps d'affichage du
-bandeau Chrome *« ce navigateur est en cours de débogage »*, qui apparaît
-et disparaît à chaque remplissage — attendu, pas un bug.
+Aucune permission `"debugger"`/Chrome DevTools Protocol n'est nécessaire —
+un temps envisagée puis retirée une fois la vraie cause identifiée. C'est
+une permission sensible côté Chrome Web Store (revue manuelle, délai
+parfois long) : ne pas la réintroduire sans avoir d'abord re-testé qu'un
+`dispatchEvent` complet (cible + chorégraphie) ne suffit vraiment plus.
 
 ## Si le remplissage automatique échoue
 
 L'extension ne reste jamais silencieuse en cas d'échec (indicateur absent du
-graphique, fenêtre de paramètres introuvable, clic natif indisponible,
-champ de configuration détecté à la place d'un champ de niveaux, sélecteur
-cassé par une mise à jour TradingView) : les 5 strings Pine sont copiées
-dans le presse-papiers et une notification Chrome explique quoi faire
-(coller manuellement dans l'onglet **Inputs** de l'indicateur). Une
-extension qui échoue en silence est pire qu'un collage manuel.
+graphique, fenêtre de paramètres introuvable, champ de configuration
+détecté à la place d'un champ de niveaux, sélecteur cassé par une mise à
+jour TradingView) : les 5 strings Pine sont copiées dans le presse-papiers
+et une notification Chrome explique quoi faire (coller manuellement dans
+l'onglet **Inputs** de l'indicateur). Une extension qui échoue en silence
+est pire qu'un collage manuel.
 
 Chaque étape logge sous le préfixe `[GEX]` dans la console de la page
 TradingView (F12) — c'est la première chose à regarder en cas d'échec :
 elle indique exactement quel maillon a cassé (indicateur introuvable,
-fenêtre non détectée, clic natif refusé, champ jugé dangereux à écraser,
-valeur non retenue après écriture...).
+fenêtre non détectée, clic annulé faute de point valide, champ jugé
+dangereux à écraser, valeur non retenue après écriture...).
 
 Erreurs réseau spécifiques, affichées distinctement dans la popup et en
 notification :
@@ -144,12 +146,6 @@ d'URL (`?key=...`) à `/api/mylevels`, exactement comme le fait le reste de
 l'écosystème gexdash (widget Flux embarquable) — voir `CLAUDE.md` à la racine
 du dépôt pour le raisonnement (pas de header custom, pour éviter un
 préflight CORS que le serveur ne sait pas répondre).
-
-La permission `"debugger"` (Chrome DevTools Protocol) n'est utilisée que
-pour simuler un clic réellement fiable sur les éléments de l'indicateur GEX
-Daily Levels — jamais pour lire ou modifier le contenu d'autres onglets, ni
-pour intercepter du trafic réseau. `chrome.debugger.attach` est appelé juste
-avant un clic et `detach` juste après (cf. section précédente).
 
 ## Règle générale : sélecteurs TradingView
 
@@ -175,8 +171,7 @@ une seule classe exacte comme unique piste.
 ## Tester après une modification
 
 Ouvrir un graphique avec l'indicateur posé, cliquer **Synchroniser
-maintenant** dans la popup, observer si les 5 champs se remplissent (le
-bandeau jaune "débogage" doit apparaître brièvement). En cas d'échec, ouvrir
-les devtools sur la page TradingView et lire les logs `[GEX]` dans l'ordre —
-c'est presque toujours le premier maillon cassé qui déclenche le repli
-presse-papiers.
+maintenant** dans la popup, observer si les 5 champs se remplissent. En cas
+d'échec, ouvrir les devtools sur la page TradingView et lire les logs
+`[GEX]` dans l'ordre — c'est presque toujours le premier maillon cassé qui
+déclenche le repli presse-papiers.

@@ -17,13 +17,19 @@
  * préfixe [GEX] dans la console de la page — c'est la première chose à
  * regarder en cas d'échec.
  *
- * TradingView ignore les événements souris purement synthétiques
- * (isTrusted:false) pour ouvrir la fenêtre de paramètres — vérifié
- * empiriquement, pas une hypothèse. Les clics qui doivent réellement
- * déclencher une action TradingView (double-clic légende, bouton
- * réglages, onglet, validation) passent donc par nativeClick(), qui
- * délègue à background.js un clic généré au niveau navigateur via Chrome
- * DevTools Protocol (permission "debugger"). Chaque nativeClick() vérifie
+ * TradingView n'ouvre sa fenêtre de paramètres ni sur un simple
+ * dispatchEvent(dblclick) ni sur un .click() isolé — mais ce n'est PAS une
+ * histoire d'isTrusted (hypothèse initialement retenue puis invalidée par
+ * A/B testing point par point, 13/08/2026). Son système interne de gestion
+ * de pointeur attend la chorégraphie complète d'un vrai geste (pointerdown
+ * -> mousedown -> pointerup -> mouseup -> click, avec de vrais objets
+ * PointerEvent porteurs de pointerId/pointerType/isPrimary), et seulement
+ * sur le bon élément cible (le libellé de titre, pas la ligne de légende
+ * entière). Ni la cible seule ni la séquence seule ne suffisent ; il faut
+ * les deux à la fois — vérifié en isolant chaque variable séparément.
+ * Ces événements restent isTrusted:false du début à la fin et fonctionnent
+ * quand même : aucune permission "debugger"/CDP n'est nécessaire. Voir
+ * syntheticClick() / fireSequence(). Chaque syntheticClick() vérifie
  * d'abord par elementFromPoint que le point calculé retombe bien sur
  * l'élément visé avant de cliquer — ce site a des boutons d'exécution
  * BUY/SELL juste à côté de la légende, cliquer à l'aveugle est exclu.
@@ -118,12 +124,6 @@ function findIndicatorLegendItem(name) {
   return null;
 }
 
-// TradingView ignore les événements souris synthétiques (dispatchEvent/
-// .click() depuis un content script ont toujours isTrusted:false) pour
-// ouvrir la fenêtre de paramètres — vérifié empiriquement : un double-clic
-// dispatché ne fait absolument rien, alors qu'un double-clic réel sur le
-// même élément fonctionne à l'identique. Seul un clic généré au niveau
-// navigateur (CDP, via background.js) passe ce filtre.
 function pageCenter(el) {
   const r = el.getBoundingClientRect();
   return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
@@ -145,20 +145,40 @@ function verifiedPoint(el) {
   return { x, y };
 }
 
-async function nativeClick(el, { double = false } = {}) {
+// Dispatche la chorégraphie complète d'un vrai clic (pointerdown ->
+// mousedown -> pointerup -> mouseup -> click) plutôt qu'un seul événement
+// terminal. TradingView ne réagit qu'à cette séquence complète — un
+// dispatchEvent(click)/.click() isolé ne déclenche rien sur ces éléments
+// précis (légende, bouton réglages), vérifié empiriquement. Reste
+// isTrusted:false du début à la fin ; ça n'a jamais été le facteur bloquant.
+function fireSequence(el, x, y, detail) {
+  const base = {
+    bubbles: true, cancelable: true, composed: true, view: window,
+    clientX: x, clientY: y, button: 0, buttons: 1,
+  };
+  el.dispatchEvent(new PointerEvent("pointerdown", { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true, detail }));
+  el.dispatchEvent(new MouseEvent("mousedown", { ...base, detail }));
+  el.dispatchEvent(new PointerEvent("pointerup", { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true, detail }));
+  el.dispatchEvent(new MouseEvent("mouseup", { ...base, detail }));
+  el.dispatchEvent(new MouseEvent("click", { ...base, detail }));
+}
+
+async function syntheticClick(el, { double = false } = {}) {
   const point = verifiedPoint(el);
   if (!point) {
-    log("clic natif annulé : le point calculé ne retombe pas sur l'élément visé (mise en page instable)");
+    log("clic annulé : le point calculé ne retombe pas sur l'élément visé (mise en page instable)");
     return false;
   }
-  try {
-    const res = await chrome.runtime.sendMessage({ type: "CDP_CLICK", x: point.x, y: point.y, double });
-    if (res && res.ok) return true;
-    log("clic natif (CDP) indisponible :", (res && res.error) || "réponse vide");
-  } catch (e) {
-    log("clic natif (CDP) — erreur d'envoi du message :", String((e && e.message) || e));
+  fireSequence(el, point.x, point.y, 1);
+  if (double) {
+    await sleep(60); // écart réaliste entre les deux clics d'un double-clic
+    fireSequence(el, point.x, point.y, 2);
+    el.dispatchEvent(new MouseEvent("dblclick", {
+      bubbles: true, cancelable: true, composed: true, view: window,
+      clientX: point.x, clientY: point.y, button: 0, buttons: 1, detail: 2,
+    }));
   }
-  return false;
+  return true;
 }
 
 async function openSettingsDialog(item) {
@@ -166,15 +186,9 @@ async function openSettingsDialog(item) {
   //    indicateur : double-clic sur la légende. On cible le libellé de
   //    titre (boîte resserrée autour du texte visible) plutôt que la ligne
   //    entière, dont la largeur peut déborder sur le chart.
-  log("ouverture des paramètres — tentative : double-clic natif sur la légende");
+  log("ouverture des paramètres — tentative : double-clic sur la légende");
   const title = item.querySelector('[class*="title-"]') || item;
-  let ok = await nativeClick(title, { double: true });
-  if (!ok) {
-    // Repli best-effort : ne fonctionnera vraisemblablement pas (cf. note
-    // ci-dessus) mais ne coûte rien à tenter si le clic natif est
-    // indisponible (ex. devtools déjà ouverts sur cet onglet).
-    item.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
-  }
+  await syntheticClick(title, { double: true });
   let dialog = await waitForDialog(1500, 100);
   if (dialog) return dialog;
 
@@ -208,8 +222,7 @@ async function openSettingsDialog(item) {
     }
   }
   if (btn) {
-    const clicked = await nativeClick(btn, { double: false });
-    if (!clicked) btn.click();
+    await syntheticClick(btn, { double: false });
   } else {
     log("aucune icône de réglages trouvée au survol");
   }
@@ -253,8 +266,7 @@ async function ensureInputsTabWithTextFields(dialog) {
   const tabs = dialog.querySelectorAll('[role="tab"]');
   log("onglet Inputs non actif par défaut, essai de", tabs.length, "onglet(s)");
   for (const tab of tabs) {
-    const ok = await nativeClick(tab, { double: false });
-    if (!ok) tab.click();
+    tab.click();
     await sleep(150);
     const n = textInputs(dialog).length;
     if (n >= 5) {
@@ -419,9 +431,8 @@ async function applyLevels(levels) {
 
     const submit = findSubmitButton(dialog);
     if (!submit) return fail("Bouton de validation introuvable dans la fenêtre de paramètres");
-    log("validation — clic natif sur le bouton :", (submit.textContent || "").trim() || "(sans libellé)");
-    const submitted = await nativeClick(submit, { double: false });
-    if (!submitted) submit.click();
+    log("validation — clic sur le bouton :", (submit.textContent || "").trim() || "(sans libellé)");
+    submit.click();
 
     log("remplissage terminé avec succès, champs mis à jour :", order.join(", "));
     return { ok: true, filled: order.length };
