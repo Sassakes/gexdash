@@ -71,6 +71,32 @@ async function getIndicatorName() {
   }
 }
 
+// Si le panneau de légende est réduit ("⌄ 10" — repli manuel de
+// l'utilisateur ou état par défaut sur un chart chargé avec beaucoup
+// d'indicateurs), l'élément de l'indicateur existe déjà dans le DOM
+// (findIndicatorLegendItem le trouve quand même, le texte n'a pas besoin
+// d'être visible) mais avec un rect vide et offsetParent === null — vérifié
+// en prod. verifiedPoint() rejette alors le clic (aucun point valide), et
+// tout part sur le repli presse-papiers alors qu'il suffirait de dérouler
+// la légende. On la déroule donc systématiquement avant de chercher
+// l'indicateur, un peu partout où c'est fermé (plusieurs panes = plusieurs
+// wrappers indépendants) — sans effet si tout est déjà ouvert.
+function ensureLegendsExpanded() {
+  const wrappers = document.querySelectorAll('[class*="sourcesWrapper-"]');
+  let expanded = 0;
+  for (const wrapper of wrappers) {
+    const isClosed = Array.from(wrapper.classList).some((c) => c.startsWith("closed-"));
+    if (!isClosed) continue;
+    const toggler = wrapper.querySelector('[class*="toggler-"]');
+    if (toggler) {
+      toggler.click();
+      expanded++;
+    }
+  }
+  if (expanded) log("légende(s) repliée(s) détectée(s) et dépliée(s) :", expanded);
+  return expanded;
+}
+
 // Le DOM réel de la légende TradingView n'expose aucun data-name stable
 // (relevé en prod : <div class="withCustomTextColor-quatTGAC item-quatTGAC
 // study-quatTGAC has5Buttons-quatTGAC">GEX Daily Levels</div>). Le suffixe
@@ -391,6 +417,8 @@ async function applyLevels(levels) {
 
   try {
     const indicatorName = await getIndicatorName();
+
+    if (ensureLegendsExpanded()) await sleep(200);
 
     const item = findIndicatorLegendItem(indicatorName);
     if (!item) return fail("Indicateur « " + indicatorName + " » introuvable sur ce graphique");

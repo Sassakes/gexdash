@@ -91,6 +91,19 @@ recasser un correctif déjà validé :
   sur le canvas du chart). Ni la cible seule ni la séquence seule ne
   suffisent ; vérifié en isolant chaque variable séparément (4 tests
   A/B/C/D croisant cible × complétude de la séquence, un seul combo marche).
+- **Le panneau de légende peut être replié** (repli manuel de l'utilisateur,
+  ou état par défaut avec beaucoup d'indicateurs sur le graphique — icône
+  « ⌄ N » en haut à gauche). L'indicateur reste trouvable dans le DOM par
+  `findIndicatorLegendItem()` (le texte n'a pas besoin d'être visible), mais
+  son `getBoundingClientRect()` est vide et `offsetParent === null` —
+  vérifié en prod. `verifiedPoint()` rejette alors tout clic (aucun point
+  valide), ce qui est le comportement correct plutôt que de cliquer à
+  l'aveugle, mais faisait partir inutilement sur le repli presse-papiers.
+  `ensureLegendsExpanded()` déplie systématiquement, avant la recherche de
+  l'indicateur, tout panneau `[class*="sourcesWrapper-"]` marqué
+  `closed-*` en cliquant son bouton `[class*="toggler-"]` (plusieurs panes
+  = plusieurs wrappers indépendants, tous traités) — sans effet si tout est
+  déjà déplié.
 
 La conséquence directe : tout clic qui doit réellement déclencher une
 action TradingView (double-clic sur la légende, bouton réglages) passe par
