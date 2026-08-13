@@ -1052,32 +1052,57 @@ function nPct(v){
 async function mountNewsCard(cfg, host){
   const box = host.querySelector(".newsbox");
 
-  // le calendrier est un widget tiers : il gère son propre rafraîchissement
+  // le calendrier est un widget tiers : il gère son propre rafraîchissement,
+  // mais contrairement aux autres panneaux News il ne passe jamais par
+  // /api/news -- sans contrôle explicite ici, un visiteur non connecté
+  // verrait le widget quand même. `authed` ne se réinitialise que sur un
+  // vrai changement d'état (connexion/déconnexion) pour ne pas reconstruire
+  // le widget à chaque tick alors que la session n'a pas bougé.
   if (cfg.iv === "eco"){
-    box.innerHTML = `<div class="ecowrap" id="eco_${Math.random().toString(36).slice(2, 9)}"></div>`;
-    const wrap = box.querySelector(".ecowrap");
-    const build = () => {
-      if (!window.FJWidgets) return;
-      requestAnimationFrame(() => {
-      const r = wrap.getBoundingClientRect();
-      try{
-        new window.FJWidgets.createWidget({
-          container: wrap.id, mode: "standard",
-          width: Math.max(240, Math.round(r.width)) + "px",
-          height: Math.max(280, Math.round(r.height)) + "px",
-          backColor: "111114", fontColor: "8A8A94", widgetType: "ECOCAL",
-        });
-      }catch(e){ wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; }
-      });
+    let authed = null;
+    const showLogin = () => {
+      box.innerHTML = `<div class="nload">${tx("needAuth")}
+        <br><a href="/" style="color:var(--gold)">${tx("goSignIn")}</a></div>`;
     };
-    if (window.FJWidgets) return build();
-    const s = document.createElement("script");
-    s.id = "FJ-Widgets";
-    s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
-          + Math.floor(Math.random() * 10000);
-    s.onload = build;
-    s.onerror = () => { wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; };
-    document.head.appendChild(s);
+    const showWidget = () => {
+      box.innerHTML = `<div class="ecowrap" id="eco_${Math.random().toString(36).slice(2, 9)}"></div>`;
+      const wrap = box.querySelector(".ecowrap");
+      const build = () => {
+        if (!window.FJWidgets) return;
+        requestAnimationFrame(() => {
+        const r = wrap.getBoundingClientRect();
+        try{
+          new window.FJWidgets.createWidget({
+            container: wrap.id, mode: "standard",
+            width: Math.max(240, Math.round(r.width)) + "px",
+            height: Math.max(280, Math.round(r.height)) + "px",
+            backColor: "111114", fontColor: "8A8A94", widgetType: "ECOCAL",
+          });
+        }catch(e){ wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; }
+        });
+      };
+      if (window.FJWidgets) return build();
+      const s = document.createElement("script");
+      s.id = "FJ-Widgets";
+      s.src = "https://feed.financialjuice.com/widgets/widgets.js?r="
+            + Math.floor(Math.random() * 10000);
+      s.onload = build;
+      s.onerror = () => { wrap.innerHTML = `<div class="nload">${tx("hmNone")}</div>`; };
+      document.head.appendChild(s);
+    };
+    const check = async () => {
+      let ok = false;
+      try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
+      if (ok === authed) return;
+      authed = ok;
+      ok ? showWidget() : showLogin();
+    };
+    await check();
+    clearInterval(host._pollWatch);
+    host._pollWatch = setInterval(() => {
+      if (!host.isConnected){ clearInterval(host._pollWatch); return; }
+      check();
+    }, 120000);
     return;
   }
 
