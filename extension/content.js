@@ -158,7 +158,7 @@ async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
     const dialog =
       document.querySelector('[data-name="indicator-properties-dialog"]') ||
       Array.from(document.querySelectorAll('div[role="dialog"]')).find(
-        (d) => d.querySelector('textarea, [role="tab"]')
+        (d) => d.querySelector('input[type="text"], [role="tab"]')
       );
     if (dialog) {
       log("fenêtre de paramètres détectée après", Date.now() - start, "ms");
@@ -170,9 +170,13 @@ async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
   return null;
 }
 
-async function ensureInputsTabWithTextareas(dialog) {
-  if (dialog.querySelectorAll("textarea").length >= 5) {
-    log("onglet Inputs déjà actif (5+ zones de texte visibles sans clic d'onglet)");
+function textInputs(dialog) {
+  return Array.from(dialog.querySelectorAll('input[type="text"]'));
+}
+
+async function ensureInputsTabWithTextFields(dialog) {
+  if (textInputs(dialog).length >= 5) {
+    log("onglet Inputs déjà actif (5+ champs texte visibles sans clic d'onglet)");
     return true;
   }
   const tabs = dialog.querySelectorAll('[role="tab"]');
@@ -180,50 +184,37 @@ async function ensureInputsTabWithTextareas(dialog) {
   for (const tab of tabs) {
     tab.click();
     await sleep(150);
-    const n = dialog.querySelectorAll("textarea").length;
+    const n = textInputs(dialog).length;
     if (n >= 5) {
       log("onglet Inputs trouvé :", (tab.textContent || "").trim() || "(sans libellé)");
       return true;
     }
   }
-  log("aucun onglet ne révèle 5 zones de texte");
+  log("aucun onglet ne révèle 5 champs texte");
   return false;
 }
 
-function nearbyLabelText(el) {
-  let node = el;
-  for (let i = 0; i < 6 && node && node.parentElement; i++, node = node.parentElement) {
-    const container = node.parentElement;
-    const clone = container.cloneNode(true);
-    clone.querySelectorAll("textarea, input, select, button").forEach((n) => n.remove());
-    const text = clone.textContent.replace(/\s+/g, " ").trim();
-    if (text.length > 3) return text;
-  }
-  return "";
+// Repérage vérifié en prod (13/08/2026) : sur les ~40 champs de la fenêtre
+// de paramètres, les 5 champs de niveaux sont les 5 PREMIERS input[type=text]
+// dans l'ordre de déclaration du script Pine (NQ, ES, SPX, GOLD GC, GOLD
+// XAUUSD). Ce ne sont PAS des textarea. Tous les autres inputs texte portent
+// une valeur numérique courte (paramètres de config) — cf. isSafeLevelsField
+// pour la garde qui empêche d'écraser l'un d'eux par erreur si TradingView
+// change un jour cet ordre.
+function pickLevelFields(dialog) {
+  const inputs = textInputs(dialog);
+  log("champs texte détectés dans l'onglet Inputs :", inputs.length);
+  return inputs.slice(0, 5);
 }
 
-function mapFieldsToTextareas(areas) {
-  // GOLD GC / GOLD XAUUSD vérifiés avant NQ/ES/SPX pour ne jamais laisser un
-  // pattern générique capturer le mauvais champ.
-  const patterns = {
-    GC: /GOLD\s*GC/i,
-    XAU: /GOLD\s*XAUUSD/i,
-    NQ: /\bNQ\b/i,
-    ES: /\bES\b/i,
-    SPX: /\bSPX\b/i,
-  };
-  const out = {};
-  for (const el of areas) {
-    const label = nearbyLabelText(el);
-    for (const key of ["GC", "XAU", "NQ", "ES", "SPX"]) {
-      if (!out[key] && patterns[key].test(label)) {
-        out[key] = el;
-        log("champ associé :", key, "<-", JSON.stringify(label));
-        break;
-      }
-    }
-  }
-  return out;
+// Une string de niveaux Pine contient toujours virgules (séparateur de
+// valeurs) et points-virgules (séparateur de lignes) ; une valeur de
+// configuration (0, 1, 2, 8, ...) n'en contient jamais. Champ vide accepté
+// (première utilisation de l'indicateur).
+function isSafeLevelsField(el) {
+  const v = (el.value || "").trim();
+  if (v === "") return true;
+  return v.includes(",") && v.includes(";");
 }
 
 function findSubmitButton(dialog) {
@@ -323,25 +314,24 @@ async function applyLevels(levels) {
     const dialog = await openSettingsDialog(item);
     if (!dialog) return fail("Fenêtre de paramètres introuvable");
 
-    const tabOk = await ensureInputsTabWithTextareas(dialog);
+    const tabOk = await ensureInputsTabWithTextFields(dialog);
     if (!tabOk) return fail("Onglet Inputs introuvable ou vide");
 
-    const areas = Array.from(dialog.querySelectorAll("textarea"));
-    log("zones de texte détectées dans l'onglet Inputs :", areas.length);
-    const mapping = mapFieldsToTextareas(areas);
-    const order = ["NQ", "ES", "SPX", "GC", "XAU"];
+    const fields = pickLevelFields(dialog);
+    if (fields.length < 5) return fail("Moins de 5 champs texte trouvés dans l'onglet Inputs (" + fields.length + ")");
 
-    if (order.some((k) => !mapping[k]) && areas.length === 5) {
-      // Repli : correspondance par libellé incomplète mais exactement 5
-      // champs trouvés -> on suppose l'ordre de déclaration du script Pine
-      // (NQ, ES, SPX, GOLD GC, GOLD XAUUSD), inchangé depuis sa création.
-      log("association par libellé incomplète, repli sur l'ordre de déclaration du script Pine");
-      order.forEach((k, i) => {
-        mapping[k] = mapping[k] || areas[i];
-      });
+    const order = ["NQ", "ES", "SPX", "GC", "XAU"];
+    const mapping = {};
+    order.forEach((k, i) => (mapping[k] = fields[i]));
+
+    const unsafe = order.filter((k) => !isSafeLevelsField(mapping[k]));
+    if (unsafe.length) {
+      log(
+        "champ(s) jugé(s) dangereux à écraser (valeur numérique de config, pas une string de niveaux) :",
+        unsafe.map((k) => k + "=" + JSON.stringify(mapping[k].value)).join(", ")
+      );
+      return fail("Champ(s) de configuration détecté(s) à la place d'un champ de niveaux : " + unsafe.join(", "));
     }
-    const missing = order.filter((k) => !mapping[k]);
-    if (missing.length) return fail("Champs introuvables dans l'indicateur : " + missing.join(", "));
 
     const mismatched = [];
     for (const k of order) {
@@ -349,7 +339,9 @@ async function applyLevels(levels) {
       if (!pine) continue; // rien de publié pour ce marché : ne pas écraser l'existant
       setNativeValue(mapping[k], pine);
       await sleep(30);
-      if (mapping[k].value.trim() !== pine.trim()) mismatched.push(k);
+      const ok = mapping[k].value.trim() === pine.trim();
+      log("champ", k, "— valeur écrite :", JSON.stringify(pine), "— vérification :", ok ? "OK" : "ÉCHEC");
+      if (!ok) mismatched.push(k);
     }
     if (mismatched.length) return fail("Valeur non retenue par l'indicateur pour : " + mismatched.join(", "));
 
