@@ -215,9 +215,6 @@ async function runSync(force) {
   return { ok: true, unchanged: false, applied: bc.applied, failed: bc.failed };
 }
 
-chrome.runtime.onInstalled.addListener(() => ensureAlarm());
-chrome.runtime.onStartup.addListener(() => ensureAlarm());
-
 async function ensureAlarm() {
   const st = await getState();
   if (st.enabled) {
@@ -226,10 +223,61 @@ async function ensureAlarm() {
     chrome.alarms.clear(POLL_ALARM);
   }
 }
-ensureAlarm();
+
+// Les niveaux/pine ne changent réellement qu'aux publications QStash
+// canoniques (00h11 et 15h25 UTC — cf. CLAUDE.md), pas en continu. Le
+// sondage toutes les 5 min (POLL_ALARM) reste un filet de sécurité
+// générique, mais n'est pas calé sur l'horloge serveur : pile après une
+// publication, il peut laisser jusqu'à ~5 min de retard. Ces deux alarmes
+// dédiées se recalent chaque jour sur l'horaire exact + une marge de
+// propagation, pour un remplissage quasi immédiat après chaque publication
+// réelle plutôt que d'attendre le prochain tick générique.
+const ALIGN_ALARMS = [
+  { name: "gex-align-0011", h: 0, m: 13 },   // 00h11 UTC + 2 min de marge
+  { name: "gex-align-1525", h: 15, m: 27 },  // 15h25 UTC + 2 min de marge
+];
+
+function nextUtcOccurrence(hourUTC, minuteUTC) {
+  const now = new Date();
+  const next = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUTC, minuteUTC, 0, 0
+  ));
+  if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+  return next.getTime();
+}
+
+async function ensureAlignedAlarms() {
+  const st = await getState();
+  for (const a of ALIGN_ALARMS) {
+    if (st.enabled) {
+      chrome.alarms.create(a.name, { when: nextUtcOccurrence(a.h, a.m), periodInMinutes: 24 * 60 });
+    } else {
+      chrome.alarms.clear(a.name);
+    }
+  }
+}
+
+async function ensureAllAlarms() {
+  await ensureAlarm();
+  await ensureAlignedAlarms();
+}
+
+// Au démarrage réel du navigateur (ou install/mise à jour de l'extension) —
+// pas à chaque réveil du service worker MV3, qui peut être bien plus
+// fréquent — on vérifie la fraîcheur tout de suite au lieu d'attendre le
+// premier tick de l'alarme périodique (jusqu'à 5 min d'attente sinon).
+chrome.runtime.onInstalled.addListener(async () => {
+  await ensureAllAlarms();
+  runSync(false);
+});
+chrome.runtime.onStartup.addListener(async () => {
+  await ensureAllAlarms();
+  runSync(false);
+});
+ensureAllAlarms();
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === POLL_ALARM) runSync(false);
+  if (alarm.name === POLL_ALARM || ALIGN_ALARMS.some((a) => a.name === alarm.name)) runSync(false);
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -272,7 +320,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "SET_ENABLED") {
     setState({ enabled: !!msg.enabled })
-      .then(ensureAlarm)
+      .then(ensureAllAlarms)
       .then(() => (msg.enabled ? runSync(true) : Promise.resolve({ ok: true })))
       .then((r) => sendResponse(r));
     return true;

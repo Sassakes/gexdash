@@ -38,6 +38,31 @@ d'ouvrir gexdash pour copier-coller la string Pine à chaque séance.
 5. L'interrupteur **Synchronisation active** coupe le polling périodique
    sans supprimer la clé enregistrée.
 
+### Fraîcheur : démarrage + alarmes calées sur les publications
+
+Les niveaux/pine ne changent réellement qu'aux deux publications QStash
+canoniques (00h11 et 15h25 UTC — cf. `CLAUDE.md` à la racine du dépôt), pas
+en continu. Deux mécanismes s'ajoutent au sondage générique de 5 minutes
+(`background.js`) :
+
+- **Démarrage** : au lancement du navigateur (ou install/mise à jour de
+  l'extension), une vérification de fraîcheur se déclenche immédiatement au
+  lieu d'attendre le premier tick de l'alarme périodique — sans ça,
+  `chrome.alarms.create` avec seulement `periodInMinutes` ne tire pas avant
+  la première période écoulée, donc jusqu'à 5 minutes de retard possible
+  juste après un démarrage.
+- **Alarmes alignées** (`ALIGN_ALARMS`) : deux alarmes dédiées, recalées
+  chaque jour sur 00h13 et 15h27 UTC (horaire de publication + 2 min de
+  marge de propagation), pour un remplissage quasi immédiat après chaque
+  publication réelle plutôt que de dépendre du tick générique — qui n'est
+  pas calé sur l'horloge serveur et peut donc traîner jusqu'à ~5 min pile
+  après une publication.
+
+Les deux respectent les mêmes garde-fous que le sondage générique
+(`enabled`, `backoff`, aucun onglet TradingView ouvert = aucun appel
+réseau) — ce sont des déclencheurs supplémentaires, pas un chemin qui
+contourne quoi que ce soit.
+
 ## Comment le remplissage fonctionne réellement (`content.js`)
 
 TradingView n'expose aucune API publique pour piloter ses dialogues, et son
