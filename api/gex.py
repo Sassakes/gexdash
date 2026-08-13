@@ -1170,6 +1170,9 @@ STATIC = {
     "/history.json": ("history.json", "application/json"),
     "/nq_levels.txt": ("nq_levels.txt", "text/plain; charset=utf-8"),
     "/widget/flux-widget.js": ("widget/flux-widget.js", "application/javascript; charset=utf-8"),
+    # fichier de vérification Google Search Console — doit rester servi tel
+    # quel à ce chemin exact, jamais renommé/déplacé
+    "/google52746d77fd306898.html": ("google52746d77fd306898.html", "text/html; charset=utf-8"),
 }
 
 def _upstash_key(target):
