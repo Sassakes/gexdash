@@ -158,7 +158,7 @@ async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
     const dialog =
       document.querySelector('[data-name="indicator-properties-dialog"]') ||
       Array.from(document.querySelectorAll('div[role="dialog"]')).find(
-        (d) => d.querySelector('input[type="text"], [role="tab"]')
+        (d) => d.querySelector('[role="tab"]') || Array.from(d.querySelectorAll("input")).some((el) => el.type === "text")
       );
     if (dialog) {
       log("fenêtre de paramètres détectée après", Date.now() - start, "ms");
@@ -170,8 +170,13 @@ async function waitForDialog(timeoutMs = 4000, stepMs = 150) {
   return null;
 }
 
+// TradingView ne pose pas type="text" en dur dans le markup (valeur par
+// défaut implicite du navigateur). Le sélecteur CSS input[type="text"] ne
+// matche que l'attribut HTML littéral -> 0 résultat même si le champ est
+// bien un champ texte. Il faut filtrer sur la propriété IDL `el.type`
+// (normalisée à "text" par défaut), pas sur getAttribute/le sélecteur CSS.
 function textInputs(dialog) {
-  return Array.from(dialog.querySelectorAll('input[type="text"]'));
+  return Array.from(dialog.querySelectorAll("input")).filter((el) => el.type === "text");
 }
 
 async function ensureInputsTabWithTextFields(dialog) {
