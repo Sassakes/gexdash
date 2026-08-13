@@ -735,16 +735,53 @@
   @media (prefers-reduced-motion:reduce){
     .topnav a.donate{ animation:none; }
   }
-  /* Accès membre : bouton discret près du logo, dans la même famille
-     visuelle que les liens de navigation. */
+  /* Accès membre : chip près du logo, dans la même famille visuelle que les
+     liens de navigation. Deux cibles de clic distinctes et sans ambiguïté :
+     le corps du bouton mène toujours au profil (ou ouvre la connexion si
+     déconnecté), le caret ouvre un petit menu où "Se déconnecter" est une
+     action séparée et explicite — jamais accidentelle. */
+  .authChip{position:relative; display:inline-flex; align-items:center; margin-left:14px}
   #authBtn{
-    margin-left:14px; background:var(--surface2); border:1px solid var(--line-strong);
-    color:var(--muted); font:inherit; font-size:11.5px; padding:6px 12px;
-    cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+    background:var(--surface2); border:1px solid var(--line-strong);
+    color:var(--muted); font:inherit; font-size:11.5px; padding:5px 12px 5px 6px;
+    cursor:pointer; display:inline-flex; align-items:center; gap:8px;
     white-space:nowrap; transition:color .12s ease, border-color .12s ease;
   }
   #authBtn:hover{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  #authBtn.on{color:var(--teal); border-color:rgba(38,166,154,.5)}
+  #authBtn.on{color:var(--text); border-color:rgba(38,166,154,.5)}
+  #authBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .authAvatar{
+    width:20px; height:20px; border-radius:50%; flex:none;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:600; background:var(--gold-soft); color:var(--gold);
+    transition:background .12s ease, color .12s ease;
+  }
+  #authBtn.on .authAvatar{background:rgba(38,166,154,.16); color:var(--teal)}
+  .authCaret{
+    background:var(--surface2); border:1px solid var(--line-strong); border-left:none;
+    color:var(--muted); cursor:pointer; padding:0 8px; align-self:stretch;
+    display:inline-flex; align-items:center; font-size:9px;
+    transition:color .12s ease, border-color .12s ease;
+  }
+  .authCaret:hover{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .authCaret[aria-expanded="true"]{color:var(--gold)}
+  .authCaret:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .authMenu{
+    position:absolute; top:calc(100% + 6px); left:0; min-width:180px; z-index:70;
+    background:var(--surface); border:1px solid var(--line-strong);
+    box-shadow:0 14px 32px -14px rgba(0,0,0,.6);
+    display:flex; flex-direction:column; padding:6px;
+  }
+  .authMenuItem{
+    display:flex; align-items:center; gap:9px; padding:9px 10px;
+    background:none; border:none; color:var(--text); font:inherit; font-size:12px;
+    text-align:left; text-decoration:none; white-space:nowrap; cursor:pointer;
+  }
+  .authMenuItem:hover, .authMenuItem:focus-visible{background:var(--surface2); color:var(--gold)}
+  .authMenuItem:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+  .authMenuItem .mi-ic{width:14px; text-align:center; color:var(--faint); flex:none}
+  .authMenuItem:hover .mi-ic, .authMenuItem:focus-visible .mi-ic{color:inherit}
+  .authMenuItem--danger:hover, .authMenuItem--danger:focus-visible{color:var(--red)}
   #authWrap{
     position:fixed; inset:0; background:rgba(0,0,0,.74); z-index:80;
     display:flex; align-items:center; justify-content:center; padding:18px;
@@ -779,6 +816,8 @@
     color:var(--muted); font-size:16px; cursor:pointer}
   @media(max-width:640px){
     #authBtn{min-height:40px; font-size:13px}
+    .authCaret{min-width:40px; min-height:40px}
+    .authMenuItem{min-height:40px}
     #authCard input{font-size:16px}   /* évite le zoom automatique iOS */
   }
   /* Sélecteur d'échelle de l'or : le future GC cote au-dessus du comptant
@@ -845,7 +884,22 @@
     <h1>GEX <em>Terminal</em></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
-  <button id="authBtn" type="button" title="Accès membre">⬡ <span id="authLbl">Connexion</span></button>
+  <div class="authChip" id="authChip">
+    <button id="authBtn" type="button" title="Accès membre">
+      <span class="authAvatar" id="authAvatar" aria-hidden="true">⬡</span>
+      <span id="authLbl">Connexion</span>
+    </button>
+    <button id="authCaret" type="button" class="authCaret" hidden
+            aria-haspopup="true" aria-expanded="false" title="Menu du compte">⌄</button>
+    <div id="authMenu" class="authMenu" hidden role="menu">
+      <a href="/profile" class="authMenuItem" role="menuitem">
+        <span class="mi-ic" aria-hidden="true">⬡</span><span id="authMenuProfileLbl">Mon profil</span>
+      </a>
+      <button type="button" id="authMenuLogout" class="authMenuItem authMenuItem--danger" role="menuitem">
+        <span class="mi-ic" aria-hidden="true">⏻</span><span id="authMenuLogoutLbl">Se déconnecter</span>
+      </button>
+    </div>
+  </div>
   <nav class="topnav">
     <!-- 1. espace applicatif : le dashboard est une section du produit -->
     <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
@@ -1074,7 +1128,8 @@ const T = {
     authFill:"Identifiant et mot de passe requis", authMail:"Adresse e-mail",
     authUser:"Identifiant", authPwd:"Mot de passe", authCode:"Code d'invitation",
     authWelcome:"Connecté ✓", authOutAsk:"Se déconnecter ?",
-    authInTip:"Accès membre", authOutTip:"Mon profil",
+    authInTip:"Accès membre", authProfileTip:"Mon profil",
+    authLogout:"Se déconnecter", authMenuAria:"Menu du compte",
     mktClosed:"marché fermé · flux en pause jusqu'à dimanche 23h50",
     don:"Soutenir", donTip:"Soutenir le projet — gexdash est gratuit et le restera", th:["Niveau","Prix","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Généré "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -1138,7 +1193,8 @@ const T = {
     authFill:"Username and password required", authMail:"Email address",
     authUser:"Username", authPwd:"Password", authCode:"Invitation code",
     authWelcome:"Signed in ✓", authOutAsk:"Sign out?",
-    authInTip:"Member access", authOutTip:"My profile",
+    authInTip:"Member access", authProfileTip:"My profile",
+    authLogout:"Sign out", authMenuAria:"Account menu",
     mktClosed:"market closed · feed paused until Sunday 23:50 CET",
     don:"Support", donTip:"Support the project — gexdash is free and will stay free", th:["Level","Price","Distance"], pts:"pts",
     genFoot:(g,m,s,e)=>"Generated "+g+" UTC · Gamma Levels · GEX Levels · Expected Move · US Real Time"
@@ -1342,13 +1398,38 @@ async function loadTarget(){
 let AUTH_USER = null, AUTH_MODE = "login";
 
 function authPaint(){
-  const btn = $("authBtn"), lbl = $("authLbl");
+  const btn = $("authBtn"), lbl = $("authLbl"), avatar = $("authAvatar"), caret = $("authCaret");
   if (!btn) return;
   btn.classList.toggle("on", !!AUTH_USER);
   lbl.textContent = AUTH_USER || t("authIn");
+  if (avatar) avatar.textContent = AUTH_USER ? AUTH_USER.slice(0, 1).toUpperCase() : "⬡";
   const nl = $("newsLink");                 // réservé aux membres
   if (nl) nl.hidden = !AUTH_USER;
-  btn.title = AUTH_USER ? t("authOutTip") : t("authInTip");
+  btn.title = AUTH_USER ? t("authProfileTip") : t("authInTip");
+  if (caret) { caret.hidden = !AUTH_USER; caret.title = t("authMenuAria"); }
+  const mpl = $("authMenuProfileLbl"); if (mpl) mpl.textContent = t("authProfileTip");
+  const mll = $("authMenuLogoutLbl"); if (mll) mll.textContent = t("authLogout");
+  if (!AUTH_USER) closeAuthMenu();
+}
+
+function closeAuthMenu(){
+  const menu = $("authMenu"), caret = $("authCaret");
+  if (menu) menu.hidden = true;
+  if (caret) caret.setAttribute("aria-expanded", "false");
+}
+
+function toggleAuthMenu(){
+  const menu = $("authMenu"), caret = $("authCaret");
+  if (!menu || !caret) return;
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  caret.setAttribute("aria-expanded", String(willOpen));
+}
+
+async function authLogout(){
+  if (!confirm(t("authOutAsk"))) return;
+  await fetch("/api/auth?action=logout", { method: "POST" }).catch(() => {});
+  location.href = "/";
 }
 
 function authOpen(mode){
@@ -1413,6 +1494,14 @@ async function authSubmit(){
     if (!AUTH_USER) return authOpen("login");
     location.href = "/profile";
   };
+  const caret = $("authCaret");
+  if (caret) caret.onclick = (e) => { e.stopPropagation(); toggleAuthMenu(); };
+  $("authMenuLogout").onclick = () => { closeAuthMenu(); authLogout(); };
+  document.addEventListener("click", (e) => {
+    const chip = $("authChip");
+    if (chip && !chip.contains(e.target)) closeAuthMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAuthMenu(); });
   $("authClose").onclick = () => { $("authWrap").hidden = true; };
   $("authWrap").onclick = e => { if (e.target === $("authWrap")) $("authWrap").hidden = true; };
   $("authSwap").onclick = () => authOpen(AUTH_MODE === "login" ? "register" : "login");

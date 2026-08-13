@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "TheHub — GEX Levels Autofill",
+  "name": "The Hub — GEX Levels for TradingView",
   "version": "1.0.0",
-  "description": "Remplit automatiquement l'indicateur TradingView GEX Daily Levels avec tes niveaux TheHub, sans jamais rouvrir gexdash.",
+  "description": "Auto-fills your GEX Daily Levels indicator on TradingView. Walls, gamma flip, expected move — updated without copy-pasting.",
   "permissions": ["storage", "alarms", "notifications", "clipboardWrite", "debugger"],
   "host_permissions": [
     "https://gexdash.wealthbuilders.group/*",
