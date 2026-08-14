@@ -19,10 +19,11 @@ permanent : le lire avant toute modification.
 
 Fichiers : `api/gex.py` (routes, crons), `api/_gex_core.py` (moteur de calcul),
 `index.html` (terminal), `dash.html`, `heatmap.html`, `news.html`, `doc.html`,
-`admin.html`, `ui.js` (partagé), `flux-panel.js` (module Flux du terminal,
-extrait de `index.html` — cf. section dédiée plus bas), `gex_levels.pine`
-(indicateur TradingView), `quantower/` (indicateur C#), `widget/`
-(widget Flux embarquable, cf. section dédiée plus bas).
+`admin.html`, `flux.html`, `profile.html`, `privacy.html`, `ui.js` (partagé),
+`flux-panel.js` (module Flux du terminal, extrait de `index.html` — cf.
+section dédiée plus bas), `gex_levels.pine` (indicateur TradingView),
+`quantower/` (indicateur C#), `widget/` (widget Flux embarquable, cf. section
+dédiée plus bas).
 
 ---
 

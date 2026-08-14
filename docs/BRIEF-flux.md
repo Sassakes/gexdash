@@ -157,7 +157,7 @@ fin de séance sans catalyseur.
 | Endpoint | `GET /api/flow?target=NQ` — validation `target not in TARGETS` |
 | Calcul | Dans le **cron intrajournalier existant** (`?intraday=1`), résultat en cache Redis. Endpoint en **lecture seule** |
 | Cache | Clé `gex:flow:{target}:{date}`, TTL 2 jours |
-| Crons | Pas de nouvel endpoint : `?intraday=1&flowforce=1` existant, cadencé plus finement (10 min en séance, 5 min sur la dernière heure — cf. `vercel.json`) pour que le dégradé évolue par petits pas plutôt que par sauts |
+| Crons | Pas de nouvel endpoint : `?intraday=1` existant, cadencé plus finement (10 min en séance, 5 min sur la dernière heure — cf. `vercel.json`) pour que le dégradé évolue par petits pas plutôt que par sauts |
 | Verrou | Ne **jamais** écrire dans `levels`, `gex_by_strike`, `open_grid`, `expected_move`, `pine`. `_freeze_levels` doit rester valide |
 | Discord | Aucun webhook pour ce module |
 | Front | JS vanilla, canvas. Pas de framework, pas de build |

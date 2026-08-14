@@ -604,8 +604,11 @@ class TheHubFluxWidget{
     const wasOn = this.state.pollArmed;
     this.state.pollArmed = sessionOpenNow();
     if (this.state.pollArmed){
-      if (!wasOn) this.load();
-      this.state.poll = setInterval(() => this.load(), this.opts.pollMs);
+      // garde document.hidden, comme partout ailleurs dans le dépôt (index/
+      // dash/heatmap/news) : un widget embarqué sur un onglet en arrière-plan
+      // ne doit pas continuer à interroger /api/embed/flow en boucle.
+      if (!wasOn && !document.hidden) this.load();
+      this.state.poll = setInterval(() => { if (!document.hidden) this.load(); }, this.opts.pollMs);
     }
     if (!this.state.watchWired){
       this.state.watchWired = true;

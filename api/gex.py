@@ -765,11 +765,16 @@ def _track_intraday(payload):
 
 
 def _read_intraday(tgt):
-    try:
-        return json.loads(kv_get(INTRA_KEY.format(
-            t=tgt, d=et_today().isoformat())) or "[]")
-    except Exception:
-        return []
+    def fetch():
+        try:
+            return json.loads(kv_get(INTRA_KEY.format(
+                t=tgt, d=et_today().isoformat())) or "[]")
+        except Exception:
+            return []
+    # meme cache memoire court que _latest_payload : _track_intraday n'ecrit
+    # qu'a chaque tir de cron (5-10 min), pas la peine d'une lecture Redis
+    # par tick de poll utilisateur.
+    return _news_cached(f"intraday:{tgt}", 5, fetch)
 
 
 # ═══════════════════ FLUX — projection prix x temps (ETAPE 1 : gamma) ═══════
@@ -794,10 +799,36 @@ FLOW_CHECK_TOL_PCT = 10.0   # ecart au-dela duquel on journalise une alerte -- l
 # TTL volontairement court (~26h, pas les 2 jours de FLOW_KEY) : l'historique
 # de la veille ne sert plus une fois la nouvelle seance ouverte, pas besoin
 # d'un cron de nettoyage dedie. FLOW_HIST_MAX borne la taille meme en cas
-# d'appels hors cadence normale (flowforce manuel, etc.).
+# d'appels hors cadence normale (test manuel ?intraday=1, etc.).
 FLOW_HIST_KEY = "gex:flowhist:{t}:{d}"
 FLOW_HIST_TTL = 26 * 3600
 FLOW_HIST_MAX = 150
+
+
+def _flow_cached(target):
+    """Lecture FLOW_KEY mise en cache memoire courte -- partagee entre
+    /api/flow et /api/embed/flow (meme cle de cache), donc une seule
+    lecture Redis sert les deux endpoints sur une instance chaude. Le
+    cron ne republie ce cache qu'a chaque tir intrajournalier (5-10 min),
+    une lecture par instance toutes les 5s n'introduit aucun retard percu."""
+    def fetch():
+        try:
+            return json.loads(kv_get(
+                FLOW_KEY.format(t=target, d=et_today().isoformat())) or "null")
+        except Exception:
+            return None
+    return _news_cached(f"flow:{target}", 5, fetch)
+
+
+def _flow_hist_cached(target):
+    def fetch():
+        try:
+            return json.loads(kv_get(
+                FLOW_HIST_KEY.format(t=target, d=et_today().isoformat())) or "null")
+        except Exception:
+            return None
+    return _news_cached(f"flowhist:{target}", 5, fetch)
+
 
 # Widget Flux embarquable (/api/embed/flow) : verification de cle + rate-
 # limit, sur le meme chemin de lecture seule que /api/flow (aucun calcul
@@ -956,7 +987,8 @@ def _refresh_flow(target, payload, capture):
     payload incomplet) d'un echec reel (chaine sans IV exploitable) d'un
     controle simplement non calculable alors que la matrice, elle, a bien ete
     ecrite en KV. Un `None` nu ne permettait pas de faire cette difference a
-    l'appelant (cf. flowforce)."""
+    l'appelant -- reason alimente flow_check/flow_skip_reason dans la reponse
+    JSON de /api/cron."""
     price_grid, hours, hours_left = _flow_grids(payload)
     if not price_grid:
         return None, "payload incomplet (nq_price/open_grid manquant)"
@@ -1219,11 +1251,16 @@ def _upstash_set(payload):
     try:
         import requests
 
-        key = _upstash_key(payload.get("target", "NQ"))
+        target = payload.get("target", "NQ")
+        key = _upstash_key(target)
         r = requests.post(f"{url}/set/{key}",
                           headers={"Authorization": f"Bearer {token}"},
                           data=json.dumps(payload), timeout=5)
         r.raise_for_status()
+        # invalide le cache memoire de _latest_payload sur cette instance
+        # chaude : sans ca, une lecture juste apres publication pourrait
+        # resservir le payload precedent jusqu'a expiration du TTL court.
+        _NEWS_MEM.pop(f"payload:{target}", None)
         return True, "ok"
     except Exception as e:
         traceback.print_exc()
@@ -1244,9 +1281,14 @@ def _load_file_payload(target="NQ"):
 
 def _latest_payload(target="NQ"):
     """Newest of: committed daily snapshot vs last published live refresh.
-    ISO timestamps compare correctly as strings."""
+    ISO timestamps compare correctly as strings.
+    Lecture Redis mise en cache memoire courte (meme mecanisme que
+    _check_embed_key, cf. _news_cached) : le terminal poll /levels.json
+    toutes les 3s en seance active, or le payload publie ne change pas a
+    cette cadence -- une lecture par instance chaude toutes les 5s suffit
+    largement et evite une lecture Redis par tick utilisateur."""
     file_p = _load_file_payload(target)
-    up_p = _upstash_get(target)
+    up_p = _news_cached(f"payload:{target}", 5, lambda: _upstash_get(target))
     if file_p and up_p:
         return up_p if up_p.get("generated_utc", "") >= file_p.get("generated_utc", "") else file_p
     return up_p or file_p
@@ -2598,11 +2640,7 @@ class handler(BaseHTTPRequestHandler):
             # mêlee au payload de projection normal (recupere une seule fois
             # par le panneau, pas a chaque poll de 2 min).
             if (qs.get("hist", ["0"])[0] or "0") == "1":
-                try:
-                    hist = json.loads(kv_get(
-                        FLOW_HIST_KEY.format(t=target, d=et_today().isoformat())) or "null")
-                except Exception:
-                    hist = None
+                hist = _flow_hist_cached(target)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Cache-Control", "public, s-maxage=60, "
@@ -2610,11 +2648,7 @@ class handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"ready": bool(hist), "history": hist or []}).encode())
                 return
-            try:
-                cached = json.loads(kv_get(
-                    FLOW_KEY.format(t=target, d=et_today().isoformat())) or "null")
-            except Exception:
-                cached = None
+            cached = _flow_cached(target)
             if not cached:
                 self._send(200, json.dumps({"ready": False}).encode(),
                            "application/json")
@@ -2667,11 +2701,7 @@ class handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": "target inconnu"}).encode())
                 return
-            try:
-                cached = json.loads(kv_get(
-                    FLOW_KEY.format(t=target, d=et_today().isoformat())) or "null")
-            except Exception:
-                cached = None
+            cached = _flow_cached(target)
             body = json.dumps(dict(cached, ready=True) if cached else {"ready": False}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
