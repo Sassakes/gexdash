@@ -279,6 +279,242 @@ def em_bands_levels(spot, straddle, fractions):
 
 
 # --------------------------------------------------------------------------- #
+# Horizon (docs/BRIEF-horizon.md). Fonctions pures : aucun acces Redis/       #
+# payload ici, seulement des scalaires deja lus par l'appelant                #
+# (_refresh_horizon, api/gex.py) depuis le payload/la capture deja publies.    #
+# --------------------------------------------------------------------------- #
+
+# Quantiles normaux standard pour un intervalle bilateral -- meme esprit que
+# STRADDLE_EM ci-dessus : constante litterale validee plutot qu'une fonction
+# quantile inverse (pas de dependance scipy pour deux valeurs fixes).
+# Z70 = Phi^-1(0.85), Z90 = Phi^-1(0.95).
+HORIZON_Z70 = 1.0364
+HORIZON_Z90 = 1.6449
+
+# Horizons cibles en heures depuis "maintenant" (brief : 30 min / 1h / 2h /
+# cloture). La cloture elle-meme est ajoutee dynamiquement par l'appelant
+# (remaining_h), pas ici, car elle depend de l'heure d'appel.
+HORIZON_TARGETS_H = (0.5, 1.0, 2.0)
+
+# IV_now vs IV_ref : au-dela de cet ecart absolu (points de vol, ex: 0.02 =
+# 2 pts), le modele (qui suppose une IV stable, cf. brief section Confiance)
+# perd en fiabilite -- penalite de confiance appliquee.
+HORIZON_IV_DRIFT_CONF_PENALTY = 25
+HORIZON_IV_DRIFT_THRESHOLD = 0.02
+
+# Moins d'1h avant la cloture : les projections qui atteignent/depassent la
+# cloture sont plus incertaines (peu de temps pour que la moyenne se realise,
+# un dernier print peut dominer) -- penalite de confiance appliquee (brief
+# section Confiance : "moins d'une heure avant la cloture").
+HORIZON_CLOSE_CONF_PENALTY = 15
+HORIZON_CLOSE_SOON_H = 1.0
+
+# ── Etape 2 (charm) : poids PROVISOIRE, pas encore calibre empiriquement --
+# le brief l'exige explicitement ("le poids doit etre calibre empiriquement,
+# pas choisi arbitrairement") mais la calibration (etape 5) n'a aucun
+# echantillon avant plusieurs semaines de collecte. Choix de design qui
+# limite le risque d'un mauvais poids initial : le biais est exprime comme
+# une FRACTION adimensionnee de portee_sigma(h) (charm$ / (|charm$|+|gamma$|),
+# dans [-1,1]) plutot qu'une conversion $ -> points inventee de toutes
+# pieces -- meme un poids mal calibre ne peut jamais faire depasser le
+# biais au-dela de portee_sigma(h) elle-meme (deja validee, etape 1).
+# A REMPLACER par la valeur ajustee empiriquement une fois >=20 seances
+# collectees (cf. HORIZON_STATS ci-dessous, api/gex.py).
+HORIZON_CHARM_WEIGHT = 0.35
+
+# ── Etape 3 (gamma) : meme logique -- normalisateur PROVISOIRE de gamma$ (en
+# $Bn, meme echelle que net_gex_bn deja affiche ailleurs sur le site) avant
+# saturation tanh. f() reste bornee [0.6,1.6] QUELLE QUE SOIT la valeur de ce
+# normalisateur (tanh sature) : une echelle mal choisie change seulement la
+# VITESSE de saturation, jamais les bornes -- risque contenu meme sans
+# calibration. Asymetrie 1.6 vs 0.6 imposee par le brief (elargissement
+# plus genereux que le resserrement).
+HORIZON_GAMMA_SCALE_BN = 3.0
+HORIZON_GAMMA_WIDEN_MAX = 0.6   # 1.0 + 0.6 = 1.6 (gamma tres negatif)
+HORIZON_GAMMA_TIGHTEN_MAX = 0.4  # 1.0 - 0.4 = 0.6 (gamma tres positif)
+
+# ── Etape 4 (murs) : fraction du gamma$ du mur relative au gamma$ BRUT total
+# de la chaine (gex_by_strike) -- bornee pour qu'un mur ne devienne jamais
+# une barriere absolue (le brief dit "densite attenuee", pas "impassable")
+# ni un bruit negligeable en dessous d'un plancher.
+HORIZON_WALL_ATTEN_MIN = 0.15
+HORIZON_WALL_ATTEN_MAX = 0.65
+
+# ── Confiance, etapes 2-4 : facteurs supplementaires par rapport a l'etape 1 ##
+HORIZON_CONFLICT_CONF_PENALTY = 20    # charm$ et gamma$ de signe oppose
+HORIZON_NEAR_WALL_CONF_PENALTY = 15   # spot a moins de 25% de portee_ajustee(h) d'un mur
+HORIZON_NEAR_WALL_FRACTION = 0.25
+
+
+def horizon_hours(remaining_h):
+    """Horizons cibles (heures depuis maintenant), plafonnes a remaining_h +
+    la cloture elle-meme, dedupliques (ex: remaining_h < 2h -> "2h" et
+    "cloture" fusionnent). Extrait de horizon_envelope pour que l'appelant
+    (api/gex.py) puisse construire la MEME grille d'heures avant d'appeler
+    flow_gamma_matrix (gamma$/charm$ par horizon, cf. etapes 2-3)."""
+    if remaining_h is None or remaining_h <= 0:
+        return []
+    return sorted({round(min(h, remaining_h), 4) for h in HORIZON_TARGETS_H}
+                  | {round(remaining_h, 4)})
+
+
+def _gamma_width_factor(gamma_bn):
+    """f(gamma_local), monotone decroissante, bornee [0.6,1.6] (brief etape
+    3). gamma_bn=None (donnee indisponible) -> 1.0, pas de modulation."""
+    if gamma_bn is None:
+        return 1.0
+    x = math.tanh(gamma_bn / HORIZON_GAMMA_SCALE_BN)
+    if x >= 0:      # gamma positif : absorption, le cone se resserre
+        return 1.0 - HORIZON_GAMMA_TIGHTEN_MAX * x
+    else:           # gamma negatif : acceleration, le cone s'elargit
+        return 1.0 - HORIZON_GAMMA_WIDEN_MAX * x
+
+
+def _charm_bias_fraction(charm_bn, gamma_bn):
+    """Fraction adimensionnee dans [-1,1] -- cf. commentaire HORIZON_CHARM_WEIGHT
+    ci-dessus. None si l'une des deux valeurs manque (pas de biais applique)."""
+    if charm_bn is None or gamma_bn is None:
+        return 0.0
+    denom = abs(charm_bn) + abs(gamma_bn)
+    if denom <= 0:
+        return 0.0
+    return charm_bn / denom
+
+
+def _attenuate_at_wall(median, bound, wall_price, wall_gamma_bn, gross_gamma_bn):
+    """Comprime `bound` vers `wall_price` si le mur se trouve entre `median`
+    et `bound` (brief etape 4 : barriere partielle, pas impassable).
+    Retourne (nouveau_bound, attenuation_pct ou None si aucun mur traverse)."""
+    if wall_price is None or wall_gamma_bn is None or not gross_gamma_bn:
+        return bound, None
+    direction = 1.0 if bound >= median else -1.0
+    if direction > 0 and not (median < wall_price < bound):
+        return bound, None
+    if direction < 0 and not (bound < wall_price < median):
+        return bound, None
+    strength = max(HORIZON_WALL_ATTEN_MIN,
+                   min(HORIZON_WALL_ATTEN_MAX, abs(wall_gamma_bn) / gross_gamma_bn))
+    beyond = bound - wall_price
+    new_bound = wall_price + beyond * (1.0 - strength)
+    return round(new_bound, 2), round(100 * strength, 1)
+
+
+def horizon_envelope(spot, sigma1d, iv_now, iv_ref, remaining_h,
+                      session_length_h, gamma_bn_by_h=None, charm_bn_by_h=None,
+                      walls=None):
+    """Projection Horizon complete (etapes 1-4 du brief) : amplitude
+    symetrique depuis l'EM restant (etape 1), biais directionnel par le
+    charm (etape 2), amplitude modulee par le gamma (etape 3), attenuation
+    aux murs (etape 4).
+
+    spot, sigma1d : echelle produit (meme convention que _flow_grids,
+    api/gex.py -- sigma1d = open_grid.unit, deja 1 sigma, PAS un straddle).
+    remaining_h : heures restantes avant la cloture cash (peut etre <= 0
+    hors seance -- retourne alors None).
+    session_length_h : duree pleine de seance utilisee comme base de
+    variance (OPTIONS_OPEN_ET_MIN -> SESSION_END_ET, 6.5h).
+    gamma_bn_by_h / charm_bn_by_h : dict {horizon_h: valeur en $Bn}, memes
+    cles que horizon_hours(remaining_h) -- gamma$/charm$ BS recalcules a la
+    colonne spot pour le T de cet horizon (cf. _refresh_horizon, un seul
+    appel flow_gamma_matrix a 1 colonne). None si la chaine d'options n'est
+    pas disponible sur ce tir (degrade gracieusement vers l'etape 1 seule).
+    walls : dict optionnel {"call": (prix, gamma_bn), "put": (prix, gamma_bn),
+    "gross_bn": total} extrait de payload["levels"]/gex_by_strike.
+
+    Retourne une liste de dicts (un par horizon) ou None si hors seance ou
+    donnees insuffisantes."""
+    if not spot or spot <= 0 or not sigma1d or sigma1d <= 0:
+        return None
+    hours = horizon_hours(remaining_h)
+    if not hours:
+        return None
+    if not session_length_h or session_length_h <= 0:
+        return None
+
+    iv_now = float(iv_now) if iv_now else None
+    iv_ref = float(iv_ref) if iv_ref else iv_now
+    if iv_now and iv_ref and iv_ref > 0:
+        iv_ratio = iv_now / iv_ref
+        dsigma = abs(iv_now - iv_ref)
+    else:
+        iv_ratio = 1.0
+        dsigma = None
+
+    gamma_bn_by_h = gamma_bn_by_h or {}
+    charm_bn_by_h = charm_bn_by_h or {}
+    walls = walls or {}
+    gross_bn = walls.get("gross_bn")
+    call_price, call_gamma_bn = walls.get("call", (None, None))
+    put_price, put_gamma_bn = walls.get("put", (None, None))
+
+    out = []
+    for h in hours:
+        frac = min(h, remaining_h) / session_length_h
+        portee_sigma = sigma1d * iv_ratio * math.sqrt(max(frac, 0.0))
+
+        gamma_h = gamma_bn_by_h.get(h)
+        charm_h = charm_bn_by_h.get(h)
+        f_gamma = _gamma_width_factor(gamma_h)
+        portee_adj = portee_sigma * f_gamma
+        bias_fraction = _charm_bias_fraction(charm_h, gamma_h)
+        bias = bias_fraction * HORIZON_CHARM_WEIGHT * portee_sigma
+        median = spot + bias
+
+        confidence = 100
+        reasons = []
+        if dsigma is not None and dsigma >= HORIZON_IV_DRIFT_THRESHOLD:
+            confidence -= HORIZON_IV_DRIFT_CONF_PENALTY
+            reasons.append("iv_drift")
+        if remaining_h <= HORIZON_CLOSE_SOON_H:
+            confidence -= HORIZON_CLOSE_CONF_PENALTY
+            reasons.append("close_soon")
+        if (charm_h is not None and gamma_h is not None
+                and abs(charm_h) > 1e-9 and abs(gamma_h) > 1e-9
+                and (charm_h > 0) != (gamma_h > 0)):
+            confidence -= HORIZON_CONFLICT_CONF_PENALTY
+            reasons.append("gamma_charm_conflict")
+        near_wall = False
+        if portee_adj > 0:
+            if call_price is not None and abs(spot - call_price) < HORIZON_NEAR_WALL_FRACTION * portee_adj:
+                near_wall = True
+            if put_price is not None and abs(spot - put_price) < HORIZON_NEAR_WALL_FRACTION * portee_adj:
+                near_wall = True
+        if near_wall:
+            confidence -= HORIZON_NEAR_WALL_CONF_PENALTY
+            reasons.append("near_wall")
+        confidence = max(0, min(100, confidence))
+
+        hi70, lo70 = median + HORIZON_Z70 * portee_adj, median - HORIZON_Z70 * portee_adj
+        hi90, lo90 = median + HORIZON_Z90 * portee_adj, median - HORIZON_Z90 * portee_adj
+        walls_hit = []
+        hi70, atten = _attenuate_at_wall(median, hi70, call_price, call_gamma_bn, gross_bn)
+        if atten is not None:
+            walls_hit.append({"kind": "call", "zone": "70", "price": call_price, "attenuation_pct": atten})
+        lo70, atten = _attenuate_at_wall(median, lo70, put_price, put_gamma_bn, gross_bn)
+        if atten is not None:
+            walls_hit.append({"kind": "put", "zone": "70", "price": put_price, "attenuation_pct": atten})
+        hi90, atten = _attenuate_at_wall(median, hi90, call_price, call_gamma_bn, gross_bn)
+        if atten is not None:
+            walls_hit.append({"kind": "call", "zone": "90", "price": call_price, "attenuation_pct": atten})
+        lo90, atten = _attenuate_at_wall(median, lo90, put_price, put_gamma_bn, gross_bn)
+        if atten is not None:
+            walls_hit.append({"kind": "put", "zone": "90", "price": put_price, "attenuation_pct": atten})
+
+        out.append({
+            "horizon_h": h,
+            "is_close": abs(h - remaining_h) < 1e-6,
+            "median": round(median, 2),
+            "bias": round(bias, 2),
+            "zone70": [round(lo70, 2), round(hi70, 2)],
+            "zone90": [round(lo90, 2), round(hi90, 2)],
+            "confidence": confidence,
+            "confidence_reasons": reasons,
+            "walls_hit": walls_hit,
+        })
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # GEX computation                                                              #
 # --------------------------------------------------------------------------- #
 def per_strike_gex(spot, opts, bucket=None):

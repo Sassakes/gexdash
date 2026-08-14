@@ -38,6 +38,7 @@ from api._gex_core import (TARGETS, build_payload, discord_news,
                            fetch_webhooks, kv_get, kv_set,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
                            flow_gamma_matrix, flow_gamma_sanity, flow_volume_context,
+                           horizon_envelope, horizon_hours,
                            fetch_embed_keys, save_embed_keys,
                            fetch_api_keys, save_api_keys)
 
@@ -1084,6 +1085,220 @@ def _refresh_flow(target, payload, capture):
         pass
 
     return check, check_reason
+
+
+# Module Horizon (docs/BRIEF-horizon.md) : cle separee de FLOW_KEY, meme
+# TTL/forme -- ne doit jamais interferer avec le payload principal ni avec
+# la matrice Flux. Lecture seule pour /api/horizon, jamais recalculee hors
+# du cron intrajournalier (meme regle que FLOW_KEY).
+HORIZON_KEY = "gex:horizon:{t}:{d}"
+
+# Etape 5 (calibration) : journal du jour (une entree par tir, un sous-objet
+# par horizon emis) + stats CUMULATIVES inter-seances (pas de suffixe date --
+# persistent tant que HORIZON_STATS_TTL n'expire pas). Cles separees : le
+# journal du jour tourne (26h, comme FLOW_HIST_KEY), les stats doivent
+# survivre des mois pour que l'echantillon ait un sens (brief : "l'echantillon
+# met des semaines a se constituer").
+HORIZON_LOG_KEY = "gex:horizonlog:{t}:{d}"
+HORIZON_LOG_TTL = 26 * 3600
+HORIZON_LOG_MAX = 200
+HORIZON_STATS_KEY = "gex:horizonstats:{t}"
+HORIZON_STATS_TTL = 400 * 86400
+# Biais juge negligeable (bruit, pas un vrai signal directionnel) en-dessous
+# de ce seuil -- exclu du taux de realisation du biais pour ne pas diluer
+# la stat avec des predictions quasi nulles.
+HORIZON_BIAS_MIN_PT = 0.5
+# "Sous 20 seances : afficher calibration en cours" (brief, section
+# Calibration) -- comptees en JOURS DE BOURSE distincts par bucket (regime x
+# horizon), pas en tirs bruts : un seul jour genere deja des dizaines de
+# tirs intrajournaliers, compter les tirs ferait passer le seuil de 20 en
+# quelques heures alors que le brief attend explicitement plusieurs
+# semaines d'echantillon.
+HORIZON_MIN_SAMPLE_DAYS = 20
+
+
+def _horizon_cached(target):
+    """Mirror exact de _flow_cached : cache memoire courte (5s) devant
+    HORIZON_KEY, republie a chaque tir intrajournalier par _refresh_horizon."""
+    def fetch():
+        try:
+            return json.loads(kv_get(
+                HORIZON_KEY.format(t=target, d=et_today().isoformat())) or "null")
+        except Exception:
+            return None
+    return _news_cached(f"horizon:{target}", 5, fetch)
+
+
+def _horizon_stats_cached(target):
+    """Lecture seule (memoire 5s) des stats de calibration cumulatives --
+    utilisee uniquement par /api/horizon. L'ecriture (cf. _horizon_record_
+    and_verify) lit toujours HORIZON_STATS_KEY directement, jamais via ce
+    cache, pour ne jamais ecraser une mise a jour concurrente avec une
+    version perimee."""
+    def fetch():
+        try:
+            raw = kv_get(HORIZON_STATS_KEY.format(t=target))
+            d = json.loads(raw) if raw else None
+            return d if isinstance(d, dict) and isinstance(d.get("buckets"), dict) else None
+        except Exception:
+            return None
+    return _news_cached(f"horizonstats:{target}", 5, fetch)
+
+
+def _horizon_walls(payload):
+    """Extrait (prix, gamma$Bn) des murs deja publies + le gamma$Bn BRUT
+    total de la chaine (gex_by_strike, echelle produit) pour l'attenuation
+    aux murs (brief etape 4) -- entierement depuis le payload deja
+    construit, aucun acces reseau supplementaire. None pour un mur si son
+    kind est absent ou introuvable dans gex_by_strike (strike hors fenetre
+    +/-4%, cf. _strike_profile) : horizon_envelope degrade gracieusement
+    (pas d'attenuation appliquee de ce cote)."""
+    strikes = payload.get("gex_by_strike") or []
+    if not strikes:
+        return None
+    gross_bn = sum(abs(g) for _, g in strikes)
+
+    def nearest_gamma(price):
+        if price is None:
+            return None
+        p, g = min(strikes, key=lambda row: abs(row[0] - price))
+        return g if abs(p - price) <= max(abs(price) * 0.01, 5.0) else None
+
+    levels = payload.get("levels") or []
+    call_price = next((lv.get("price_nq") for lv in levels if lv.get("kind") == "res"), None)
+    put_price = next((lv.get("price_nq") for lv in levels if lv.get("kind") == "sup"), None)
+    return {
+        "gross_bn": gross_bn,
+        "call": (call_price, nearest_gamma(call_price)),
+        "put": (put_price, nearest_gamma(put_price)),
+    }
+
+
+def _horizon_stats_load(target):
+    """Lecture FRAICHE (pas de cache memoire) des stats cumulatives --
+    utilisee uniquement dans le chemin d'ecriture du cron, cf. note sur
+    _horizon_stats_cached ci-dessus."""
+    try:
+        raw = kv_get(HORIZON_STATS_KEY.format(t=target))
+        d = json.loads(raw) if raw else None
+        if isinstance(d, dict) and isinstance(d.get("buckets"), dict):
+            return d
+    except Exception:
+        pass
+    return {"buckets": {}}
+
+
+def _horizon_record_and_verify(target, out):
+    """Etape 5 (calibration) : enregistre les projections de ce tir dans le
+    journal du jour, puis verifie celles emises lors d'un tir precedent dont
+    l'echeance (target_utc) est desormais passee -- comparaison au prix REEL
+    de CE tir (out['spot']). Best-effort strict : jamais d'exception
+    propagee, appelee en toute fin de _refresh_horizon, ne doit jamais
+    casser le tir de cron (meme regle que _track_intraday)."""
+    if not out.get("horizons"):
+        return
+    try:
+        gen = dt.datetime.fromisoformat(out["generated_utc"])
+    except Exception:
+        return
+    log_key = HORIZON_LOG_KEY.format(t=target, d=out["date"])
+    try:
+        log = json.loads(kv_get(log_key) or "[]")
+        if not isinstance(log, list):
+            log = []
+    except Exception:
+        log = []
+
+    now_price = out.get("spot")
+    stats = None   # charge paresseusement (une lecture Redis), seulement s'il y a reellement une echeance a verifier
+    for entry in log:
+        for hz in entry.get("horizons", []):
+            if hz.get("verified") or now_price is None:
+                continue
+            try:
+                target_utc = dt.datetime.fromisoformat(hz["target_utc"])
+            except Exception:
+                continue
+            if target_utc > gen:
+                continue
+            if stats is None:
+                stats = _horizon_stats_load(target)
+            lo70, hi70 = hz["zone70"]
+            bucket_key = f"{entry.get('regime') or 'unknown'}:{hz['horizon_h']}h"
+            b = stats["buckets"].setdefault(
+                bucket_key, {"n": 0, "cov70": 0, "bias_n": 0, "bias_hit": 0, "dates": {}})
+            b["n"] += 1
+            b["dates"][out["date"]] = True
+            if lo70 <= now_price <= hi70:
+                b["cov70"] += 1
+            bias = hz.get("bias") or 0.0
+            if abs(bias) >= HORIZON_BIAS_MIN_PT and entry.get("spot") is not None:
+                b["bias_n"] += 1
+                if (now_price - entry["spot"] > 0) == (bias > 0):
+                    b["bias_hit"] += 1
+            hz["verified"] = True
+
+    log.append({
+        "generated_utc": out["generated_utc"], "spot": out.get("spot"),
+        "regime": out.get("regime"),
+        "horizons": [
+            {"horizon_h": hz["horizon_h"],
+             "target_utc": (gen + dt.timedelta(hours=hz["horizon_h"])).isoformat(),
+             "median": hz["median"], "bias": hz["bias"],
+             "zone70": hz["zone70"], "zone90": hz["zone90"], "verified": False}
+            for hz in out["horizons"]
+        ],
+    })
+    if len(log) > HORIZON_LOG_MAX:
+        log = log[-HORIZON_LOG_MAX:]
+    kv_set(log_key, json.dumps(log), ex=HORIZON_LOG_TTL)
+    if stats is not None:
+        kv_set(HORIZON_STATS_KEY.format(t=target), json.dumps(stats), ex=HORIZON_STATS_TTL)
+
+
+def _refresh_horizon(target, payload, capture=None):
+    """Module Horizon (docs/BRIEF-horizon.md), etapes 1-5 : projection
+    symetrique + biais charm + modulation gamma + attenuation aux murs,
+    enregistrement/verification pour la calibration. `capture` (memes
+    options que _refresh_flow, deja blend ETF + scale) est OPTIONNEL -- si
+    absent/vide (Flow a echoue sur ce tir), degrade gracieusement vers la
+    projection symetrique seule (etape 1), sans biais ni modulation. Ne lit
+    ni n'ecrit jamais levels/gex_by_strike/open_grid/expected_move/pine."""
+    spot = payload.get("nq_price")
+    sigma1d = (payload.get("open_grid") or {}).get("unit")
+    iv_now = payload.get("iv_atm")
+    iv_ref = payload.get("iv_ref") or iv_now
+    now_h = _et_now_minutes() / 60.0
+    close_h = SESSION_END_ET[0] + SESSION_END_ET[1] / 60.0
+    remaining_h = close_h - now_h
+    session_length_h = close_h - OPTIONS_OPEN_ET_MIN / 60.0
+
+    gamma_bn_by_h = charm_bn_by_h = None
+    if capture and capture.get("opts") and spot:
+        try:
+            basis = capture.get("basis") or 0.0
+            hours = horizon_hours(remaining_h)
+            mats = flow_gamma_matrix(capture["opts"], [spot - basis], hours, remaining_h)
+            if mats:
+                gamma_bn_by_h = {h: mats["gamma"][i][0] / 1e9 for i, h in enumerate(hours)}
+                charm_bn_by_h = {h: mats["charm"][i][0] / 1e9 for i, h in enumerate(hours)}
+        except Exception:
+            gamma_bn_by_h = charm_bn_by_h = None
+
+    horizons = horizon_envelope(spot, sigma1d, iv_now, iv_ref, remaining_h,
+                                session_length_h, gamma_bn_by_h=gamma_bn_by_h,
+                                charm_bn_by_h=charm_bn_by_h,
+                                walls=_horizon_walls(payload))
+    out = {
+        "target": target, "date": et_today().isoformat(),
+        "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "spot": spot, "regime": payload.get("regime"), "horizons": horizons,
+    }
+    kv_set(HORIZON_KEY.format(t=target, d=out["date"]), json.dumps(out), ex=2 * 86400)
+    try:
+        _horizon_record_and_verify(target, out)
+    except Exception:
+        pass
 
 
 def _finra_dp_day(ymd):
@@ -2364,6 +2579,11 @@ class handler(BaseHTTPRequestHandler):
                             except Exception as e:
                                 flow_skip_reason = f"{type(e).__name__}: {e}"
                                 journal_flow(f"flow {target} KO: {e}")
+                        if "intraday" in qs:
+                            try:
+                                _refresh_horizon(target, payload, flow_capture)
+                            except Exception:
+                                pass
                         try:
                             _track_intraday(payload)
                         except Exception:
@@ -2436,6 +2656,11 @@ class handler(BaseHTTPRequestHandler):
                                          f"(ecart {chk['deviation_pct']}%)")
                     except Exception as e:
                         journal_flow(f"flow {target} KO: {e}")
+                if "intraday" in qs:
+                    try:
+                        _refresh_horizon(target, payload, flow_capture)
+                    except Exception:
+                        pass
                 # Trace intrajournaliere : l'open interest ne bouge pas en
                 # seance, donc les MURS sont figes — mais les gammas unitaires
                 # evoluent avec le spot, l'IV et la decroissance temporelle.
@@ -2687,6 +2912,54 @@ class handler(BaseHTTPRequestHandler):
                                               "stale-while-revalidate=60")
             self.end_headers()
             self.wfile.write(json.dumps(dict(cached, ready=True)).encode())
+            return
+
+        # ── /api/horizon : lecture seule de HORIZON_KEY, jamais de calcul ici
+        # (meme regle que /api/flow) -- ecrit uniquement par _refresh_horizon
+        # dans le cron intrajournalier. Contrairement a /api/flow, GARDE par
+        # session (module classe "membres connectes" dans son ensemble, pas
+        # seulement la page HTML /horizon -- docs/BRIEF-horizon.md). Reponse
+        # jamais mise en cache public/edge : un cache partage sur une reponse
+        # authentifiee servirait la donnee a un visiteur non connecte sans
+        # jamais repasser par _current_user(). ──
+        if path == "/api/horizon":
+            if not self._current_user():
+                self._send(401, json.dumps({"error": "login required"}).encode(),
+                           "application/json")
+                return
+            qs = parse_qs(parsed.query)
+            target = (qs.get("target", ["NQ"])[0] or "NQ").upper()
+            if target not in TARGETS:
+                self._send(400, json.dumps({"error": "target inconnu"}).encode(),
+                           "application/json")
+                return
+            cached = _horizon_cached(target)
+            if not cached:
+                self._send(200, json.dumps({"ready": False}).encode(),
+                           "application/json")
+                return
+            # Etape 5 (calibration) : stats cumulatives inter-seances, meme
+            # reponse -- le client (horizon.html) affiche "calibration en
+            # cours" tant que days < HORIZON_MIN_SAMPLE_DAYS pour un bucket.
+            stats = _horizon_stats_cached(target) or {"buckets": {}}
+            calibration = []
+            for bucket_key, b in stats["buckets"].items():
+                regime, hlabel = bucket_key.split(":", 1)
+                n, bias_n = b.get("n", 0), b.get("bias_n", 0)
+                days_n = len(b.get("dates") or {})
+                calibration.append({
+                    "regime": regime, "horizon_label": hlabel,
+                    "n": n, "days": days_n,
+                    "cov70_pct": round(100 * b.get("cov70", 0) / n, 1) if n else None,
+                    "bias_hit_pct": round(100 * b.get("bias_hit", 0) / bias_n, 1) if bias_n else None,
+                    "ready": days_n >= HORIZON_MIN_SAMPLE_DAYS,
+                })
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "private, no-store")
+            self.end_headers()
+            self.wfile.write(json.dumps(
+                dict(cached, ready=True, calibration=calibration)).encode())
             return
 
         # ── widget Flux embarquable : meme cache FLOW_KEY que /api/flow,
@@ -2958,6 +3231,25 @@ class handler(BaseHTTPRequestHandler):
             fpath = ROOT / "profile.html"
             if not fpath.is_file():
                 self._send(404, json.dumps({"error": "profile.html absent"}).encode(),
+                           "application/json")
+                return
+            self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")
+            return
+
+        # ── /horizon : module Horizon (docs/BRIEF-horizon.md), page NON
+        # REPERTORIEE -- pas de lien dans la nav, pas dans STATIC. Meme garde
+        # de session que /profile ; volontairement pas dans STATIC pour ne
+        # pas apparaitre au meme titre que les pages publiques. ──
+        if path == "/horizon":
+            if not self._current_user():
+                self.send_response(302)
+                self.send_header("Location", "/?login=1&next=/horizon")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            fpath = ROOT / "horizon.html"
+            if not fpath.is_file():
+                self._send(404, json.dumps({"error": "horizon.html absent"}).encode(),
                            "application/json")
                 return
             self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")

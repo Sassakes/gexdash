@@ -1,0 +1,5 @@
+15:40	08-10 13:40Z		?intraday=1&flowforce=1	flow NQ (force) controle de justesse KO : gex_by_strike=3.696Bn vs flow=4.47Bn (ecart 20.9%)
+15:30	08-10 13:30Z		?intraday=1&flowforce=1	ok computed=0 notify=skipped (déjà notifié aujourd'hui) news=False
+
+
+https://chromewebstore.google.com/detail/gexradar-%E2%80%94-walls-on-tradi/gebfheioifkacnbelhddhnnaicbndmcj

@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHub - Horizon</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
+  [hidden]{display:none !important}
+
+  :root{
+    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
+    --line:#212127; --line-strong:#2B2B33;
+    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
+    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12);
+    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350; --red-soft:rgba(239,83,80,.12);
+    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
+
+  header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line)}
+  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
+  header h1 b{color:var(--gold)}
+  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
+  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
+  .topnav a:hover{color:var(--gold)}
+  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden; margin-left:12px}
+  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em; min-height:26px}
+  .langsel button+button{border-left:1px solid var(--line-strong)}
+  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
+
+  .toolbar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:9px 20px;
+    border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
+  .seg{display:flex; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; background:var(--surface2)}
+  .seg button{font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--muted); background:transparent; border:0; padding:6px 14px; cursor:pointer; letter-spacing:.03em; transition:background .12s,color .12s; min-height:40px}
+  .seg button+button{border-left:1px solid var(--line-strong)}
+  .seg button.on{background:var(--teal-soft); color:var(--teal)}
+  .tspacer{flex:1}
+  .upd{font-family:var(--mono); font-size:10px; color:var(--faint)}
+  .regimepill{font-family:var(--mono); font-size:10.5px; padding:4px 10px; border-radius:20px; letter-spacing:.03em}
+  .regimepill.positive{background:var(--teal-soft); color:var(--teal)}
+  .regimepill.negative{background:var(--red-soft); color:var(--red)}
+
+  main{max-width:960px; margin:0 auto; padding:24px 20px 60px; position:relative}
+  .summary{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; font-size:14px; line-height:1.6}
+  .summary b{color:var(--gold)}
+
+  .chartwrap{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px; margin-bottom:20px}
+  .chartcanvas{position:relative; width:100%; height:340px}
+  .chartcanvas canvas{position:absolute; inset:0; width:100%; height:100%}
+  .chartcanvas canvas#cvCursor{cursor:crosshair}
+  .legend{display:flex; gap:16px; flex-wrap:wrap; padding:8px 10px 2px; font-size:10.5px; color:var(--muted); font-family:var(--mono)}
+  .legend span{display:inline-flex; align-items:center; gap:5px}
+  .legend i{width:10px; height:10px; border-radius:2px; display:inline-block}
+
+  table{width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:20px}
+  thead th{font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); text-align:right; padding:10px 14px; border-bottom:1px solid var(--line); font-weight:600}
+  thead th:first-child{text-align:left}
+  tbody td{font-family:var(--mono); font-size:13px; text-align:right; padding:11px 14px; border-bottom:1px solid var(--line); vertical-align:top}
+  tbody tr:last-child td{border-bottom:0}
+  tbody td:first-child{text-align:left; font-family:var(--sans); font-weight:600; color:var(--text)}
+  .zone90{color:var(--muted)}
+  .conf{display:inline-block; min-width:34px; text-align:right}
+  .conf.hi{color:var(--teal)} .conf.mid{color:var(--gold)} .conf.lo{color:var(--red)}
+  .reasons{font-size:10px; color:var(--faint); display:block; margin-top:2px}
+  .bias{font-size:10px; display:block; margin-top:2px}
+  .bias.up{color:var(--teal)} .bias.down{color:var(--red)} .bias.flat{color:var(--faint)}
+  .wallnote{font-size:9.5px; color:var(--gold); display:block; margin-top:2px}
+
+  .calib{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 20px; margin-bottom:20px}
+  .calib h3{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:10px}
+  .calibrow{display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--line); font-size:12px; font-family:var(--mono)}
+  .calibrow:last-child{border-bottom:0}
+  .calibrow .k{color:var(--muted)}
+  .calibrow .v{color:var(--text)}
+  .calibprogress{font-size:11px; color:var(--faint)}
+  .calibnote{font-size:11px; color:var(--faint); margin-top:8px; line-height:1.5}
+
+  .empty{padding:60px 20px; text-align:center; color:var(--muted)}
+  #gate{padding:60px 20px; text-align:center; color:var(--muted)}
+
+  .limits{margin-top:20px; font-size:11.5px; color:var(--faint); line-height:1.6}
+  .limits ul{margin:6px 0 0 18px}
+
+  @media(max-width:640px){
+    table, thead, tbody, th, td, tr{display:block}
+    thead{display:none}
+    tbody tr{border-bottom:1px solid var(--line); padding:10px 14px}
+    tbody td{text-align:right; padding:4px 0; border:0; display:flex; justify-content:space-between; gap:10px}
+    tbody td::before{content:attr(data-lbl); color:var(--faint); font-family:var(--sans); font-size:11px}
+    tbody td:first-child{display:block; padding-bottom:6px}
+    tbody td:first-child::before{content:none}
+    .chartcanvas{height:280px}
+  }
+</style>
+</head>
+<body>
+<script src="/loader.js"></script>
+<header>
+  <h1><b>GEX</b>DASH · <span id="hTitle">HORIZON</span></h1>
+  <nav class="topnav">
+    <a href="/" id="navTerm">Terminal</a>
+  </nav>
+  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+</header>
+
+<div class="toolbar">
+  <div class="seg" id="segTarget">
+    <button data-t="NQ" class="on">NQ</button>
+    <button data-t="ES">ES</button>
+    <button data-t="SPX">SPX</button>
+    <button data-t="GC">GOLD</button>
+    <button data-t="XAU">XAU</button>
+  </div>
+  <span class="regimepill" id="regimePill" hidden></span>
+  <span class="tspacer"></span>
+  <span class="upd" id="upd"></span>
+</div>
+
+<main id="app" hidden>
+  <div class="summary" id="summary">—</div>
+
+  <div class="chartwrap">
+    <div class="chartcanvas">
+      <canvas id="cvBg"></canvas>
+      <canvas id="cvMain"></canvas>
+      <canvas id="cvCursor"></canvas>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--teal)"></i><span id="lgCall">Mur haussier (résistance)</span></span>
+      <span><i style="background:var(--red)"></i><span id="lgPut">Mur baissier (support)</span></span>
+      <span><i style="background:var(--gold);opacity:.55"></i><span id="lgZ70">Zone 70%</span></span>
+      <span><i style="background:var(--gold);opacity:.22"></i><span id="lgZ90">Zone 90%</span></span>
+    </div>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th id="hHorizon">Horizon</th>
+        <th id="hZone70">Zone 70%</th>
+        <th id="hZone90">Zone 90%</th>
+        <th id="hConf">Confiance</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="calib" id="calibBlock">
+    <h3 id="hCalib">Calibration</h3>
+    <div id="calibBody"></div>
+  </div>
+
+  <div class="limits" id="limits"></div>
+</main>
+
+<div class="empty" id="empty" hidden></div>
+<div id="gate">Chargement…</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+const T = {
+  fr: {
+    title:"HORIZON",
+    needLogin:"Connexion requise — redirection…",
+    loading:"Chargement…",
+    notReady:"Pas encore de projection publiée pour ce marché aujourd'hui — repasser en séance.",
+    hHorizon:"Horizon", hZone70:"Zone 70%", hZone90:"Zone 90%", hConf:"Confiance",
+    close:"Clôture", updated:"Mis à jour",
+    confHi:"élevée", confMid:"moyenne", confLo:"basse",
+    reasonIvDrift:"IV a bougé depuis la référence", reasonCloseSoon:"proche de la clôture",
+    reasonConflict:"signaux contradictoires", reasonNearWall:"proche d'un mur",
+    biasUp:"temps pousse à la hausse", biasDown:"temps pousse à la baisse", biasFlat:"pas de biais marqué",
+    wallCall:"mur haussier freine", wallPut:"mur baissier freine",
+    summaryPre:"D'ici", summaryMid:"le marché a 70% de chances de rester entre",
+    summaryAnd:"et", summaryDot:".",
+    regimePositive:"zone d'absorption — les mouvements sont amortis",
+    regimeNegative:"zone d'accélération — les mouvements sont amplifiés",
+    hCalib:"Calibration",
+    calibN:"Échantillon", calibDays:"Séances", calibCov:"Zone 70% atteinte", calibBias:"Biais réalisé",
+    calibInProgress:"Calibration en cours",
+    calibNote:"Ces statistiques comparent chaque projection émise au prix effectif une fois l'échéance passée. Le taux de couverture de la zone 70% doit tendre vers 70% ; c'est ce qui donne le droit d'afficher une projection.",
+    calibEmpty:"Aucune donnée de calibration pour l'instant — la collecte démarre au premier tir intrajournalier.",
+    lgCall:"Mur haussier (résistance)", lgPut:"Mur baissier (support)", lgZ70:"Zone 70%", lgZ90:"Zone 90%",
+    limitsTitle:"Ce que cet outil ne fait pas",
+    limit1:"Pas de prix à une heure précise : une zone avec sa probabilité, jamais un point.",
+    limit2:"Pas d'affirmation sur le sens des flux clients — le positionnement dealer reste une inférence.",
+    limit3:"Pas de signal d'entrée ou de sortie. Contexte probabiliste, la décision reste au trader.",
+    ttMedian:"médiane", ttConf:"confiance", ttBias:"biais",
+  },
+  en: {
+    title:"HORIZON",
+    needLogin:"Login required — redirecting…",
+    loading:"Loading…",
+    notReady:"No projection published yet for this market today — check back during the session.",
+    hHorizon:"Horizon", hZone70:"70% zone", hZone90:"90% zone", hConf:"Confidence",
+    close:"Close", updated:"Updated",
+    confHi:"high", confMid:"medium", confLo:"low",
+    reasonIvDrift:"IV moved since reference", reasonCloseSoon:"close to session close",
+    reasonConflict:"conflicting signals", reasonNearWall:"near a wall",
+    biasUp:"time pushes upward", biasDown:"time pushes downward", biasFlat:"no strong bias",
+    wallCall:"upside wall is holding", wallPut:"downside wall is holding",
+    summaryPre:"By", summaryMid:"the market has a 70% chance of staying between",
+    summaryAnd:"and", summaryDot:".",
+    regimePositive:"absorption zone — moves are dampened",
+    regimeNegative:"acceleration zone — moves are amplified",
+    hCalib:"Calibration",
+    calibN:"Sample", calibDays:"Sessions", calibCov:"70% zone hit rate", calibBias:"Bias hit rate",
+    calibInProgress:"Calibration in progress",
+    calibNote:"These stats compare every emitted projection to the actual price once its horizon has passed. The 70% zone's real coverage rate should trend toward 70% — that's what earns the right to show a projection.",
+    calibEmpty:"No calibration data yet — collection starts at the first intraday tick.",
+    lgCall:"Upside wall (resistance)", lgPut:"Downside wall (support)", lgZ70:"70% zone", lgZ90:"90% zone",
+    limitsTitle:"What this tool does not do",
+    limit1:"No price at a precise time: a zone with its probability, never a point.",
+    limit2:"No claim about client order flow direction — dealer positioning stays an inference.",
+    limit3:"No entry or exit signal. Probabilistic context only — the decision stays with the trader.",
+    ttMedian:"median", ttConf:"confidence", ttBias:"bias",
+  },
+};
+let LANG = "fr";
+try{ LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
+if (!T[LANG]) LANG = "fr";
+const t = k => T[LANG][k];
+const nf = n => n.toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
+
+function applyLang(){
+  document.documentElement.lang = LANG;
+  $("hTitle").textContent = t("title");
+  $("hHorizon").textContent = t("hHorizon");
+  $("hZone70").textContent = t("hZone70");
+  $("hZone90").textContent = t("hZone90");
+  $("hConf").textContent = t("hConf");
+  $("hCalib").textContent = t("hCalib");
+  $("lgCall").textContent = t("lgCall");
+  $("lgPut").textContent = t("lgPut");
+  $("lgZ70").textContent = t("lgZ70");
+  $("lgZ90").textContent = t("lgZ90");
+  $("empty").textContent = t("notReady");
+  document.querySelectorAll("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
+  renderLimits();
+  if (LAST) render(LAST); else $("summary").textContent = t("loading");
+}
+document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
+  LANG = b.dataset.l;
+  try{ localStorage.setItem("gexLang", LANG); }catch(_){}
+  applyLang();
+});
+
+function renderLimits(){
+  $("limits").innerHTML =
+    `<b>${t("limitsTitle")}</b><ul>` +
+    `<li>${t("limit1")}</li><li>${t("limit2")}</li><li>${t("limit3")}</li></ul>`;
+}
+
+function fmtHorizon(h){
+  if (h.is_close) return t("close");
+  if (h.horizon_h < 1) return Math.round(h.horizon_h * 60) + "m";
+  return (Math.round(h.horizon_h * 10) / 10) + "h";
+}
+function confClass(c){ return c >= 70 ? "hi" : (c >= 40 ? "mid" : "lo"); }
+function confLabel(c){ return c >= 70 ? t("confHi") : (c >= 40 ? t("confMid") : t("confLo")); }
+function reasonLabel(r){
+  return {iv_drift:t("reasonIvDrift"), close_soon:t("reasonCloseSoon"),
+          gamma_charm_conflict:t("reasonConflict"), near_wall:t("reasonNearWall")}[r] || r;
+}
+function biasLabel(b){
+  if (b > 0.5) return {cls:"up", txt:t("biasUp")};
+  if (b < -0.5) return {cls:"down", txt:t("biasDown")};
+  return {cls:"flat", txt:t("biasFlat")};
+}
+
+// ── Etat ─────────────────────────────────────────────────────────────────
+let TARGET = "NQ";
+let LAST = null;      // derniere reponse /api/horizon
+let HIST = [];         // points realises du jour, /api/flow?hist=1
+
+function render(d){
+  LAST = d;
+  const horizons = d.horizons || [];
+  if (!horizons.length){
+    $("app").hidden = true;
+    $("empty").hidden = false;
+    return;
+  }
+  $("empty").hidden = true;
+  $("app").hidden = false;
+
+  const pill = $("regimePill");
+  if (d.regime === "positive" || d.regime === "negative"){
+    pill.hidden = false;
+    pill.className = "regimepill " + d.regime;
+    pill.textContent = d.regime === "positive" ? t("regimePositive") : t("regimeNegative");
+  } else pill.hidden = true;
+
+  const closeH = horizons.find(h => h.is_close) || horizons[horizons.length - 1];
+  if (closeH){
+    const [lo, hi] = closeH.zone70;
+    const b = biasLabel(closeH.bias || 0);
+    let html = `${t("summaryPre")} <b>${fmtHorizon(closeH)}</b>, ${t("summaryMid")} ` +
+      `<b>${nf(lo)}</b> ${t("summaryAnd")} <b>${nf(hi)}</b>${t("summaryDot")} ` +
+      `${b.txt.charAt(0).toUpperCase() + b.txt.slice(1)}.`;
+    const wall = (closeH.walls_hit || []).find(w => w.zone === "70");
+    if (wall) html += " " + (wall.kind === "call" ? t("wallCall") : t("wallPut")) +
+      ` (${nf(wall.price)}).`;
+    $("summary").innerHTML = html;
+  }
+
+  $("rows").innerHTML = horizons.map(h => {
+    const b = biasLabel(h.bias || 0);
+    const wallTxt = (h.walls_hit || []).map(w =>
+      (w.kind === "call" ? "▲" : "▼") + " " + nf(w.price) + " (-" + w.attenuation_pct + "%)").join(" · ");
+    return `
+    <tr>
+      <td data-lbl="">${fmtHorizon(h)}</td>
+      <td data-lbl="${t('hZone70')}">${nf(h.zone70[0])} – ${nf(h.zone70[1])}
+        <span class="bias ${b.cls}">${b.txt}</span></td>
+      <td data-lbl="${t('hZone90')}" class="zone90">${nf(h.zone90[0])} – ${nf(h.zone90[1])}
+        ${wallTxt ? `<span class="wallnote">${wallTxt}</span>` : ""}</td>
+      <td data-lbl="${t('hConf')}">
+        <span class="conf ${confClass(h.confidence)}">${h.confidence}%</span>
+        <span class="reasons">${confLabel(h.confidence)}${h.confidence_reasons.length ? " · " + h.confidence_reasons.map(reasonLabel).join(", ") : ""}</span>
+      </td>
+    </tr>`;
+  }).join("");
+
+  renderCalibration(d.calibration || []);
+
+  if (d.generated_utc){
+    const dt = new Date(d.generated_utc);
+    $("upd").textContent = t("updated") + " " + dt.toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US", {hour:"2-digit", minute:"2-digit"});
+  }
+
+  scheduleDraw();
+}
+
+function renderCalibration(cal){
+  const relevant = cal.filter(c => c.regime === LAST.regime);
+  const body = $("calibBody");
+  if (!relevant.length){
+    body.innerHTML = `<div class="calibnote">${t("calibEmpty")}</div>`;
+    return;
+  }
+  body.innerHTML = relevant.map(c => {
+    if (!c.ready){
+      return `<div class="calibrow"><span class="k">${c.horizon_label}</span>` +
+             `<span class="calibprogress">${t("calibInProgress")} (${c.days}/20 ${LANG==='fr'?'séances':'sessions'})</span></div>`;
+    }
+    return `<div class="calibrow"><span class="k">${c.horizon_label} · ${c.days} ${LANG==='fr'?'séances':'sessions'} · n=${c.n}</span>` +
+           `<span class="v">${t("calibCov")} ${c.cov70_pct}%` +
+           (c.bias_hit_pct != null ? ` · ${t("calibBias")} ${c.bias_hit_pct}%` : "") + `</span></div>`;
+  }).join("") + `<div class="calibnote">${t("calibNote")}</div>`;
+}
+
+// ── Moteur 2D (docs/REF-moteur-chart.md) : 3 canvas, transforms purs,      ==
+// rendu declenche par un flag "dirty" + un seul rAF (pas de zoom/pan pour   ==
+// Horizon v1 -- le brief demande hover + separation passe/futur, pas une   ==
+// navigation libre). cvBg = remplissage des enveloppes (change avec les    ==
+// donnees) ; cvMain = grille/axes/murs/ligne realisee/mediane (idem) ;     ==
+// cvCursor = crosshair + tooltip (change a chaque mousemove, seul).        ==
+const PAD = {top:16, right:64, bottom:34, left:8};
+let cvBg, cvMain, cvCursor, ctxBg, ctxMain, ctxCursor, cw = 0, ch = 0;
+let dirty = {bg:false, main:false, cursor:false};
+let rafPending = false;
+let LAYOUT = null;
+let mouseX = null, mouseY = null;
+
+function initCanvases(){
+  cvBg = $("cvBg"); cvMain = $("cvMain"); cvCursor = $("cvCursor");
+  ctxBg = cvBg.getContext("2d"); ctxMain = cvMain.getContext("2d"); ctxCursor = cvCursor.getContext("2d");
+  const ro = new ResizeObserver(() => { sizeCanvases(); invalidate({bg:true, main:true, cursor:true}); });
+  ro.observe(cvMain.parentElement);
+  cvCursor.addEventListener("mousemove", e => {
+    const r = cvCursor.getBoundingClientRect();
+    mouseX = e.clientX - r.left; mouseY = e.clientY - r.top;
+    invalidate({cursor:true});
+  });
+  cvCursor.addEventListener("mouseleave", () => { mouseX = null; mouseY = null; invalidate({cursor:true}); });
+  sizeCanvases();
+}
+
+function sizeCanvases(){
+  const box = cvMain.parentElement.getBoundingClientRect();
+  cw = Math.max(1, Math.round(box.width)); ch = Math.max(1, Math.round(box.height));
+  const dpr = window.devicePixelRatio || 1;
+  [[cvBg,ctxBg],[cvMain,ctxMain],[cvCursor,ctxCursor]].forEach(([cv, ctx]) => {
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  });
+}
+
+function invalidate(flags){
+  Object.assign(dirty, flags);
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (dirty.bg){ drawBg(); dirty.bg = false; }
+    if (dirty.main){ drawMain(); dirty.main = false; }
+    if (dirty.cursor){ drawCursor(); dirty.cursor = false; }
+  });
+}
+function scheduleDraw(){ computeLayout(); invalidate({bg:true, main:true, cursor:true}); }
+
+function computeLayout(){
+  LAYOUT = null;
+  if (!LAST || !LAST.horizons || !LAST.horizons.length || !cw) return;
+  const genT = new Date(LAST.generated_utc).getTime();
+  const closeHz = LAST.horizons.find(h => h.is_close) || LAST.horizons[LAST.horizons.length - 1];
+  const closeT = genT + closeHz.horizon_h * 3600e3;
+  const histPts = (HIST || []).filter(p => p && p.t && p.spot != null)
+    .map(p => ({t: new Date(p.t).getTime(), spot: p.spot}))
+    .sort((a, b) => a.t - b.t);
+  const minT = histPts.length ? histPts[0].t : genT - 2 * 3600e3;
+  const maxT = closeT;
+
+  let prices = [];
+  histPts.forEach(p => prices.push(p.spot));
+  prices.push(LAST.spot);
+  LAST.horizons.forEach(h => { prices.push(h.zone90[0], h.zone90[1]); });
+  const walls = wallPrices();
+  walls.forEach(w => prices.push(w.price));
+  if (!prices.length) return;
+  let pMin = Math.min(...prices), pMax = Math.max(...prices);
+  if (pMin === pMax){ pMin -= 1; pMax += 1; }
+  const margin = (pMax - pMin) * 0.08;
+  pMin -= margin; pMax += margin;
+
+  const plotW = cw - PAD.left - PAD.right, plotH = ch - PAD.top - PAD.bottom;
+  const xOf = tms => PAD.left + (tms - minT) / Math.max(1, (maxT - minT)) * plotW;
+  const yOf = p => PAD.top + (1 - (p - pMin) / Math.max(1e-9, (pMax - pMin))) * plotH;
+  LAYOUT = {minT, maxT, pMin, pMax, plotW, plotH, xOf, yOf, genT, closeT, histPts, walls};
+}
+
+function wallPrices(){
+  if (!LAST || !LAST.horizons) return [];
+  const seen = {};
+  LAST.horizons.forEach(h => (h.walls_hit || []).forEach(w => {
+    if (!seen[w.kind]) seen[w.kind] = {kind: w.kind, price: w.price};
+  }));
+  return Object.values(seen);
+}
+
+const COL = {teal:"#26A69A", red:"#EF5350", gold:"#F0B90B", text:"#ECEAE4", muted:"#8A8A94", faint:"#5C5C66", line:"#212127"};
+
+function drawBg(){
+  ctxBg.clearRect(0, 0, cw, ch);
+  if (!LAYOUT || !LAST) return;
+  const {xOf, yOf, genT} = LAYOUT;
+  const hz = LAST.horizons.slice().sort((a, b) => a.horizon_h - b.horizon_h);
+  const nowX = xOf(genT), nowY = yOf(LAST.spot);
+
+  function fan(getLo, getHi, alpha){
+    ctxBg.beginPath();
+    ctxBg.moveTo(nowX, nowY);
+    hz.forEach(h => ctxBg.lineTo(xOf(genT + h.horizon_h * 3600e3), yOf(getHi(h))));
+    for (let i = hz.length - 1; i >= 0; i--){
+      const h = hz[i];
+      ctxBg.lineTo(xOf(genT + h.horizon_h * 3600e3), yOf(getLo(h)));
+    }
+    ctxBg.closePath();
+    ctxBg.fillStyle = `rgba(240,185,11,${alpha})`;
+    ctxBg.fill();
+  }
+  fan(h => h.zone90[0], h => h.zone90[1], 0.10);
+  fan(h => h.zone70[0], h => h.zone70[1], 0.22);
+}
+
+function drawMain(){
+  ctxMain.clearRect(0, 0, cw, ch);
+  if (!LAYOUT || !LAST) return;
+  const {xOf, yOf, pMin, pMax, plotW, plotH, genT, closeT, histPts, walls} = LAYOUT;
+
+  // grille horizontale (5 paliers)
+  ctxMain.strokeStyle = COL.line; ctxMain.lineWidth = 1; ctxMain.font = "10px " + getComputedStyle(document.body).fontFamily;
+  ctxMain.fillStyle = COL.faint; ctxMain.textBaseline = "middle";
+  for (let i = 0; i <= 4; i++){
+    const p = pMin + (pMax - pMin) * i / 4;
+    const y = yOf(p);
+    ctxMain.beginPath(); ctxMain.moveTo(PAD.left, y + 0.5); ctxMain.lineTo(cw - PAD.right, y + 0.5); ctxMain.stroke();
+    ctxMain.textAlign = "left";
+    ctxMain.fillText(nf(Math.round(p)), cw - PAD.right + 6, y);
+  }
+
+  // murs -- traversent tout le graphique (brief etape 4)
+  walls.forEach(w => {
+    const y = yOf(w.price);
+    ctxMain.strokeStyle = w.kind === "call" ? COL.teal : COL.red;
+    ctxMain.setLineDash([4, 3]); ctxMain.lineWidth = 1.2;
+    ctxMain.beginPath(); ctxMain.moveTo(PAD.left, y); ctxMain.lineTo(cw - PAD.right, y); ctxMain.stroke();
+    ctxMain.setLineDash([]);
+  });
+
+  // separation "maintenant"
+  const nowX = xOf(genT);
+  ctxMain.strokeStyle = COL.muted; ctxMain.setLineDash([2, 3]); ctxMain.lineWidth = 1;
+  ctxMain.beginPath(); ctxMain.moveTo(nowX + 0.5, PAD.top); ctxMain.lineTo(nowX + 0.5, ch - PAD.bottom); ctxMain.stroke();
+  ctxMain.setLineDash([]);
+
+  // trajectoire realisee (passe)
+  if (histPts.length > 1){
+    ctxMain.strokeStyle = COL.text; ctxMain.lineWidth = 1.4; ctxMain.beginPath();
+    histPts.forEach((p, i) => {
+      const x = xOf(p.t), y = yOf(p.spot);
+      if (i === 0) ctxMain.moveTo(x, y); else ctxMain.lineTo(x, y);
+    });
+    ctxMain.lineTo(nowX, yOf(LAST.spot));
+    ctxMain.stroke();
+  }
+
+  // mediane projetee (biais)
+  const hz = LAST.horizons.slice().sort((a, b) => a.horizon_h - b.horizon_h);
+  ctxMain.strokeStyle = COL.gold; ctxMain.lineWidth = 1.6; ctxMain.setLineDash([5, 4]);
+  ctxMain.beginPath(); ctxMain.moveTo(nowX, yOf(LAST.spot));
+  hz.forEach(h => ctxMain.lineTo(xOf(genT + h.horizon_h * 3600e3), yOf(h.median)));
+  ctxMain.stroke(); ctxMain.setLineDash([]);
+
+  // points horizon + labels temps
+  ctxMain.fillStyle = COL.gold; ctxMain.textAlign = "center";
+  hz.forEach(h => {
+    const x = xOf(genT + h.horizon_h * 3600e3), y = yOf(h.median);
+    ctxMain.beginPath(); ctxMain.arc(x, y, 2.6, 0, Math.PI * 2); ctxMain.fill();
+    ctxMain.fillStyle = COL.faint;
+    ctxMain.fillText(fmtHorizon(h), x, ch - PAD.bottom + 14);
+    ctxMain.fillStyle = COL.gold;
+  });
+
+  // point "maintenant"
+  ctxMain.fillStyle = COL.text;
+  ctxMain.beginPath(); ctxMain.arc(nowX, yOf(LAST.spot), 3, 0, Math.PI * 2); ctxMain.fill();
+}
+
+function drawCursor(){
+  ctxCursor.clearRect(0, 0, cw, ch);
+  if (!LAYOUT || !LAST || mouseX == null) return;
+  const {xOf, genT} = LAYOUT;
+  const hz = LAST.horizons;
+  // point horizon le plus proche du curseur (survol, brief : bornes/proba/biais/confiance)
+  let best = null, bestD = Infinity;
+  hz.forEach(h => {
+    const x = xOf(genT + h.horizon_h * 3600e3);
+    const d = Math.abs(x - mouseX);
+    if (d < bestD){ bestD = d; best = h; }
+  });
+  if (!best || bestD > 60) return;
+  const x = xOf(genT + best.horizon_h * 3600e3);
+  ctxCursor.strokeStyle = COL.muted; ctxCursor.setLineDash([2, 3]); ctxCursor.lineWidth = 1;
+  ctxCursor.beginPath(); ctxCursor.moveTo(x + 0.5, PAD.top); ctxCursor.lineTo(x + 0.5, ch - PAD.bottom); ctxCursor.stroke();
+  ctxCursor.setLineDash([]);
+
+  const b = biasLabel(best.bias || 0);
+  const lines = [
+    fmtHorizon(best),
+    `${t("ttMedian")}: ${nf(best.median)}`,
+    `70%: ${nf(best.zone70[0])} – ${nf(best.zone70[1])}`,
+    `90%: ${nf(best.zone90[0])} – ${nf(best.zone90[1])}`,
+    `${t("ttBias")}: ${b.txt}`,
+    `${t("ttConf")}: ${best.confidence}%`,
+  ];
+  ctxCursor.font = "11px " + getComputedStyle(document.body).fontFamily;
+  const boxW = Math.max(...lines.map(l => ctxCursor.measureText(l).width)) + 20;
+  const boxH = lines.length * 15 + 14;
+  let bx = x + 10; if (bx + boxW > cw) bx = x - boxW - 10;
+  let by = PAD.top + 6;
+  ctxCursor.fillStyle = "rgba(17,17,20,.95)"; ctxCursor.strokeStyle = COL.line;
+  ctxCursor.beginPath(); ctxCursor.roundRect ? ctxCursor.roundRect(bx, by, boxW, boxH, 6) : ctxCursor.rect(bx, by, boxW, boxH);
+  ctxCursor.fill(); ctxCursor.stroke();
+  ctxCursor.fillStyle = COL.text; ctxCursor.textAlign = "left";
+  lines.forEach((l, i) => ctxCursor.fillText(l, bx + 10, by + 16 + i * 15));
+}
+
+// ── Chargement ──────────────────────────────────────────────────────────
+async function loadAll(){
+  const tok = window.PageLoader ? PageLoader.begin(document.body) : null;
+  try{
+    const r = await fetch("/api/horizon?target=" + TARGET);
+    if (r.status === 401){
+      $("gate").textContent = t("needLogin");
+      $("gate").hidden = false;
+      $("app").hidden = true;
+      $("empty").hidden = true;
+      location.href = "/?login=1&next=/horizon";
+      return;
+    }
+    const d = await r.json().catch(() => ({ready:false}));
+    $("gate").hidden = true;
+    if (!d.ready){
+      $("app").hidden = true;
+      $("empty").hidden = false;
+      return;
+    }
+    fetch("/api/flow?hist=1&target=" + TARGET).then(r2 => r2.json()).then(hd => {
+      HIST = (hd && hd.ready && Array.isArray(hd.history)) ? hd.history : [];
+      if (LAST) scheduleDraw();
+    }).catch(() => { HIST = []; });
+    render(d);
+  }catch(e){
+    $("gate").hidden = true;
+    $("app").hidden = true;
+    $("empty").hidden = false;
+  }finally{
+    if (window.PageLoader && tok) PageLoader.end(document.body, tok);
+  }
+}
+
+document.querySelectorAll("#segTarget button").forEach(b => b.onclick = () => {
+  if (b.dataset.t === TARGET) return;
+  document.querySelectorAll("#segTarget button").forEach(x => x.classList.toggle("on", x === b));
+  TARGET = b.dataset.t;
+  HIST = [];
+  loadAll();
+});
+
+applyLang();
+initCanvases();
+loadAll();
+setInterval(() => { if (!document.hidden) loadAll(); }, 30000);
+</script>
+</body>
+</html>
