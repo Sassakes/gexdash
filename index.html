@@ -1138,6 +1138,7 @@ const T = {
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bandes, 1D min/max", tipOpen:"Daily Open ± multiples d'ATR14",
     dpNote:"FINRA off-exchange · publié J-1",
     dpBuild:"historique en construction — première donnée au prochain jour ouvré",
+    dpGoldUnavail:"non disponible pour l'or — FINRA couvre les actions américaines, pas le COMEX",
     dpUnavail:"indisponible", dpAvg:"moy. 20j",
     dpAcc:"Accumulation", dpDist:"Distribution", dpNeu:"Neutre",
     dCtxLbl:"Contexte", dpRise:"en hausse", dpFall:"en baisse", dpFlat:"stable",
@@ -1204,6 +1205,7 @@ const T = {
     tipGex:"Walls, 0DTE, flip, HGEX, Max Pain, G±", tipEm:"Expected move, bands, 1D min/max", tipOpen:"Daily Open ± ATR14 multiples",
     dpNote:"FINRA off-exchange · published T-1",
     dpBuild:"history building — first data next trading day",
+    dpGoldUnavail:"not available for gold — FINRA covers US equities, not COMEX",
     dpUnavail:"unavailable", dpAvg:"20d avg",
     dpAcc:"Accumulation", dpDist:"Distribution", dpNeu:"Neutral",
     dCtxLbl:"Context", dpRise:"rising", dpFall:"falling", dpFlat:"flat",
@@ -1259,6 +1261,18 @@ function paintTabs(){
 
 async function loadDark(){
   const big = $("dpRatio"), sub = $("dpDelta"), tag = $("dpTag");
+  // FINRA ne couvre pas le COMEX : pas d'équivalent Dark Pool pour l'or,
+  // ce n'est pas un manque temporaire — ne pas appeler /api/dark (400 garanti).
+  if (IS_GOLD(TARGET)){
+    big.textContent = "—";
+    sub.textContent = t("dpGoldUnavail");
+    tag.hidden = true;
+    LAST_DARK = null;
+    renderDark(null);
+    const cv = $("dpSpark"), sctx = cv.getContext("2d");
+    sctx.clearRect(0, 0, cv.width, cv.height);
+    return;
+  }
   try{
     const r = await fetch(`/api/dark?target=${TARGET}`);
     const d = await r.json();
@@ -1346,6 +1360,11 @@ function darkMetrics(d){
 function renderDark(d){
   const el = $("dpCtx");
   if (!el) return;
+  if (IS_GOLD(TARGET)){
+    el.className = "mid";
+    el.innerHTML = `<div class="gc-b">${t("dpGoldUnavail")}</div>`;
+    return;
+  }
   const m = darkMetrics(d);
   if (!m){
     el.className = "mid";
