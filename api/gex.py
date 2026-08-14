@@ -2097,9 +2097,14 @@ class handler(BaseHTTPRequestHandler):
         own cron user-agent. Computes+publishes stale targets; ?force=1
         recomputes all, and any hit between 00:00-03:00 Paris auto-forces
         (Globex-open anchor refresh). Market Discord ping: ?notify=1, or a
-        Vercel-cron hit between 15:20 and 18:00 Paris (backup notifier) — in
-        all cases at most ONCE per day via the kv guard. The 'news' webhook
-        receives a short note on every run that actually recomputed data."""
+        non-intraday Vercel-cron hit between 15:20 and 18:00 Paris (backup
+        notifier) — ?intraday=1 NEVER pings Discord, whatever the time. The
+        kv guard is only set once this same request actually published
+        fresh canonical levels (`computed` non-empty); a hit that merely
+        re-sends the last published payload (freshness-guard skip branch)
+        never locks out a genuine canonical publish that follows. At most
+        ONCE per day either way. The 'news' webhook receives a short note
+        on every run that actually recomputed data."""
         qs = parse_qs(parsed.query)
         ua = self.headers.get("user-agent", "") or ""
         entry = {"utc": _utc_now_iso(), "paris": paris_hhmm(),
@@ -2454,17 +2459,40 @@ class handler(BaseHTTPRequestHandler):
                 if ok:
                     computed.append(payload)
             # ---- ping Discord marchés : au plus une fois par jour ----
-            backup_slot = ok_vercel and "1520" <= now_p <= "1800"
+            # backup_slot exclut ?intraday=1, comme `canonical` plus haut --
+            # sans quoi un tir intrajournalier tombant dans la fenêtre de
+            # secours 15h20-18h00 declenche Discord avec des niveaux gelés
+            # AVANT le calcul canonique de 15h25 (bug prod 2026-08-14 :
+            # message parti à 15h20, valeurs différentes du site publié à
+            # 15h25 -- le verrou posé à 15h20 faisait "sauter" le vrai
+            # notify=1 cinq minutes plus tard via le `elif kv_get(guard)`
+            # ci-dessous).
+            backup_slot = (ok_vercel and "1520" <= now_p <= "1800"
+                           and "intraday" not in qs)
             want_notify = ("notify" in qs) or backup_slot
             guard = f"gex:notified:{today}"
             if not want_notify:
                 notified = False
             elif kv_get(guard):
                 notified = "skipped (déjà notifié aujourd'hui)"
-            else:
-                plist = computed or [p for p in (_latest_payload(t) for t in TARGETS)
-                                     if p and p.get("date") == today]
+            elif not computed:
+                # Cette requête n'a publié aucun niveau frais (branche
+                # "fresh and not force" plus haut) : le verrou ne doit
+                # JAMAIS être posé sur cette base, sinon une publication
+                # canonique arrivant juste après se ferait "sauter" alors
+                # qu'elle est la seule à avoir réellement calculé les
+                # niveaux du jour. On notifie quand même avec le dernier
+                # payload publié -- secours si QStash est totalement en
+                # panne -- mais SANS poser le verrou ni le lock.
+                plist = [p for p in (_latest_payload(t) for t in TARGETS)
+                         if p and p.get("date") == today]
                 notified = discord_notify(plist) if plist else False
+            else:
+                # `computed` non vide ici <=> want_notify implique canonical
+                # pour cette requête (mêmes conditions qs/ok_vercel/now_p) :
+                # publication canonique déjà faite plus haut, dans CETTE
+                # même requête, avant tout envoi Discord.
+                notified = discord_notify(computed)
                 if notified is True:
                     kv_set(guard, "1", ex=172800)
                     # verrouillage AUTOMATIQUE des niveaux après le 15h25 :

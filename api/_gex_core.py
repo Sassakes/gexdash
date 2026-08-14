@@ -1071,7 +1071,7 @@ def _discord_embed(payload, dashboard_url):
             "url": dashboard_url,
             "color": 0x26A69A if regime == "positive" else 0xEF5350,
             "fields": fields,
-            "footer": {"text": f"{tgt} {f(payload.get('nq_price'))} · basis {payload.get('basis')} ({payload.get('basis_source')}) · régime GAMMA {'+' if regime == 'positive' else '−'}"},
+            "footer": {"text": f"{tgt} {f(payload.get('nq_price'))} · basis {payload.get('basis')} ({payload.get('basis_source')}) · régime GAMMA {'+' if regime == 'positive' else '−'} · publié {payload.get('generated_utc', '—')} UTC"},
         }
 
 
