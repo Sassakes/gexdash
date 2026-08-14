@@ -130,8 +130,7 @@ zéro dès la clôture cash.
 1. Test A/B NQ et ES : ancien moteur vs nouveau, niveaux et string Pine
    **identiques au caractère près**.
 2. `python gex_levels.py --selftest`
-3. Batteries existantes : `test_ab`, `test_auth`, `test_security`, `test_prod`,
-   `test_feed`.
+3. `python test_html_ids.py`
 4. `node --check` sur le JS extrait de chaque page.
 5. Vérifier qu'aucune référence DOM n'est orpheline.
 6. Vérifier la symétrie FR/EN des dictionnaires.
