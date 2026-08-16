@@ -1,11 +1,17 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  GexDash Levels — indicateur Quantower
 //
-//  Colle la string generee par le bouton "Pine string" du terminal gexdash :
-//  l'indicateur la decode et trace les niveaux du jour (walls, flip, HGEX,
-//  Max Pain, Expected Move et grille sigma ancree sur le Daily Open).
+//  Deux sources de niveaux, l'une repli de l'autre :
+//    - Mode automatique (recommande) : colle ta cle API personnelle
+//      (/profile sur gexdash) une seule fois. Un minuteur en arriere-plan
+//      interroge /api/mylevels toutes les 5 min et choisit seul le marche
+//      d'apres le symbole du graphique.
+//    - Mode manuel (repli) : colle a la main la string generee par le
+//      bouton "Pine string" du terminal gexdash. Utilise si le mode auto
+//      est desactive, si aucune cle n'est saisie, ou tant qu'un appel auto
+//      echoue (les derniers niveaux valides recus restent affiches).
 //
-//  Format attendu (identique a celui de TradingView) :
+//  Format d'une string de niveaux (identique a celui de TradingView) :
 //      prix,libelle,code;prix,libelle,code;...
 //  Exemple :
 //      29500.0,Call Wall,res;29180.0,Gamma Flip,flip;28800.0,Put Wall,sup
@@ -21,14 +27,38 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using TradingPlatform.BusinessLayer;
 
 namespace GexDashLevels
 {
+    // Choix du marche pour le mode automatique. "Auto" detecte depuis le
+    // symbole du graphique (meme logique que le champ "Market" du script
+    // Pine) ; les autres valeurs forcent un marche donne quel que soit le
+    // symbole affiche.
+    public enum GexDashMarket { Auto, NQ, ES, SPX, GC, XAU }
+
     public class GexDashLevels : Indicator
     {
-        // ───────────────────────── entrees ─────────────────────────
-        [InputParameter("Niveaux (string gexdash)", 10)]
+        // ───────────────────────── entrees : mode automatique ─────────────────────────
+        [InputParameter("Cle API gexdash (voir /profile)", 1)]
+        public string ApiKey = "";
+
+        // Actif par defaut : des qu'une cle est collee, la recuperation
+        // demarre sans reglage supplementaire. Decocher revient au champ
+        // manuel ci-dessous. Sans cle saisie, ce reglage n'a aucun effet
+        // (rien a interroger).
+        [InputParameter("Mode automatique (recuperation via cle API)", 2)]
+        public bool AutoMode = true;
+
+        [InputParameter("Marche (Auto = detecte depuis le symbole du graphique)", 3)]
+        public GexDashMarket Market = GexDashMarket.Auto;
+
+        // ───────────────────────── entrees : repli manuel ─────────────────────────
+        [InputParameter("Niveaux (repli manuel, string gexdash)", 10)]
         public string LevelsInput = "";
 
         [InputParameter("Afficher GEX (walls, flip, HGEX, MP)", 20)]
@@ -83,7 +113,7 @@ namespace GexDashLevels
         [InputParameter("Couleur grille Open", 140)]
         public Color OpenColor = Color.FromArgb(139, 92, 246);     // violet
 
-        // ───────────────────────── etat interne ─────────────────────────
+        // ───────────────────────── etat interne : niveaux decodes ─────────────────────────
         private sealed class Level
         {
             public double Price;
@@ -93,6 +123,40 @@ namespace GexDashLevels
 
         private readonly List<Level> levels = new List<Level>();
         private string parsedFrom = null;   // string deja decodee (evite de reparser a chaque frame)
+        private string resolvedMarketCode = "NQ";   // marche effectif (apres resolution Auto), fige a OnInit
+
+        // ───────────────────────── etat interne : recuperation automatique ─────────────────────────
+        // Domaine de production gexdash — meme base que l'extension Chrome
+        // "TheHub GEX Levels Autofill" (extension/background.js), qui suit
+        // exactement le meme contrat d'API.
+        private const string API_BASE = "https://gexdash.wealthbuilders.group";
+        private const double POLL_MINUTES = 5.0;
+        private const double BACKOFF_CAP_MINUTES = 60.0;
+
+        // Un seul HttpClient partage par toutes les instances de l'indicateur
+        // (evite l'epuisement de sockets si plusieurs charts portent
+        // l'indicateur en meme temps) — jamais appele depuis OnPaintChart,
+        // uniquement depuis le minuteur en arriere-plan.
+        private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+
+        // Snapshot immuable : chaque cycle de fetch remplace la reference en
+        // bloc plutot que de muter ses champs en place, pour qu'OnPaintChart
+        // (thread de rendu) ne puisse jamais lire un etat partiellement mis
+        // a jour depuis le thread du minuteur.
+        private sealed class AutoState
+        {
+            public Dictionary<string, string> Pine = new Dictionary<string, string>();
+            public DateTime? LastSyncUtc;   // dernier succes (niveaux recus, changes ou non)
+            public bool LastOk;             // resultat du DERNIER essai (peut etre un echec avec cache encore valide)
+            public string LastError;        // motif lisible du dernier echec, null si LastOk
+            public int FailCount;
+        }
+
+        private volatile AutoState autoState = new AutoState();
+
+        private readonly object timerLock = new object();
+        private System.Threading.Timer pollTimer;
+        private volatile bool fetchInFlight = false;
 
         public GexDashLevels()
         {
@@ -104,12 +168,255 @@ namespace GexDashLevels
         protected override void OnInit()
         {
             this.parsedFrom = null;         // force un decodage au premier rendu
+            this.resolvedMarketCode = this.ResolveMarket();
+
+            this.StopTimer();
+            if (this.AutoMode && !string.IsNullOrWhiteSpace(this.ApiKey))
+                this.StartTimer();
+        }
+
+        // Quantower ne notifie pas systematiquement le retrait de l'indicateur
+        // par le meme nom de methode sur toutes les versions du SDK (OnRemove
+        // vs Dispose selon les versions) — celle-ci est la plus courante dans
+        // les indicateurs Quantower publics. Si la compilation echoue ici,
+        // remplacer par l'equivalent que ton SDK expose (cf. README).
+        protected override void OnRemove()
+        {
+            this.StopTimer();
+            base.OnRemove();
+        }
+
+        // ───────────────────────── selection du marche ─────────────────────────
+        // Meme ordre de priorite que le champ "Market" du script Pine
+        // (gex_levels.pine) : or futures d'abord (GC/MGC), puis or comptant,
+        // puis NQ, SPX, ES ; NQ par defaut si rien ne correspond.
+        private string ResolveMarket()
+        {
+            if (this.Market != GexDashMarket.Auto)
+                return this.Market.ToString();
+
+            string sym;
+            try
+            {
+                // this.Symbol est fige a la pose de l'indicateur sur le chart —
+                // resolu une seule fois ici, jamais depuis le thread du
+                // minuteur en arriere-plan.
+                sym = ((this.Symbol?.Name ?? "") + " " + (this.Symbol?.Id ?? "")).ToUpperInvariant();
+            }
+            catch
+            {
+                sym = "";
+            }
+
+            if (sym.Contains("GC")) return "GC";               // GC / MGC futures
+            if (sym.Contains("XAU") || sym.Contains("GOLD")) return "XAU";
+            if (sym.Contains("NQ") || sym.Contains("NDX") || sym.Contains("US100") || sym.Contains("USTEC")) return "NQ";
+            if (sym.Contains("SPX") || sym.Contains("SP500")) return "SPX";
+            if (sym.Contains("ES") || sym.Contains("US500")) return "ES";
+            return "NQ";
+        }
+
+        // ───────────────────────── minuteur en arriere-plan ─────────────────────────
+        // JAMAIS d'appel reseau dans OnPaintChart (appele plusieurs fois par
+        // seconde) : le minuteur tourne independamment et ne fait que remplir
+        // un cache (autoState) qu'OnPaintChart se contente de lire.
+        private void StartTimer()
+        {
+            lock (this.timerLock)
+            {
+                if (this.pollTimer != null)
+                    return;
+                // Premier tir immediat (delai zero), les suivants sont
+                // replanifies par ScheduleNext a la fin de chaque cycle —
+                // timer non-recurrent pour pouvoir appliquer le recul
+                // progressif apres un echec.
+                this.pollTimer = new System.Threading.Timer(this.OnTimerTick, null,
+                    TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        private void StopTimer()
+        {
+            lock (this.timerLock)
+            {
+                this.pollTimer?.Dispose();
+                this.pollTimer = null;
+            }
+        }
+
+        private void ScheduleNext(double minutes)
+        {
+            lock (this.timerLock)
+            {
+                if (this.pollTimer == null)
+                    return;             // minuteur arrete entre-temps (indicateur retire)
+                try { this.pollTimer.Change(TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan); }
+                catch (ObjectDisposedException) { /* course avec StopTimer : sans consequence */ }
+            }
+        }
+
+        private void OnTimerTick(object _)
+        {
+            if (this.fetchInFlight)
+            {
+                // Un appel precedent traine encore (reseau lent) : on ne
+                // l'empile pas, on se contente de reprogrammer normalement.
+                this.ScheduleNext(POLL_MINUTES);
+                return;
+            }
+            this.fetchInFlight = true;
+            _ = this.FetchOnceAsync();
+        }
+
+        private async Task FetchOnceAsync()
+        {
+            try
+            {
+                string url = API_BASE + "/api/mylevels?key=" + Uri.EscapeDataString(this.ApiKey ?? "");
+                HttpResponseMessage resp;
+                string body;
+                try
+                {
+                    resp = await Http.GetAsync(url).ConfigureAwait(false);
+                    body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    this.OnFetchFailed(ErrorLabel(0, ex.Message));
+                    return;
+                }
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    string apiErr = TryReadError(body);
+                    this.OnFetchFailed(ErrorLabel((int)resp.StatusCode, apiErr));
+                    return;
+                }
+
+                if (!TryParseLevels(body, out var pine))
+                {
+                    this.OnFetchFailed("reponse illisible");
+                    return;
+                }
+
+                this.OnFetchSucceeded(pine);
+            }
+            catch (Exception ex)
+            {
+                // Filet de securite : une exception non prevue ici ne doit
+                // jamais faire mourir le minuteur silencieusement.
+                this.OnFetchFailed(ErrorLabel(-1, ex.Message));
+            }
+            finally
+            {
+                this.fetchInFlight = false;
+            }
+        }
+
+        private static string ErrorLabel(int status, string detail)
+        {
+            switch (status)
+            {
+                case 401: return "cle API invalide ou manquante";
+                case 403: return "acces bloque (cle desactivee ou revoquee)";
+                case 429: return "trop de requetes, patience";
+                case 0: return "reseau injoignable" + (string.IsNullOrEmpty(detail) ? "" : " (" + detail + ")");
+                default: return string.IsNullOrEmpty(detail) ? ("erreur " + status) : detail;
+            }
+        }
+
+        private static string TryReadError(string body)
+        {
+            try
+            {
+                using (var doc = JsonDocument.Parse(body))
+                {
+                    if (doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String)
+                        return e.GetString();
+                }
+            }
+            catch { /* corps non-JSON (ex: page d'erreur brute) */ }
+            return null;
+        }
+
+        // Contrat attendu (/api/mylevels) :
+        //   {"levels": {"NQ": {"pine": "...", "published_utc": "..."}, "ES": {...}, ...},
+        //    "hash": "..."}
+        // Le hash n'est pas utilise cote indicateur : la comparaison utile
+        // ici est deja faite par ParseIfNeeded (compare la string du marche
+        // choisi, pas le lot entier des 5 marches).
+        private static bool TryParseLevels(string body, out Dictionary<string, string> pine)
+        {
+            pine = new Dictionary<string, string>();
+            try
+            {
+                using (var doc = JsonDocument.Parse(body))
+                {
+                    if (doc.RootElement.TryGetProperty("levels", out var levelsEl) &&
+                        levelsEl.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var prop in levelsEl.EnumerateObject())
+                        {
+                            if (prop.Value.ValueKind != JsonValueKind.Object)
+                                continue;
+                            if (prop.Value.TryGetProperty("pine", out var p) && p.ValueKind == JsonValueKind.String)
+                                pine[prop.Name.ToUpperInvariant()] = p.GetString() ?? "";
+                        }
+                    }
+                }
+                return pine.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void OnFetchSucceeded(Dictionary<string, string> pine)
+        {
+            this.autoState = new AutoState
+            {
+                Pine = pine,
+                LastSyncUtc = DateTime.UtcNow,
+                LastOk = true,
+                LastError = null,
+                FailCount = 0,
+            };
+            this.ScheduleNext(POLL_MINUTES);
+        }
+
+        private void OnFetchFailed(string reason)
+        {
+            var prev = this.autoState;
+            int failCount = prev.FailCount + 1;
+            this.autoState = new AutoState
+            {
+                Pine = prev.Pine,               // derniers niveaux valides conserves, jamais efface
+                LastSyncUtc = prev.LastSyncUtc,
+                LastOk = false,
+                LastError = reason,
+                FailCount = failCount,
+            };
+            double backoffMin = Math.Min(POLL_MINUTES * Math.Pow(2, failCount - 1), BACKOFF_CAP_MINUTES);
+            this.ScheduleNext(backoffMin);
+        }
+
+        // ───────────────────────── source effective des niveaux ─────────────────────────
+        private string EffectiveLevelsString()
+        {
+            if (this.AutoMode && !string.IsNullOrWhiteSpace(this.ApiKey))
+            {
+                var snap = this.autoState;
+                if (snap.Pine.TryGetValue(this.resolvedMarketCode, out var pine) && !string.IsNullOrWhiteSpace(pine))
+                    return pine;
+            }
+            return this.LevelsInput ?? "";
         }
 
         // ───────────────────────── decodage ─────────────────────────
         private void ParseIfNeeded()
         {
-            var raw = this.LevelsInput ?? "";
+            var raw = this.EffectiveLevelsString();
             if (raw == this.parsedFrom)
                 return;
 
@@ -241,9 +548,7 @@ namespace GexDashLevels
         {
             base.OnPaintChart(args);
 
-            this.ParseIfNeeded();
-            if (this.levels.Count == 0)
-                return;
+            this.ParseIfNeeded();   // lit uniquement le cache deja rempli par le minuteur
 
             var chart = this.CurrentChart;
             if (chart == null)
@@ -263,77 +568,82 @@ namespace GexDashLevels
 
             try
             {
-                using (var font = new Font("Segoe UI", this.FontSize, FontStyle.Regular))
+                if (this.levels.Count > 0)
                 {
-                    float labelX = rect.Right - this.LabelMargin;
-                    var taken = new List<float>();      // anti-chevauchement
-
-                    foreach (var lv in this.levels)
+                    using (var font = new Font("Segoe UI", this.FontSize, FontStyle.Regular))
                     {
-                        if (!IsVisible(lv.Kind))
-                            continue;
+                        float labelX = rect.Right - this.LabelMargin;
+                        var taken = new List<float>();      // anti-chevauchement
 
-                        double price = lv.Price - this.PriceOffset;
-                        double yd = wnd.CoordinatesConverter.GetChartY(price);
-                        if (double.IsNaN(yd) || double.IsInfinity(yd))
-                            continue;
-
-                        float y = (float)yd;
-                        if (y < rect.Top - 2 || y > rect.Bottom + 2)
-                            continue;                   // hors ecran : rien a tracer
-
-                        var color = ColorFor(lv.Kind);
-
-                        using (var pen = new Pen(color, this.LineWidth))
+                        foreach (var lv in this.levels)
                         {
-                            if (IsDashed(lv.Kind))
-                            {
-                                pen.DashStyle = DashStyle.Dash;
-                                pen.DashPattern = new float[] { 4f, 4f };
-                            }
-                            gr.DrawLine(pen, rect.Left, y, rect.Right, y);
-                        }
+                            if (!IsVisible(lv.Kind))
+                                continue;
 
-                        // Etiquette : on la decale si une autre occupe deja la
-                        // place, plutot que de superposer deux textes illisibles.
-                        string text = this.ShowPrice
-                            ? string.Format(CultureInfo.InvariantCulture, "{0}  {1:F1}",
-                                            lv.Label, price)
-                            : lv.Label;
+                            double price = lv.Price - this.PriceOffset;
+                            double yd = wnd.CoordinatesConverter.GetChartY(price);
+                            if (double.IsNaN(yd) || double.IsInfinity(yd))
+                                continue;
 
-                        float ty = y - font.Height - 1f;
-                        int guard = 0;
-                        while (guard++ < 20)
-                        {
-                            bool clash = false;
-                            foreach (var t in taken)
+                            float y = (float)yd;
+                            if (y < rect.Top - 2 || y > rect.Bottom + 2)
+                                continue;                   // hors ecran : rien a tracer
+
+                            var color = ColorFor(lv.Kind);
+
+                            using (var pen = new Pen(color, this.LineWidth))
                             {
-                                if (Math.Abs(t - ty) < font.Height)
+                                if (IsDashed(lv.Kind))
                                 {
-                                    clash = true;
-                                    break;
+                                    pen.DashStyle = DashStyle.Dash;
+                                    pen.DashPattern = new float[] { 4f, 4f };
                                 }
+                                gr.DrawLine(pen, rect.Left, y, rect.Right, y);
                             }
-                            if (!clash)
-                                break;
-                            ty -= font.Height;
+
+                            // Etiquette : on la decale si une autre occupe deja la
+                            // place, plutot que de superposer deux textes illisibles.
+                            string text = this.ShowPrice
+                                ? string.Format(CultureInfo.InvariantCulture, "{0}  {1:F1}",
+                                                lv.Label, price)
+                                : lv.Label;
+
+                            float ty = y - font.Height - 1f;
+                            int guard = 0;
+                            while (guard++ < 20)
+                            {
+                                bool clash = false;
+                                foreach (var t in taken)
+                                {
+                                    if (Math.Abs(t - ty) < font.Height)
+                                    {
+                                        clash = true;
+                                        break;
+                                    }
+                                }
+                                if (!clash)
+                                    break;
+                                ty -= font.Height;
+                            }
+                            taken.Add(ty);
+
+                            var size = gr.MeasureString(text, font);
+                            float tx = labelX - size.Width;
+                            if (tx < rect.Left + 2)
+                                tx = rect.Left + 2;
+
+                            // Fond semi-opaque : le texte reste lisible par-dessus
+                            // les bougies, quelle que soit la densite du chart.
+                            using (var bg = new SolidBrush(Color.FromArgb(170, 10, 10, 12)))
+                                gr.FillRectangle(bg, tx - 3, ty, size.Width + 6, size.Height);
+
+                            using (var brush = new SolidBrush(color))
+                                gr.DrawString(text, font, brush, tx, ty);
                         }
-                        taken.Add(ty);
-
-                        var size = gr.MeasureString(text, font);
-                        float tx = labelX - size.Width;
-                        if (tx < rect.Left + 2)
-                            tx = rect.Left + 2;
-
-                        // Fond semi-opaque : le texte reste lisible par-dessus
-                        // les bougies, quelle que soit la densite du chart.
-                        using (var bg = new SolidBrush(Color.FromArgb(170, 10, 10, 12)))
-                            gr.FillRectangle(bg, tx - 3, ty, size.Width + 6, size.Height);
-
-                        using (var brush = new SolidBrush(color))
-                            gr.DrawString(text, font, brush, tx, ty);
                     }
                 }
+
+                this.PaintAutoStatus(gr, rect);
             }
             catch (Exception ex)
             {
@@ -342,6 +652,47 @@ namespace GexDashLevels
             finally
             {
                 gr.Clip = oldClip;
+            }
+        }
+
+        // Discret, coin bas-gauche : heure de derniere synchro reussie, ou
+        // motif d'echec si aucun niveau n'a encore pu etre recupere. Pas
+        // affiche en mode manuel pur (rien a synchroniser).
+        private void PaintAutoStatus(Graphics gr, Rectangle rect)
+        {
+            if (!this.AutoMode || string.IsNullOrWhiteSpace(this.ApiKey))
+                return;
+
+            var snap = this.autoState;
+            string status;
+            Color color;
+
+            if (snap.LastSyncUtc.HasValue)
+            {
+                var local = snap.LastSyncUtc.Value.ToLocalTime();
+                status = string.Format(CultureInfo.InvariantCulture, "GexDash {0} — sync {1:HH:mm}",
+                    this.resolvedMarketCode, local);
+                if (!snap.LastOk)
+                {
+                    status += " (derniers niveaux valides conserves — echec : " + snap.LastError + ")";
+                    color = Color.FromArgb(220, 170, 60);
+                }
+                else
+                {
+                    color = Color.FromArgb(140, 140, 150);
+                }
+            }
+            else
+            {
+                status = "GexDash " + this.resolvedMarketCode + " — "
+                    + (snap.LastError ?? "synchronisation en cours…");
+                color = Color.FromArgb(220, 90, 90);
+            }
+
+            using (var font = new Font("Segoe UI", Math.Max(7, this.FontSize - 2), FontStyle.Italic))
+            using (var brush = new SolidBrush(color))
+            {
+                gr.DrawString(status, font, brush, rect.Left + 4, rect.Bottom - font.Height - 4);
             }
         }
     }

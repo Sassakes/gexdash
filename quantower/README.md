@@ -3,8 +3,11 @@
 Trace sur un chart Quantower les niveaux du terminal gexdash (walls, gamma
 flip, HGEX, Max Pain, Expected Move, grille sigma ancrée sur le Daily Open).
 
-Il décode **exactement la même string** que l'indicateur TradingView : le
-bouton « ⧉ Pine string » du terminal sert donc aux deux plateformes.
+Récupère les niveaux **automatiquement** via une clé API personnelle (une
+fois collée dans les réglages, plus rien à faire), avec un champ manuel en
+repli qui décode **exactement la même string** que l'indicateur TradingView
+— le bouton « ⧉ Pine string » du terminal reste utilisable pour les deux
+plateformes.
 
 ---
 
@@ -51,10 +54,35 @@ Si tu préfères compiler sans Visual Studio :
 
 ## Utilisation
 
+### Mode automatique (recommandé)
+
+Plus rien à coller chaque jour : l'indicateur récupère lui-même les niveaux
+en arrière-plan.
+
+1. Sur gexdash, ouvrir **/profile** → section **Clé API personnelle** →
+   **Copier** (ou **Régénérer** si tu n'en as pas encore).
+2. Dans Quantower, ouvrir les réglages de l'indicateur et coller la clé dans
+   le champ **Clé API gexdash (voir /profile)**.
+3. Laisser **Mode automatique** coché (c'est le réglage par défaut). Laisser
+   **Marché** sur `Auto` — l'indicateur détecte NQ/ES/SPX/GC/XAU depuis le
+   symbole du graphique, ou choisir une valeur pour le forcer.
+
+C'est tout : un minuteur en arrière-plan interroge l'API toutes les 5
+minutes et met à jour les niveaux affichés sans jamais bloquer le
+graphique. Un petit texte en bas à gauche du chart indique l'heure de la
+dernière synchronisation réussie, ou le motif d'un échec (clé invalide,
+réseau injoignable, trop de requêtes…) — en cas d'échec, les derniers
+niveaux valides reçus restent affichés, rien n'est jamais effacé.
+
+### Mode manuel (repli)
+
+Utile si le mode auto est désactivé, si aucune clé n'est saisie, ou tant
+qu'un appel échoue et que le cache est encore vide.
+
 1. Sur le terminal gexdash, sélectionner le marché (NQ / ES / SPX / GOLD).
 2. Cliquer **⧉ Pine string** — la string est copiée dans le presse-papier.
 3. Dans Quantower, ouvrir les réglages de l'indicateur et coller la string
-   dans le champ **Niveaux (string gexdash)**.
+   dans le champ **Niveaux (repli manuel, string gexdash)**.
 
 À refaire une fois par jour, idéalement après la publication de 15h25.
 
@@ -64,6 +92,9 @@ Si tu préfères compiler sans Visual Studio :
 
 | Réglage | Effet |
 |---|---|
+| Clé API gexdash | Active la récupération automatique — cf. `/profile` |
+| Mode automatique | Coché = récupération auto (si une clé est saisie) ; décoché = champ manuel uniquement |
+| Marché | `Auto` = détection depuis le symbole du graphique, ou valeur forcée |
 | Afficher GEX | Call/Put Wall, walls 0DTE, Gamma Flip, HGEX, Max Pain |
 | Afficher Expected Move | Bornes EM haute et basse |
 | Afficher grille Open | Daily Open et multiples de sigma |
@@ -73,6 +104,18 @@ Si tu préfères compiler sans Visual Studio :
 | Afficher le prix dans l'étiquette | Ajoute la valeur numérique au libellé |
 | Taille du texte / Épaisseur / Marge | Confort de lecture |
 | Couleurs | Une par famille, préréglées sur la palette du terminal |
+
+### Robustesse du mode automatique
+
+- **401 / 403 / 429** affichés distinctement (clé invalide, clé
+  bloquée/révoquée, trop de requêtes) plutôt qu'une exception.
+- **Échec réseau** : les derniers niveaux valides reçus restent affichés,
+  jamais d'écran vide.
+- **Recul progressif** après échecs répétés (5 min → 10 → 20 … plafonné à
+  60 min), remis à zéro au premier succès — jamais de boucle serrée sur une
+  erreur persistante.
+- L'appel réseau tourne sur un minuteur dédié, jamais dans le rendu du
+  graphique.
 
 Les niveaux structurants sont en trait plein, les repères secondaires en
 pointillés. Les étiquettes se décalent automatiquement lorsque plusieurs

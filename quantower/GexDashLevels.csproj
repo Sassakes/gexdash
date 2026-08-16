@@ -37,6 +37,16 @@
     </Reference>
   </ItemGroup>
 
+  <!-- Mode automatique (recuperation des niveaux via /api/mylevels) : le
+       parsing JSON utilise System.Text.Json. Sur net8.0 il fait deja partie
+       du framework partage -- rien a faire. Sur net472 (anciennes versions
+       de Quantower) il faut le package NuGet ; HttpClient, lui, est present
+       nativement dans les deux cas (System.Net.Http fait partie de .NET
+       Framework 4.5+). -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net8.0'">
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
   <!-- Copie automatique vers le dossier des scripts apres chaque build,
        pour ne pas avoir a deplacer les fichiers a la main. -->
   <Target Name="CopyToQuantower" AfterTargets="Build">
