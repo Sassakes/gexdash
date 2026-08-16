@@ -20,6 +20,18 @@
 //    1. Documents\Quantower\Settings\Scripts\Indicators\GexDashLevels\
 //    2. Y deposer ce fichier, puis redemarrer Quantower (compilation auto).
 //    3. Sur un chart : Indicators -> Custom -> GexDash Levels.
+//
+//  Dependance System.Drawing (Font/Pen/SolidBrush/Graphics/FontStyle/
+//  DashStyle) : NON evitable. La doc officielle Quantower
+//  (indicator-with-custom-painting-gdi) montre PaintChartEventArgs.Graphics
+//  comme un System.Drawing.Graphics standard -- c'est le SEUL mecanisme de
+//  dessin sur chart documente par le SDK, il n'existe pas de type de dessin
+//  "maison" Quantower alternatif. Si l'editeur integre de Quantower ne
+//  resout pas ces types (SDK v1.146.18 observe), compiler via Visual Studio
+//  + extension Quantower Algo (cf. README, methode deja documentee) : le
+//  .csproj fourni met <UseWindowsForms>true</UseWindowsForms>, ce qui tire
+//  automatiquement System.Drawing.Common sur les cibles .NET modernes. Voir
+//  README pour le detail de ce qui a ete verifie vs. suppose sur ce point.
 // ═══════════════════════════════════════════════════════════════════════════
 
 using System;
@@ -175,15 +187,16 @@ namespace GexDashLevels
                 this.StartTimer();
         }
 
-        // Quantower ne notifie pas systematiquement le retrait de l'indicateur
-        // par le meme nom de methode sur toutes les versions du SDK (OnRemove
-        // vs Dispose selon les versions) — celle-ci est la plus courante dans
-        // les indicateurs Quantower publics. Si la compilation echoue ici,
-        // remplacer par l'equivalent que ton SDK expose (cf. README).
-        protected override void OnRemove()
+        // Hook de nettoyage confirme par la doc officielle de la classe
+        // Indicator (api.quantower.com/docs/TradingPlatform.BusinessLayer.Indicator.html) :
+        // "protected virtual void OnClear()". Appele au retrait de
+        // l'indicateur du chart -- c'est ici, et seulement ici, que le
+        // minuteur doit s'arreter pour ne jamais continuer a interroger
+        // l'API apres suppression.
+        protected override void OnClear()
         {
             this.StopTimer();
-            base.OnRemove();
+            base.OnClear();
         }
 
         // ───────────────────────── selection du marche ─────────────────────────

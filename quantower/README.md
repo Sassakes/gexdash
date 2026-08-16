@@ -50,6 +50,31 @@ Si tu préfères compiler sans Visual Studio :
 > `TradingPlatform.BusinessLayer.dll` dans ton installation et utilise le
 > dossier qui le contient.
 
+### Éditeur intégré de Quantower (sans Visual Studio)
+
+Ce fichier utilise `Font`/`Pen`/`SolidBrush`/`Graphics`/`FontStyle`/
+`DashStyle` (`System.Drawing`) pour dessiner sur le chart — c'est le
+mécanisme **officiel et unique** documenté par Quantower pour le dessin
+personnalisé sur chart (`OnPaintChart` reçoit un `PaintChartEventArgs.Graphics`
+qui est un `System.Drawing.Graphics` standard dans tous les exemples
+officiels — pas de type de dessin « maison » Quantower alternatif). Ce n'est
+donc pas quelque chose que ce fichier pourrait éviter.
+
+Sur au moins la version **1.146.18**, l'éditeur intégré (celui qui compile
+directement le `.cs` collé dans Quantower, sans passer par le `.csproj`) ne
+résout pas ces types par défaut — contrairement à Visual Studio, où le
+`.csproj` fourni ici règle `<UseWindowsForms>true</UseWindowsForms>`, ce qui
+tire automatiquement `System.Drawing.Common` sur les cibles .NET modernes.
+Je n'ai pas trouvé, dans la documentation Quantower publique, de mécanisme
+documenté pour ajouter une référence d'assembly supplémentaire depuis
+l'éditeur intégré lui-même (pas de directive `#r`, pas de panneau
+« Références » mentionné). Si ton édition de l'éditeur intégré en propose
+un (clic droit sur le script, menu, ou fichier de configuration à côté du
+`.cs` dans le dossier `Indicators\GexDashLevels\`), c'est la piste à
+essayer en premier. À défaut, compiler via une des deux méthodes
+ci-dessus (Quantower Algo ou `dotnet build`) reste la voie qui fonctionne
+de façon vérifiée pour ce fichier.
+
 ---
 
 ## Utilisation
