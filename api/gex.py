@@ -1411,6 +1411,12 @@ STATIC = {
     "/ui.js": ("ui.js", "application/javascript; charset=utf-8"),
     "/flux-panel.js": ("flux-panel.js", "application/javascript; charset=utf-8"),
     "/loader.js": ("loader.js", "application/javascript; charset=utf-8"),
+    # socle de thème partagé : theme.css porte le :root canonique (source
+    # unique de la palette), theme.js l'expose au JS via window.THEME —
+    # var() ne résolvant pas dans une string passée à un canvas ou à
+    # lightweight-charts. Toute page qui affiche une couleur charge les deux.
+    "/theme.css": ("theme.css", "text/css; charset=utf-8"),
+    "/theme.js": ("theme.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
     "/thehub-mark.png": ("thehub-mark.png", "image/png"),

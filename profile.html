@@ -8,18 +8,15 @@
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
 <style>
-  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md).
+     Dupliqué depuis theme.css à dessein — si la feuille partagée ne
+     charge pas, une fenêtre modale doit rester fermable. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12);
-    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350; --red-soft:rgba(239,83,80,.12);
-    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
-  }
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
 
@@ -48,9 +45,9 @@
   .actions{display:flex; gap:8px; justify-content:flex-end; margin-top:14px}
   button{font-family:var(--sans); font-size:12.5px; padding:9px 16px; border-radius:6px; border:1px solid var(--line-strong); background:var(--surface2); color:var(--text); cursor:pointer; min-height:38px; transition:background .12s ease, color .12s ease}
   button:hover{background:var(--surface3)}
-  button.primary{background:var(--gold); color:#0A0A0C; border-color:var(--gold); font-weight:600}
-  button.primary:hover{background:#ffd23f}
-  button.danger{color:var(--red); border-color:rgba(239,83,80,.4)}
+  button.primary{background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:600}
+  button.primary:hover{background:var(--gold-hi)}
+  button.danger{color:var(--red); border-color:rgba(var(--red-rgb),.4)}
   button:disabled{opacity:.5; cursor:default}
   .msg{font-size:12px; margin-top:10px; min-height:16px}
   .msg.err{color:var(--red)} .msg.ok{color:var(--teal)}

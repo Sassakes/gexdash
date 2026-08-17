@@ -9,18 +9,16 @@
 <meta name="description" content="Politique de confidentialité de gexdash (TheHub) et de l'extension Chrome TheHub — GEX Levels Autofill.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
-     une déclaration display: sur un id ou une classe le neutralise. */
+     une déclaration display: sur un id ou une classe le neutralise.
+     Dupliqué depuis theme.css à dessein : si la feuille partagée ne
+     charge pas, la règle doit tenir quand même. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2E2E36;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
-    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
-  }
   *{box-sizing:border-box; margin:0}
   html{scroll-behavior:smooth}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.62}
@@ -29,7 +27,7 @@
   header{
     display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
     border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
-    background:rgba(10,10,12,.95); backdrop-filter:blur(10px);
+    background:rgba(var(--bg-rgb),.95); backdrop-filter:blur(10px);
   }
   header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
   header h1 b{color:var(--gold)}
@@ -40,12 +38,12 @@
   .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
   .lang button{background:none; border:none; color:var(--muted); font:inherit;
                font-size:11px; padding:5px 10px; cursor:pointer; min-height:28px}
-  .lang button.on{background:var(--gold); color:#0A0A0C; font-weight:600}
+  .lang button.on{background:var(--gold); color:var(--bg); font-weight:600}
 
   .hero{padding:34px 20px 6px; max-width:760px; margin:0 auto}
   .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
     color:var(--gold); display:flex; align-items:center; gap:9px; margin-bottom:12px}
-  .eyebrow .dot{width:6px; height:6px; border-radius:50%; background:var(--gold); box-shadow:0 0 8px rgba(240,185,11,.4)}
+  .eyebrow .dot{width:6px; height:6px; border-radius:50%; background:var(--gold); box-shadow:0 0 8px rgba(var(--gold-rgb),.4)}
   .hero h2{font-size:23px; font-weight:600; letter-spacing:-.01em}
   .hero p{color:var(--muted); font-size:14px; margin-top:8px; max-width:62ch}
   .hero .upd{font-family:var(--mono); font-size:11px; color:var(--faint); margin-top:14px}
@@ -55,7 +53,7 @@
   .shead{display:flex; align-items:center; gap:12px; padding:15px 20px;
     border-bottom:1px solid var(--line); background:var(--surface2)}
   .shead i{font-family:var(--mono); font-size:11px; color:var(--gold); font-style:normal;
-    border:1px solid rgba(240,185,11,.35); padding:3px 8px}
+    border:1px solid rgba(var(--gold-rgb),.35); padding:3px 8px}
   .shead h3{font-size:14.5px; font-weight:600}
   .sbody{padding:18px 20px}
   .sbody > * + *{margin-top:12px}
