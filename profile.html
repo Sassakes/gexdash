@@ -11,6 +11,7 @@
 <!-- Palette : le :root vit dans theme.css, source unique partagée par
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md).
      Dupliqué depuis theme.css à dessein — si la feuille partagée ne
@@ -73,11 +74,7 @@
 <body>
 <header>
   <h1><b>GEX</b>DASH · <span id="hTitle">PROFIL</span></h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/news" id="navNews">News</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -169,6 +166,7 @@ if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 
 function applyLang(){
+  Shell.mount("appnav"); Shell.setLang(LANG);
   document.documentElement.lang = LANG;
   $("hTitle").textContent = t("title");
   $("hAccount").textContent = t("account");

@@ -18,6 +18,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -75,6 +76,8 @@
   .topnav{
     margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
   }
+  /* La nav applicative occupe sa propre bande sous la ligne d'identite. */
+  #appnav{flex:1 1 100%; margin-top:2px}
   .topnav a{
     text-decoration:none; font-size:12px; white-space:nowrap;
     display:inline-flex; align-items:center; gap:7px;
@@ -897,15 +900,6 @@
     </div>
   </div>
   <nav class="topnav">
-    <!-- 1. espace applicatif : le dashboard est une section du produit -->
-    <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
-
-    <a href="/heatmap" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="heatLbl">Heatmap</span></a>
-    <a href="/news" class="nav-app" id="newsLink" hidden><span class="ic" aria-hidden="true">▤</span><span id="newsLbl">News</span></a>
-    <a href="/doc" class="nav-app"><span class="ic" aria-hidden="true">?</span><span id="docLbl">Doc</span></a>
-
-    <span class="nav-sep" aria-hidden="true"></span>
-
     <!-- 2. communauté & outils : pastilles colorées pour accrocher l'œil -->
     <a id="dcLink" class="nav-ext dc" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
     <a id="tvLink" class="nav-ext tv" target="_blank" rel="noopener"
@@ -928,6 +922,16 @@
       <button data-l="en">EN</button>
     </span>
   </nav>
+
+  <!-- Navigation applicative : rendue par shell.js depuis une liste
+       unique partagee par toutes les pages. Les quatre liens ecrits ici
+       a la main ont ete retires -- c'est ce qui avait fait que /horizon
+       n'etait atteignable depuis aucune page et /flux depuis une seule.
+       Placee APRES les utilitaires et en flex-basis:100%, elle prend sa
+       propre bande : le header tient en deux lignes au lieu de trois,
+       et sur un terminal chaque ligne de header se paie en hauteur de
+       graphique. -->
+  <nav id="appnav"></nav>
 </header>
 
 <div class="ctxbar">
@@ -1424,8 +1428,7 @@ function authPaint(){
   btn.classList.toggle("on", !!AUTH_USER);
   lbl.textContent = AUTH_USER || t("authIn");
   if (avatar) avatar.textContent = AUTH_USER ? AUTH_USER.slice(0, 1).toUpperCase() : "⬡";
-  const nl = $("newsLink");                 // réservé aux membres
-  if (nl) nl.hidden = !AUTH_USER;
+  Shell.setAuth(!!AUTH_USER);   // retire le cadenas des destinations gardées
   btn.title = AUTH_USER ? t("authProfileTip") : t("authInTip");
   if (caret) { caret.hidden = !AUTH_USER; caret.title = t("authMenuAria"); }
   const mpl = $("authMenuProfileLbl"); if (mpl) mpl.textContent = t("authProfileTip");
@@ -1491,7 +1494,6 @@ async function authSubmit(){
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Erreur");
     AUTH_USER = d.user;
-    const nlb = $("newsLbl"); if (nlb) nlb.textContent = t("news");
     authPaint();
     msg.className = "ok"; msg.textContent = t("authWelcome");
     setTimeout(() => {
@@ -1580,11 +1582,9 @@ function applyLang(){
   $("copyBtn").textContent = t("copy");
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
-  $("dashLbl").textContent = t("dash");
+  Shell.mount("appnav"); Shell.setLang(LANG);
   const dl = $("darkLbl"); if (dl) dl.textContent = t("dCtxLbl");
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
-  $("docLbl").textContent = t("doc");
-  const hl = $("heatLbl"); if (hl) hl.textContent = t("heat");
   authPaint();
   $("donLbl").textContent = t("don");
   $("donateLink").title = t("donTip");

@@ -12,6 +12,7 @@
 <!-- Palette : le :root vit dans theme.css, source unique partagée par
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise.
@@ -88,10 +89,7 @@
 <body>
 <header>
   <h1><b>THE</b>HUB · <span id="hTitle">Confidentialité</span></h1>
-  <nav class="topnav">
-    <a href="/" id="nTerm">Terminal</a>
-    <a href="/doc" id="nDoc">Doc</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
 </header>
 
@@ -217,9 +215,8 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  $("nTerm").textContent = L.term;
-  $("nDoc").textContent = L.doc;
-  $("eyebrow").textContent = L.eyebrow;
+  Shell.mount("appnav"); Shell.setLang(LANG);
+    $("eyebrow").textContent = L.eyebrow;
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
   $("upd").textContent = L.upd;

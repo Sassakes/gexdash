@@ -12,6 +12,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -226,12 +227,7 @@
 <body>
 <header>
   <h1><b>THE</b>HUB · <span id="hTitle">Documentation</span></h1>
-  <nav class="topnav">
-    <a href="/" id="nTerm">Terminal</a>
-    <a href="/dash" id="nDash">Dashboard</a>
-    <a href="/heatmap" id="nHeat">Heatmap</a>
-    <a href="/news" id="nNews" hidden>News</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
 </header>
 
@@ -615,11 +611,8 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  $("nTerm").textContent = L.term;
-  $("nDash").textContent = L.dash;
-  $("nHeat").textContent = L.heat;
-  $("nNews").textContent = L.news;
-  $("heroT").textContent = L.heroT;
+  Shell.mount("appnav"); Shell.setLang(LANG);
+        $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
   $("cd1k").textContent = L.cd1k; $("cd1s").textContent = L.cd1s;
   $("cd2k").textContent = L.cd2k; $("cd2s").textContent = L.cd2s;
@@ -670,7 +663,7 @@ setInterval(tickCd, 1000);
 (async function gateNewsNav(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  const nl = $("nNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 </script>
 </body>

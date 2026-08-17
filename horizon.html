@@ -12,6 +12,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
   [hidden]{display:none !important}
@@ -100,9 +101,7 @@
 <script src="/loader.js"></script>
 <header>
   <h1><b>GEX</b>DASH · <span id="hTitle">HORIZON</span></h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -228,6 +227,7 @@ const t = k => T[LANG][k];
 const nf = n => n.toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
 
 function applyLang(){
+  Shell.mount("appnav"); Shell.setLang(LANG);
   document.documentElement.lang = LANG;
   $("hTitle").textContent = t("title");
   $("hHorizon").textContent = t("hHorizon");

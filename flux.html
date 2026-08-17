@@ -13,6 +13,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   [hidden]{display:none !important}
 
@@ -196,13 +197,7 @@
 <body>
 <header>
   <h1><b>THE</b>HUB · <span id="hTitle">Flux</span></h1>
-  <nav class="topnav">
-    <a href="/" id="nTerm">Terminal</a>
-    <a href="/dash" id="nDash">Dashboard</a>
-    <a href="/heatmap" id="nHeat">Heatmap</a>
-    <a href="/doc" id="nDoc">Doc</a>
-    <a href="/news" id="nNews" hidden>News</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
 </header>
 
@@ -508,12 +503,8 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  $("nTerm").textContent = L.term;
-  $("nDash").textContent = L.dash;
-  $("nHeat").textContent = L.heat;
-  $("nDoc").textContent = L.doc;
-  $("nNews").textContent = L.news;
-  $("eyebrowLink").textContent = "Documentation";
+  Shell.mount("appnav"); Shell.setLang(LANG);
+          $("eyebrowLink").textContent = "Documentation";
   $("eyebrowHere").textContent = LANG === "fr" ? "Flux" : "Flow";
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
@@ -564,7 +555,7 @@ render();
 (async function gateNewsNav(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  const nl = $("nNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 </script>
 </body>

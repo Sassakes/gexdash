@@ -1417,6 +1417,10 @@ STATIC = {
     # lightweight-charts. Toute page qui affiche une couleur charge les deux.
     "/theme.css": ("theme.css", "text/css; charset=utf-8"),
     "/theme.js": ("theme.js", "application/javascript; charset=utf-8"),
+    # chassis de navigation partage : une seule liste de destinations pour
+    # toutes les pages. Avant, chacune maintenait la sienne -- /horizon
+    # n'etait atteignable depuis aucune page et /flux depuis une seule.
+    "/shell.js": ("shell.js", "application/javascript; charset=utf-8"),
     "/favicon.png": ("favicon.png", "image/png"),
     "/favicon.ico": ("favicon.png", "image/png"),
     "/thehub-mark.png": ("thehub-mark.png", "image/png"),

@@ -11,6 +11,7 @@
 <!-- Palette : le :root vit dans theme.css, source unique partagée par
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -253,12 +254,7 @@
 <body>
 <header>
   <h1><b>GEX</b>DASH · MACRO</h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/dash" id="navDash">Dashboard</a>
-    <a href="/heatmap" id="navHeat">Heatmap</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -755,9 +751,8 @@ async function loadMacro(){ const d = await jget("/macro.json?t=" + Date.now());
 
 function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
-  $("#navTerm").textContent = t("term"); $("#navHeat").textContent = t("heat"); $("#navDash").textContent = t("dash");
-  $("#navDoc").textContent = t("doc");
-  $("#macroTitle").textContent = t("macroTitle");
+  Shell.mount("appnav"); Shell.setLang(LANG);
+    $("#macroTitle").textContent = t("macroTitle");
   $("#colNews").textContent = t("colNews");
   $("#colFeed").textContent = t("colFeed");
   const hb = document.getElementById("magHelpBox");

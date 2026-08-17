@@ -12,6 +12,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
@@ -178,12 +179,7 @@
 <body>
 <header>
   <h1><b>GEX</b>DASH · HEATMAP</h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/dash" id="navDash">Dashboard</a>
-    <a href="/news" id="navNews" hidden>News</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
   <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
 </header>
 
@@ -473,9 +469,8 @@ function paintLevelDate(){
 
 function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
-  $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
-  $("#navNews").textContent = t("news"); $("#navDoc").textContent = t("doc");
-  const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
+  Shell.mount("appnav"); Shell.setLang(LANG);
+    const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
   paintLevelDate();
   $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
@@ -689,7 +684,7 @@ TARGETS.forEach(loadStatic);
 (async function gateNewsNav(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  const nl = $("#navNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 /* La heatmap interroge TROIS marchés à chaque tour : un intervalle fixe de
    20 s coûtait ~540 requêtes/heure, week-end compris. On garde 20 s pendant

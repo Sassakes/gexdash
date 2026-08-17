@@ -17,6 +17,7 @@
      toutes les pages. Ne pas redéclarer de token de couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
@@ -428,12 +429,7 @@
     <circle cx="50" cy="50" r="13" fill="var(--gold)"/>
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/heatmap" id="navHeat">Heatmap</a>
-    <a href="/news" id="navNews" hidden>News</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
+  <nav class="topnav" id="appnav"></nav>
 </header>
 
 <div class="addbar">
@@ -1565,10 +1561,7 @@ function firstFreeSpot(w, h){
 }
 
 $("hTitle").textContent = tx("title");
-$("navTerm").textContent = tx("term");
-$("navHeat").textContent = tx("heat");
-$("navNews").textContent = tx("news");
-$("navDoc").textContent = tx("doc");
+Shell.mount("appnav"); Shell.setLang(LANG);
 enhanceAllSelects();
 $("addLbl").textContent = tx("add");
 $("hintLbl").textContent = tx("hint");
@@ -1640,7 +1633,7 @@ document.querySelectorAll("#panelChips .chip").forEach(b => b.onclick = () => {
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
   $("panelChips").hidden = !ok;
   $("panelAuthMsg").hidden = ok;
-  const nl = $("navNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 
 
