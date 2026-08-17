@@ -85,7 +85,8 @@
 
   /* ─────────── PROPOSÉ : mêmes composants, échelles du socle ─────────── */
   .p-head{display:flex; align-items:center; gap:var(--sp-4); padding:var(--sp-3) var(--sp-4);
-          background:var(--surface); border-radius:var(--r-md); box-shadow:var(--el-1)}
+          background:var(--surface2); border-radius:var(--r-md);
+          border:1px solid var(--hair)}
   .p-head h3{font-size:var(--fs-lg); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight)}
   .p-head h3 b{color:var(--gold)}
   .p-nav{margin-left:auto; display:flex; gap:var(--sp-1)}
@@ -100,8 +101,8 @@
          transition:background var(--t-fast)}
   .p-btn:hover{background:var(--surface3)}
   .p-btn.pri{background:var(--gold); color:var(--bg); font-weight:var(--fw-bold)}
-  .p-card{background:var(--surface); border-radius:var(--r-md); padding:var(--sp-5);
-          box-shadow:var(--el-1)}
+  .p-card{background:var(--surface2); border-radius:var(--r-md); padding:var(--sp-5);
+          border:1px solid var(--hair)}
   .p-card .eyebrow{font-family:var(--mono); font-size:var(--fs-micro);
                    letter-spacing:var(--ls-caps); text-transform:uppercase; color:var(--faint)}
   .p-card h4{font-size:var(--fs-lg); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight);
@@ -114,13 +115,13 @@
   .p-chip.on{background:rgba(var(--gold-rgb),var(--a-subtle)); color:var(--gold)}
   .p-lv{display:flex; align-items:center; gap:var(--sp-2); font-family:var(--mono);
         font-size:var(--fs-sm); padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm);
-        background:var(--surface2)}
+        background:var(--surface2); border:1px solid var(--hair)}
   .p-lv i{width:3px; height:18px; border-radius:var(--r-full); flex:none}
   .p-lv .lab{color:var(--faint); font-size:var(--fs-micro); letter-spacing:var(--ls-label);
              text-transform:uppercase}
   .p-lv .px{margin-left:auto; color:var(--text); font-weight:var(--fw-medium)}
-  .p-stat{background:var(--surface); border-radius:var(--r-md); padding:var(--sp-4) var(--sp-5);
-          box-shadow:var(--el-1)}
+  .p-stat{background:var(--surface2); border-radius:var(--r-md); padding:var(--sp-4) var(--sp-5);
+          border:1px solid var(--hair)}
   .p-stat .k{font-family:var(--mono); font-size:var(--fs-micro); letter-spacing:var(--ls-caps);
              text-transform:uppercase; color:var(--faint)}
   .p-stat .n{font-family:var(--mono); font-size:var(--fs-xl); font-weight:var(--fw-medium);
@@ -176,17 +177,19 @@
 
 <section>
   <div class="stitle">Rayons et élévation</div>
-  <p class="snote">Douze rayons sans système deviennent cinq. La profondeur passe
-     d'un halo doré posé partout — le tic qui date le plus le rendu — à des ombres
-     noires sobres ; l'or lumineux est réservé à ce qui est réellement vivant.</p>
+  <p class="snote">Douze rayons sans système deviennent cinq. Pour la profondeur, une
+     ombre noire ne sert à rien sur un fond à #0A0A0C — constat fait en rendant cette
+     page, les trois paliers d'ombre y étaient indiscernables. Elle vient donc d'une
+     surface plus claire que le fond et d'un filet blanc translucide ; l'ombre est
+     réservée au flottant (menu, modale) et l'or lumineux à ce qui est vivant.</p>
   <div class="row">
     <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-xs)"></i><span>xs 3</span></div>
     <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-sm)"></i><span>sm 6</span></div>
     <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-md)"></i><span>md 10</span></div>
     <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-lg)"></i><span>lg 16</span></div>
-    <div class="swatch"><i style="background:var(--surface); box-shadow:var(--el-1); border-radius:var(--r-sm)"></i><span>el-1</span></div>
-    <div class="swatch"><i style="background:var(--surface); box-shadow:var(--el-2); border-radius:var(--r-sm)"></i><span>el-2</span></div>
-    <div class="swatch"><i style="background:var(--surface); box-shadow:var(--el-3); border-radius:var(--r-sm)"></i><span>el-3</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border:1px solid var(--hair); border-radius:var(--r-sm)"></i><span>hair .06</span></div>
+    <div class="swatch"><i style="background:var(--surface3); border:1px solid var(--hair-strong); border-radius:var(--r-sm)"></i><span>hair .10</span></div>
+    <div class="swatch"><i style="background:var(--surface3); box-shadow:var(--el-float); border-radius:var(--r-sm)"></i><span>el-float</span></div>
     <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center"><span class="dotlive"></span></i><span>glow-live</span></div>
   </div>
 </section>
@@ -211,10 +214,10 @@
 
 <section>
   <div class="stitle">Carte de données</div>
-  <p class="snote">Le dégradé vertical et la bordure de 1px produisent le rendu
-     « boîte » qui date. À droite : surface plate, une ombre discrète, et surtout
-     une hiérarchie à trois niveaux nets — surtitre minuscule, titre affirmé,
-     valeur dominante en chiffres.</p>
+  <p class="snote">Le dégradé vertical produit le rendu « boîte » qui date. À droite :
+     surface plate mais plus claire que le fond, filet blanc à 6 % au lieu d'un gris
+     opaque, et surtout une hiérarchie à trois niveaux nets — surtitre minuscule,
+     titre affirmé, valeur dominante en chiffres.</p>
   <div class="pair">
     <div class="col now"><div class="clab">actuel</div><div class="stage">
       <div class="n-card"><h4>Net GEX</h4>
