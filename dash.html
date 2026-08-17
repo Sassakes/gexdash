@@ -13,27 +13,23 @@
 <script src="/ui.js"></script>
 <script src="/loader.js"></script>
 <script src="/widget/flux-widget.js"></script>
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.13); --gold-glow:rgba(240,185,11,.32);
-    --teal:#26A69A; --red:#EF5350;
-    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --disp:"Space Grotesk", var(--mono);
-  }
+  
   *{box-sizing:border-box; margin:0; padding:0}
   #empty{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     text-align:center; padding:72px 20px; min-height:46vh;
   }
   #empty[hidden]{display:none}
-  #empty .empty-t{font-family:var(--disp); font-size:16px; color:var(--text); letter-spacing:.01em}
+  #empty .empty-t{font-family:var(--sans); font-size:16px; color:var(--text); letter-spacing:.01em}
   #empty .empty-s{color:var(--muted); font-size:12.5px; margin:6px 0 22px}
   /* 3 colonnes thematiques plutot qu'une seule rangee qui wrappait sans
      logique -- charts seuls / + heatmap-flux / + flux-actus, du plus
@@ -56,7 +52,7 @@
   }
   body{
     background:
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.055), transparent 62%),
       var(--bg);
     color:var(--text); font-family:var(--mono); font-size:13px; line-height:1.55;
     -webkit-font-smoothing:antialiased;
@@ -74,7 +70,7 @@
   }
   .mark{width:26px; height:26px; flex:none}
   header h1{
-    font-family:var(--disp); font-size:15px; font-weight:700;
+    font-family:var(--sans); font-size:15px; font-weight:700;
     letter-spacing:.2em; text-transform:uppercase; white-space:nowrap;
   }
   header h1 em{font-style:normal; color:var(--gold)}
@@ -94,8 +90,8 @@
     background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
     font-size:12px; font-weight:500; padding:8px 18px; cursor:pointer; min-height:36px;
   }
-  #addBtn:hover{background:rgba(240,185,11,.24)}
-  #addBtn.on{background:rgba(240,185,11,.3)}
+  #addBtn:hover{background:rgba(var(--gold-rgb),.24)}
+  #addBtn.on{background:rgba(var(--gold-rgb),.3)}
   /* Popover d'ajout : un seul déclencheur au lieu de deux paires
      select+bouton — cliquer un format ajoute directement le chart avec le
      marché sélectionné (persistant tant que le popover reste ouvert dans la
@@ -103,7 +99,7 @@
   .addpop{
     position:absolute; top:calc(100% + 8px); left:0; z-index:30; width:250px;
     background:rgba(14,14,18,.97); border:1px solid var(--line-strong);
-    box-shadow:0 14px 40px rgba(0,0,0,.7); padding:14px;
+    box-shadow:0 14px 40px rgba(var(--black-rgb),.7); padding:14px;
   }
   .pop-sec + .pop-sec{margin-top:12px; padding-top:12px; border-top:1px solid var(--line)}
   .pop-lab{
@@ -121,8 +117,8 @@
   #ivChips .chip{flex-basis:calc(33.333% - 4px)}
   .chip:hover{color:var(--text); border-color:var(--line-strong)}
   .chip.on{
-    color:var(--gold); border-color:rgba(240,185,11,.5);
-    background:linear-gradient(180deg, rgba(240,185,11,.16), rgba(240,185,11,.07));
+    color:var(--gold); border-color:rgba(var(--gold-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.16), rgba(var(--gold-rgb),.07));
   }
   .chip.wide{flex:1 1 100%; text-align:left}
   .pop-authmsg{font-size:11.5px; color:var(--muted); line-height:1.5}
@@ -140,12 +136,12 @@
     font-size:12px; padding:8px 16px; cursor:pointer; min-height:36px;
     transition:color .12s ease, border-color .12s ease;
   }
-  #clearBtn:hover{color:var(--red); border-color:rgba(239,83,80,.5)}
+  #clearBtn:hover{color:var(--red); border-color:rgba(var(--red-rgb),.5)}
   #clearBtn[hidden]{display:none}
   .hint{color:var(--faint); font-size:11.5px}
   #board{position:relative}
   .card{
-    position:absolute; background:linear-gradient(180deg, #131317, #101013);
+    position:absolute; background:linear-gradient(180deg, var(--card-top), var(--card-bottom));
     border:1px solid var(--line);
   }
   .card .head{
@@ -153,21 +149,21 @@
     padding:0 12px; border-bottom:1px solid var(--line);
   }
   .card .head .t{
-    font-family:var(--disp); font-size:10px; font-weight:600; letter-spacing:.18em;
+    font-family:var(--sans); font-size:10px; font-weight:600; letter-spacing:.18em;
     text-transform:uppercase; color:var(--gold);
   }
   .card .head .n{font-size:10.5px; color:var(--faint)}
   .cpanel{
     position:absolute; top:8px; right:8px; z-index:9; width:220px;
     background:rgba(14,14,18,.97); border:1px solid var(--line-strong);
-    box-shadow:0 14px 40px rgba(0,0,0,.7); padding:12px; font-size:11px;
+    box-shadow:0 14px 40px rgba(var(--black-rgb),.7); padding:12px; font-size:11px;
   }
   .cpanel .cp-head{
     display:flex; justify-content:space-between; align-items:center;
     margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--line);
   }
   .cpanel .cp-head b{
-    font-family:var(--disp); font-size:9.5px; letter-spacing:.18em;
+    font-family:var(--sans); font-size:9.5px; letter-spacing:.18em;
     text-transform:uppercase; color:var(--gold);
   }
   .cpanel .cp-x{background:none; border:none; color:var(--faint); cursor:pointer; font-size:13px}
@@ -196,21 +192,21 @@
   }
   .cchips button:hover{color:var(--text)}
   .cchips button.on{
-    color:var(--gold); border-color:rgba(240,185,11,.5);
-    background:linear-gradient(180deg, rgba(240,185,11,.14), rgba(240,185,11,.06));
+    color:var(--gold); border-color:rgba(var(--gold-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.14), rgba(var(--gold-rgb),.06));
   }
-  .cchips .led{width:5px; height:5px; border-radius:50%; background:#33333B; flex:none}
+  .cchips .led{width:5px; height:5px; border-radius:50%; background:var(--line-hi); flex:none}
   .cchips button.on .led{background:var(--gold); box-shadow:0 0 5px var(--gold-glow)}
   /* même code couleur que le terminal : or = GEX, teal = EM, violet = Open */
-  .cchips button[data-g="gex"] .led{background:rgba(240,185,11,.28)}
-  .cchips button[data-g="gex"].on{color:#F0B90B; border-color:rgba(240,185,11,.5)}
-  .cchips button[data-g="gex"].on .led{background:#F0B90B; box-shadow:0 0 6px rgba(240,185,11,.6)}
-  .cchips button[data-g="em"] .led{background:rgba(38,166,154,.28)}
-  .cchips button[data-g="em"].on{color:#26A69A; border-color:rgba(38,166,154,.5)}
-  .cchips button[data-g="em"].on .led{background:#26A69A; box-shadow:0 0 6px rgba(38,166,154,.6)}
-  .cchips button[data-g="open"] .led{background:rgba(139,92,246,.28)}
-  .cchips button[data-g="open"].on{color:#8B5CF6; border-color:rgba(139,92,246,.5)}
-  .cchips button[data-g="open"].on .led{background:#8B5CF6; box-shadow:0 0 6px rgba(139,92,246,.6)}
+  .cchips button[data-g="gex"] .led{background:rgba(var(--gold-rgb),.28)}
+  .cchips button[data-g="gex"].on{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+  .cchips button[data-g="gex"].on .led{background:var(--gold); box-shadow:0 0 6px rgba(var(--gold-rgb),.6)}
+  .cchips button[data-g="em"] .led{background:rgba(var(--teal-rgb),.28)}
+  .cchips button[data-g="em"].on{color:var(--teal); border-color:rgba(var(--teal-rgb),.5)}
+  .cchips button[data-g="em"].on .led{background:var(--teal); box-shadow:0 0 6px rgba(var(--teal-rgb),.6)}
+  .cchips button[data-g="open"] .led{background:rgba(var(--violet-rgb),.28)}
+  .cchips button[data-g="open"].on{color:var(--violet); border-color:rgba(var(--violet-rgb),.5)}
+  .cchips button[data-g="open"].on .led{background:var(--violet); box-shadow:0 0 6px rgba(var(--violet-rgb),.6)}
   .card .head .gh{display:flex}
   .card .head .gh .cgear{width:26px; height:26px; font-size:12px}
   .card .head .rm{
@@ -224,8 +220,8 @@
   .nload{padding:20px; text-align:center; color:var(--faint); font-size:11px}
   .nitem{display:block; padding:8px 11px; border-bottom:1px solid var(--line);
     text-decoration:none; color:inherit}
-  .nitem:hover{background:rgba(255,255,255,.03)}
-  .nitem.hot{border-left:2px solid var(--red); background:rgba(239,83,80,.05)}
+  .nitem:hover{background:rgba(var(--white-rgb),.03)}
+  .nitem.hot{border-left:2px solid var(--red); background:rgba(var(--red-rgb),.05)}
   .nitem .ntop{display:flex; align-items:center; gap:6px; margin-bottom:2px}
   .nitem .nsrc{font-size:8.5px; letter-spacing:.07em; text-transform:uppercase;
     color:var(--muted); background:var(--surface2); padding:1px 5px; border-radius:2px}
@@ -263,7 +259,7 @@
      heatmap.html) plutôt que sauter d'un palier à l'autre. */
   .hmbox{position:relative; overflow:auto; -webkit-overflow-scrolling:touch}
   .cchips .hmnoise{font-size:11px; padding:2px 7px; line-height:1.4}
-  .cchips .hmnoise.on{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .cchips .hmnoise.on{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
   .hmload{padding:22px; text-align:center; color:var(--faint); font-size:11px}
   .hmt{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:9.5px}
   .hmt th{position:sticky; top:0; z-index:2; background:var(--surface2); color:var(--muted);
@@ -280,7 +276,7 @@
     border:1px solid; border-radius:2px; letter-spacing:.02em; vertical-align:middle}
   .pxbox{position:absolute; left:0; right:0; z-index:0; pointer-events:none;
     border:1px solid var(--gold); border-radius:2px;
-    background:rgba(240,185,11,.06); box-shadow:0 0 10px rgba(240,185,11,.16);
+    background:rgba(var(--gold-rgb),.06); box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
     transition:top .4s cubic-bezier(.22,.61,.36,1), height .2s ease; will-change:top}
   .pxbox.noanim{transition:none}
   /* Carte Flux : le widget public (widget/flux-widget.js) a son propre
@@ -293,13 +289,13 @@
   .card .thub-flux .tb,.card .thub-flux .tb2,.card .thub-flux .synth{flex:none}
   .card .thub-flux .wrap{flex:1 1 auto; height:auto !important; min-height:180px}
   .card .box{height:calc(100% - 37px); position:relative}
-  body.editing .card{outline:1px dashed rgba(240,185,11,.55)}
+  body.editing .card{outline:1px dashed rgba(var(--gold-rgb),.55)}
   body.editing .card .head{cursor:grab}
   body.editing .card .box{pointer-events:none; opacity:.85}
   .card .rsz{
     position:absolute; right:0; bottom:0; width:18px; height:18px; display:none;
     cursor:nwse-resize; z-index:8;
-    background:linear-gradient(135deg, transparent 50%, rgba(240,185,11,.7) 50%);
+    background:linear-gradient(135deg, transparent 50%, rgba(var(--gold-rgb),.7) 50%);
   }
   body.editing .card .rsz{display:block}
   .card.dragging{outline:1px dashed var(--gold); z-index:20; opacity:.92}
@@ -335,13 +331,13 @@
   /* ═══════════════ couche de raffinement ═══════════════ */
   body{
     background:
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
-      radial-gradient(900px 500px at 50% 118%, rgba(38,166,154,.035), transparent 60%),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.055), transparent 62%),
+      radial-gradient(900px 500px at 50% 118%, rgba(var(--teal-rgb),.035), transparent 60%),
       var(--bg);
   }
   ::-webkit-scrollbar{width:9px; height:9px}
-  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
-  ::-webkit-scrollbar-thumb:hover{background:#33333D}
+  ::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--line-hi)}
   header h1 em{text-shadow:0 0 22px var(--gold-glow)}
   .topnav a{position:relative}
   .topnav a::after{
@@ -351,16 +347,16 @@
   }
   .topnav a:hover::after{transform:scaleX(1)}
   .addbar select, #addBtn, #editBtn{min-height:36px}
-  #addBtn{background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1))}
-  #addBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
+  #addBtn{background:linear-gradient(180deg, rgba(var(--gold-rgb),.2), rgba(var(--gold-rgb),.1))}
+  #addBtn:hover{background:linear-gradient(180deg, rgba(var(--gold-rgb),.3), rgba(var(--gold-rgb),.16))}
   #addBtn:active, #editBtn:active{transform:translateY(1px)}
   .card{
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+    box-shadow:inset 0 1px 0 rgba(var(--white-rgb),.03), 0 14px 34px -18px rgba(var(--black-rgb),.65);
     transition:box-shadow .16s ease;
   }
-  .card:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 18px 44px -18px rgba(0,0,0,.8)}
-  .card .head{background:linear-gradient(180deg, rgba(255,255,255,.015), transparent)}
-  .card.dragging{box-shadow:0 24px 60px -16px rgba(0,0,0,.85), 0 0 0 1px var(--gold-glow)}
+  .card:hover{box-shadow:inset 0 1px 0 rgba(var(--white-rgb),.03), 0 18px 44px -18px rgba(var(--black-rgb),.8)}
+  .card .head{background:linear-gradient(180deg, rgba(var(--white-rgb),.015), transparent)}
+  .card.dragging{box-shadow:0 24px 60px -16px rgba(var(--black-rgb),.85), 0 0 0 1px var(--gold-glow)}
   .card .rsz{
     background:linear-gradient(135deg, transparent 55%, var(--gold) 55%);
     opacity:.55; transition:opacity .12s ease;
@@ -368,7 +364,7 @@
   .card .rsz:hover{opacity:1}
   /* la grille d'ancrage se révèle en mode édition (fond posé par JS) */
   body.editing #board{
-    outline:1px dashed rgba(240,185,11,.18); outline-offset:8px;
+    outline:1px dashed rgba(var(--gold-rgb),.18); outline-offset:8px;
   }
   #empty{letter-spacing:.02em}
 
@@ -379,34 +375,34 @@
   }
   html::before{
     width:820px; height:520px; top:-260px; left:50%; margin-left:-500px;
-    background:radial-gradient(closest-side, rgba(240,185,11,.13), transparent 70%);
+    background:radial-gradient(closest-side, rgba(var(--gold-rgb),.13), transparent 70%);
     animation:drift1 46s ease-in-out infinite alternate;
   }
   html::after{
     width:760px; height:560px; bottom:-320px; right:-180px;
-    background:radial-gradient(closest-side, rgba(38,166,154,.1), transparent 70%);
+    background:radial-gradient(closest-side, rgba(var(--teal-rgb),.1), transparent 70%);
     animation:drift2 58s ease-in-out infinite alternate;
   }
   @keyframes drift1{from{transform:translate(0,0)} to{transform:translate(140px,60px) scale(1.1)}}
   @keyframes drift2{from{transform:translate(0,0)} to{transform:translate(-120px,-80px) scale(1.08)}}
   body{
     background:
-      linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px),
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.05), transparent 62%),
+      linear-gradient(rgba(var(--white-rgb),.014) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--white-rgb),.014) 1px, transparent 1px),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.05), transparent 62%),
       var(--bg);
     background-size:44px 44px, 44px 44px, auto, auto;
   }
   .card{
     background:
-      linear-gradient(180deg, #141419, #101014) padding-box,
-      linear-gradient(135deg, rgba(240,185,11,.3), rgba(255,255,255,.05) 40%,
-                      rgba(38,166,154,.2)) border-box;
+      linear-gradient(180deg, var(--card-top), var(--card-bottom)) padding-box,
+      linear-gradient(135deg, rgba(var(--gold-rgb),.3), rgba(var(--white-rgb),.05) 40%,
+                      rgba(var(--teal-rgb),.2)) border-box;
     border:1px solid transparent;
   }
 
   header h1 em{
-    background:linear-gradient(100deg, var(--gold) 42%, #FFE9A3 50%, var(--gold) 58%);
+    background:linear-gradient(100deg, var(--gold) 42%, var(--gold-pale) 50%, var(--gold) 58%);
     background-size:230% 100%;
     -webkit-background-clip:text; background-clip:text; color:transparent;
     animation:shine 7s ease-in-out infinite;
@@ -424,12 +420,12 @@
 <main>
 <header>
   <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
-    <g stroke="#F0B90B" stroke-width="6" fill="none">
+    <g stroke="var(--gold)" stroke-width="6" fill="none">
       <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
       <line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/>
       <line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/>
     </g>
-    <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
+    <circle cx="50" cy="50" r="13" fill="var(--gold)"/>
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
   <nav class="topnav">
@@ -492,10 +488,10 @@
 
 <div id="empty" hidden>
   <svg viewBox="0 0 100 100" width="46" height="46" aria-hidden="true" style="opacity:.5;margin-bottom:14px">
-    <rect x="10" y="14" width="34" height="24" rx="2" fill="none" stroke="#F0B90B" stroke-width="3"/>
-    <rect x="56" y="14" width="34" height="24" rx="2" fill="none" stroke="#26A69A" stroke-width="3"/>
-    <rect x="10" y="48" width="34" height="24" rx="2" fill="none" stroke="#8A8A94" stroke-width="3"/>
-    <rect x="56" y="48" width="34" height="24" rx="2" fill="none" stroke="#8A8A94" stroke-width="3"/>
+    <rect x="10" y="14" width="34" height="24" rx="2" fill="none" stroke="var(--gold)" stroke-width="3"/>
+    <rect x="56" y="14" width="34" height="24" rx="2" fill="none" stroke="var(--teal)" stroke-width="3"/>
+    <rect x="10" y="48" width="34" height="24" rx="2" fill="none" stroke="var(--muted)" stroke-width="3"/>
+    <rect x="56" y="48" width="34" height="24" rx="2" fill="none" stroke="var(--muted)" stroke-width="3"/>
   </svg>
   <div class="empty-t">Ton plan de travail est vide</div>
   <div class="empty-s">Ajoute des charts un par un, ou pars d'une disposition prête.</div>
@@ -524,8 +520,10 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const C = {gold:"#F0B90B", muted:"#8A8A94", faint:"#5C5C66", line:"#212127", text:"#ECEAE4",
-           teal:"#26A69A", red:"#EF5350"};
+/* Couleurs de dessin lues depuis theme.css via THEME (cf. theme.js) :
+   var() ne résout pas dans une string passée à un canvas. */
+const C = {gold:THEME.gold, muted:THEME.muted, faint:THEME.faint, line:THEME.line,
+           text:THEME.text, teal:THEME.teal, red:THEME.red};
 const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, hgex:C.gold,
                     gpos:C.teal, gneg:C.red, emh:C.text, eml:C.text,
                     ivh:C.muted, ivl:C.muted, mpain:C.gold, emb:C.text};
@@ -631,8 +629,8 @@ function drawGroup(series, pay, grp, meta){
       push(pay.open_grid.anchor, C.gold, "Open", 3, true);
       for (const g of pay.open_grid.levels){
         const m = g.mult != null ? g.mult : "";
-        push(g.up,   "#EF5350", "σ+" + m, 3, false);
-        push(g.down, "#26A69A", "σ−" + m, 3, false);
+        push(g.up,   C.red, "σ+" + m, 3, false);
+        push(g.down, C.teal, "σ−" + m, 3, false);
       }
     }
     return lines;
@@ -1187,13 +1185,13 @@ function hmCellStyle(v, p95, p99){
   if (!v || !p95) return "";
   const x = Math.pow(Math.min(1, Math.abs(v) / p95), 0.7);
   if (Math.abs(v) >= p99)
-    return "background:#F0B90B;color:#0A0A0C;font-weight:600;box-shadow:0 0 9px rgba(240,185,11,.45)";
+    return `background:${THEME.gold};color:${THEME.bg};font-weight:600;box-shadow:0 0 9px ${THEME.alpha("gold", .45)}`;
   if (v > 0){
     const R = Math.round(15 + 23*x), G = Math.round(26 + 140*x), B = Math.round(24 + 130*x);
-    return `background:rgb(${R},${G},${B});color:${x > .5 ? "#05140F" : "#7FCDBF"}`;
+    return `background:rgb(${R},${G},${B});color:${x > .5 ? THEME.onTealDark : THEME.onTealLight}`;
   }
   const R = Math.round(28 + 211*x), G = Math.round(18 + 65*x), B = Math.round(18 + 62*x);
-  return `background:rgb(${R},${G},${B});color:${x > .5 ? "#1C0707" : "#E6A6A4"}`;
+  return `background:rgb(${R},${G},${B});color:${x > .5 ? THEME.onRedDark : THEME.onRedLight}`;
 }
 function hmFmt(v){
   const a = Math.abs(v), s = v < 0 ? "-" : "";
@@ -1206,8 +1204,8 @@ function hmFmt(v){
    Pine, pas le tableau levels[]) et mêmes libellés que heatmap.html, pour
    que les deux vues restent visuellement identiques. */
 const HM_KEEP = {res:1, sup:1, res0:1, sup0:1, flip:1, mpain:1, emh:1, eml:1};
-const HM_KCOL = {res:"#26A69A", sup:"#EF5350", res0:"#26A69A", sup0:"#EF5350",
-                 flip:"#F0B90B", mpain:"#B9903A", emh:"#8A8A94", eml:"#8A8A94"};
+const HM_KCOL = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red,
+                 flip:C.gold, mpain:THEME.goldDim, emh:C.muted, eml:C.muted};
 const HM_KLAB = {res:"CW", sup:"PW", res0:"CW·0", sup0:"PW·0", flip:"FLIP", mpain:"MP", emh:"EM▲", eml:"EM▼"};
 function hmParseLevels(pine){
   if (!pine) return [];

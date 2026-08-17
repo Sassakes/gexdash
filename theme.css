@@ -69,6 +69,9 @@
      localement, un signe inversé est invisible à la relecture. */
   --teal:#26A69A;
   --teal-soft:rgba(38,166,154,.14);
+  /* Teal assourdi, pendant de --gold-dim : série de graphique
+     secondaire (bandes EM ±50%) que le teal plein écraserait. */
+  --teal-dim:#1E6F68;
   --red:#EF5350;
   --red-soft:rgba(239,83,80,.12);
 

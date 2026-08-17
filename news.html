@@ -8,6 +8,9 @@
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -15,15 +18,7 @@
      fermer. Le !important est ici volontaire et sûr. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12);
-    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350; --red-soft:rgba(239,83,80,.12);
-    --orange:#F59E0B; --yellow:#EAC54F; --blue:#4C8DFF;
-    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
-  }
+  
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden; position:relative}
 
@@ -45,7 +40,7 @@
   .langsel button.on{background:var(--gold-soft); color:var(--gold)}
   .sess{display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted); letter-spacing:.08em; font-family:var(--mono)}
   .dot{width:8px; height:8px; border-radius:50%; background:var(--faint)}
-  .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
+  .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(var(--teal-rgb),.85); animation:pulse 1.8s infinite}
   .dot.pre,.dot.post{background:var(--gold)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -65,8 +60,8 @@
   .scen-row .lab .ic{color:var(--teal); margin-right:6px}
   .bias{margin-left:auto; display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px}
   .biaschip{padding:3px 10px; border:1px solid; border-radius:6px; font-size:11px; letter-spacing:.06em; font-weight:600}
-  .biaschip.bullish{color:var(--teal); border-color:rgba(38,166,154,.5)}
-  .biaschip.bearish{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .biaschip.bullish{color:var(--teal); border-color:rgba(var(--teal-rgb),.5)}
+  .biaschip.bearish{color:var(--red); border-color:rgba(var(--red-rgb),.5)}
   .biaschip.neutral{color:var(--muted); border-color:var(--line-strong)}
   .bar{height:5px; border-radius:3px; background:var(--surface3); margin-top:10px; overflow:hidden}
   .bar > i{display:block; height:100%; background:linear-gradient(90deg,var(--teal),#2FD3C4); border-radius:3px}
@@ -78,12 +73,12 @@
      événements à fort impact. */
   .feeditem{display:block; padding:9px 12px; border-bottom:1px solid var(--line);
     text-decoration:none; color:inherit; transition:background .12s}
-  .feeditem:hover{background:rgba(255,255,255,.03)}
-  .feeditem.hot{border-left:2px solid var(--red); background:rgba(239,83,80,.05)}
+  .feeditem:hover{background:rgba(var(--white-rgb),.03)}
+  .feeditem.hot{border-left:2px solid var(--red); background:rgba(var(--red-rgb),.05)}
   .feeditem .ftop{display:flex; align-items:center; gap:7px; margin-bottom:3px}
   .feeditem .fsrc{font-size:9px; letter-spacing:.08em; text-transform:uppercase;
     padding:1px 6px; border-radius:2px; background:var(--surface2); color:var(--muted)}
-  .feeditem .fsrc.macro{color:#8B5CF6} .feeditem .fsrc.marché{color:#26A69A}
+  .feeditem .fsrc.macro{color:var(--violet)} .feeditem .fsrc.marché{color:var(--teal)}
   .feeditem .fsrc[data-t="banque centrale"]{color:var(--gold)}
   .feeditem[data-hot="1"] .fsrc{color:var(--red)}
   .feeditem .fago{margin-left:auto; font-size:9.5px; color:var(--faint);
@@ -128,7 +123,7 @@
   .item.pin{background:var(--red-soft); border-left:2px solid var(--red)}
   .item-top{display:flex; align-items:center; gap:8px; margin-bottom:4px}
   .src{font-family:var(--mono); font-size:9px; letter-spacing:.04em; color:var(--gold); background:var(--gold-soft); padding:1px 6px; border-radius:3px; text-transform:uppercase}
-  .pintag{font-family:var(--mono); font-size:8px; letter-spacing:.06em; color:var(--red); background:var(--red-soft); border:1px solid rgba(239,83,80,.4); padding:1px 5px; border-radius:3px}
+  .pintag{font-family:var(--mono); font-size:8px; letter-spacing:.06em; color:var(--red); background:var(--red-soft); border:1px solid rgba(var(--red-rgb),.4); padding:1px 5px; border-radius:3px}
   .ago{font-family:var(--mono); font-size:10px; color:var(--faint); margin-left:auto}
   .head{font-size:12px; line-height:1.35; font-weight:500}
   .item.pin .head{color:var(--red)}
@@ -178,7 +173,7 @@
     margin-top:6px; background:var(--surface2)}
   .mrow{display:flex; align-items:center; gap:10px; padding:5px 13px;
     font-family:var(--mono); font-size:11.5px; line-height:1.5}
-  .mrow:hover{background:rgba(255,255,255,.02)}
+  .mrow:hover{background:rgba(var(--white-rgb),.02)}
   .msym{color:var(--text); flex:1 1 auto; min-width:0; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap}
   .mdp{flex:0 0 auto; text-align:right; min-width:56px; font-weight:600}
@@ -225,8 +220,8 @@
       border-radius:8px;
     }
     .mtabs button.on{
-      color:var(--gold); border-color:rgba(240,185,11,.5);
-      background:rgba(240,185,11,.07);
+      color:var(--gold); border-color:rgba(var(--gold-rgb),.5);
+      background:rgba(var(--gold-rgb),.07);
     }
 
     .wrap{padding:10px 12px 24px; gap:0; height:auto; min-height:0}

@@ -54,6 +54,7 @@ const THEME_FALLBACK = {
 
   teal:          "#26A69A",
   tealSoft:      "rgba(38,166,154,.14)",
+  tealDim:       "#1E6F68",
   red:           "#EF5350",
   redSoft:       "rgba(239,83,80,.12)",
 

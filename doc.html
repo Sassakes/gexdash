@@ -8,6 +8,10 @@
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -15,13 +19,7 @@
      fermer. Le !important est ici volontaire et sûr. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2E2E36;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350; --blue:#5B8DEF;
-    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
-  }
+  
   *{box-sizing:border-box; margin:0}
   html{scroll-behavior:smooth}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.6}
@@ -31,7 +29,7 @@
   header{
     display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
     border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
-    background:rgba(10,10,12,.95); backdrop-filter:blur(10px);
+    background:rgba(var(--bg-rgb),.95); backdrop-filter:blur(10px);
   }
   header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
   header h1 b{color:var(--gold)}
@@ -48,7 +46,7 @@
   .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
   .lang button{background:none; border:none; color:var(--muted); font:inherit;
                font-size:11px; padding:5px 10px; cursor:pointer}
-  .lang button.on{background:var(--gold); color:#0A0A0C; font-weight:600}
+  .lang button.on{background:var(--gold); color:var(--bg); font-weight:600}
 
   /* ── hero + compteurs ── */
   .hero{padding:30px 20px 4px; max-width:1180px; margin:0 auto}
@@ -86,7 +84,7 @@
   .shead{display:flex; align-items:center; gap:12px; padding:16px 22px;
          border-bottom:1px solid var(--line); background:var(--surface2)}
   .shead i{font-family:var(--mono); font-size:11px; color:var(--gold); font-style:normal;
-           border:1px solid rgba(240,185,11,.35); padding:3px 8px}
+           border:1px solid rgba(var(--gold-rgb),.35); padding:3px 8px}
   .shead h3{font-size:15px; font-weight:600; letter-spacing:.01em}
   .sbody{padding:20px 22px}
   .sbody > * + *{margin-top:14px}
@@ -100,17 +98,17 @@
   .chip{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
   .chip .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
             display:inline-block; margin-bottom:9px}
-  .chip.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  .chip.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
-  .chip.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .chip.g .tg{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+  .chip.t .tg{color:var(--teal); border-color:rgba(var(--teal-rgb),.5)}
+  .chip.r .tg{color:var(--red); border-color:rgba(var(--red-rgb),.5)}
   .chip p{font-size:12.5px; color:var(--muted)}
 
   /* bloc : CTA vers le guide dédié /flux (remplace l'ancienne section Flux
      complète, jugée illisible noyée avec les huit autres sujets de la page) */
   .fluxCtaBtn{display:inline-flex; align-items:center; gap:7px; padding:11px 20px;
     font-size:13px; font-weight:600; text-decoration:none; background:var(--gold);
-    color:#0A0A0C; border:1px solid var(--gold); transition:background .15s ease}
-  .fluxCtaBtn:hover{background:#ffc93d}
+    color:var(--bg); border:1px solid var(--gold); transition:background .15s ease}
+  .fluxCtaBtn:hover{background:var(--gold-hi)}
 
   /* blocs : sélecteur de familles interactif */
   .fam{border:1px solid var(--line); background:var(--surface2)}
@@ -123,12 +121,12 @@
   }
   .famtabs button i{width:8px; height:8px; border-radius:50%; background:currentColor;
                     opacity:.35; transition:opacity .14s ease}
-  .famtabs button:hover{color:var(--text); background:rgba(255,255,255,.02)}
-  .famtabs button.on{background:rgba(255,255,255,.03)}
+  .famtabs button:hover{color:var(--text); background:rgba(var(--white-rgb),.02)}
+  .famtabs button.on{background:rgba(var(--white-rgb),.03)}
   .famtabs button.on i{opacity:1; box-shadow:0 0 8px currentColor}
   .fampane{padding:16px 18px}
   .fampane .fx{font-size:13px; color:var(--muted); margin-bottom:14px; max-width:70ch}
-  .fampane svg{width:100%; height:auto; display:block; background:#0C0C0F;
+  .fampane svg{width:100%; height:auto; display:block; background:var(--bg);
                border:1px solid var(--line)}
   .famcodes{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
             gap:8px; margin-top:14px}
@@ -146,12 +144,12 @@
   .steps{counter-reset:st}
   .steps li{list-style:none; counter-increment:st; position:relative;
             padding:11px 0 11px 42px; font-size:13px; color:var(--muted);
-            border-bottom:1px solid rgba(255,255,255,.05)}
+            border-bottom:1px solid rgba(var(--white-rgb),.05)}
   .steps li:last-child{border-bottom:none}
   .steps li::before{content:counter(st); position:absolute; left:0; top:10px;
     width:26px; height:26px; display:flex; align-items:center; justify-content:center;
     font-family:var(--mono); font-size:11px; color:var(--gold);
-    border:1px solid rgba(240,185,11,.35)}
+    border:1px solid rgba(var(--gold-rgb),.35)}
 
   /* blocs : horloges */
   .clocks{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:11px}
@@ -160,7 +158,7 @@
   .clk.b .hh{color:var(--teal)}
   .clk .tt{font-size:12.5px; color:var(--text); font-weight:500; margin:2px 0 11px}
   .clk .rw{font-size:12px; color:var(--muted); padding:7px 0;
-           border-top:1px solid rgba(255,255,255,.055)}
+           border-top:1px solid rgba(var(--white-rgb),.055)}
   .clk .rw span{display:block; font-size:9px; letter-spacing:.13em;
                 text-transform:uppercase; color:var(--faint); margin-bottom:2px}
 
@@ -528,15 +526,15 @@ en: {
 ]}};
 
 /* ───── aperçu interactif des familles de niveaux ───── */
-const FAM_COLOR = {gex:"#F0B90B", em:"#26A69A", open:"#8B5CF6"};
+const FAM_COLOR = {gex:THEME.gold, em:THEME.teal, open:THEME.violet};
 const FAM_LINES = {
-  gex: [{p:29500, l:"CW", c:"#EF5350"}, {p:29350, l:"HGEX", c:"#8A8A94"},
-        {p:29180, l:"Flip", c:"#F0B90B"}, {p:28800, l:"PW", c:"#26A69A"}],
-  em:  [{p:29420, l:"EM+", c:"#26A69A"}, {p:29215, l:"EM +50%", c:"#1E6F68", d:1},
-        {p:29005, l:"EM −50%", c:"#1E6F68", d:1}, {p:28800, l:"EM−", c:"#26A69A"}],
-  open:[{p:29530, l:"σ+2", c:"#EF5350", d:1}, {p:29320, l:"σ+1", c:"#EF5350", d:1},
-        {p:29110, l:"Open", c:"#F0B90B", s:1}, {p:28900, l:"σ−1", c:"#26A69A", d:1},
-        {p:28690, l:"σ−2", c:"#26A69A", d:1}]
+  gex: [{p:29500, l:"CW", c:THEME.red}, {p:29350, l:"HGEX", c:THEME.muted},
+        {p:29180, l:"Flip", c:THEME.gold}, {p:28800, l:"PW", c:THEME.teal}],
+  em:  [{p:29420, l:"EM+", c:THEME.teal}, {p:29215, l:"EM +50%", c:THEME.tealDim, d:1},
+        {p:29005, l:"EM −50%", c:THEME.tealDim, d:1}, {p:28800, l:"EM−", c:THEME.teal}],
+  open:[{p:29530, l:"σ+2", c:THEME.red, d:1}, {p:29320, l:"σ+1", c:THEME.red, d:1},
+        {p:29110, l:"Open", c:THEME.gold, s:1}, {p:28900, l:"σ−1", c:THEME.teal, d:1},
+        {p:28690, l:"σ−2", c:THEME.teal, d:1}]
 };
 const FAM_PATH = [29105,29088,29120,29142,29118,29095,29070,29085,29130,29168,
                   29195,29172,29140,29155,29188,29225,29260,29238,29205,29180,
@@ -557,10 +555,10 @@ function famSvg(key){
   }).join("");
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">
     ${lines}
-    <polyline points="${pts}" fill="none" stroke="#ECEAE4" stroke-width="1.4"
+    <polyline points="${pts}" fill="none" stroke="${THEME.text}" stroke-width="1.4"
       stroke-linejoin="round" opacity=".92"/>
     <circle cx="${16 + (FAM_PATH.length - 1) * (W - PAD - 22) / (FAM_PATH.length - 1)}"
-      cy="${Y(FAM_PATH[FAM_PATH.length - 1]).toFixed(1)}" r="3" fill="#F0B90B"/>
+      cy="${Y(FAM_PATH[FAM_PATH.length - 1]).toFixed(1)}" r="3" fill="${THEME.gold}"/>
   </svg>`;
 }
 function famPane(fam){
