@@ -130,6 +130,83 @@
   --white-rgb:255,255,255;
   --black-rgb:0,0,0;
 
+  /* ══════════ ÉCHELLE DE TRANSPARENCE ══════════
+     Les dix-neuf alphas de l'or ramenés à six paliers nommés. Composer
+     avec un canal : rgba(var(--gold-rgb), var(--a-medium)).
+     Choisir le palier par INTENTION, pas par tâtonnement — c'est ce qui
+     empêche la réapparition d'un vingtième alpha réglé à l'œil. */
+  --a-faint:.05;    /* fond de survol à peine perceptible */
+  --a-subtle:.10;   /* fond d'état actif discret */
+  --a-soft:.16;     /* fond d'état actif affirmé, halo lointain */
+  --a-medium:.28;   /* bordure d'élément actif */
+  --a-strong:.45;   /* bordure appuyée, halo proche */
+  --a-heavy:.60;    /* ombre portée de superposition */
+
+  /* ══════════ ÉCHELLE TYPOGRAPHIQUE ══════════
+     Vingt-neuf tailles coexistaient, de 6,5 à 30px, avec des pas d'un
+     demi-pixel : 11 / 11,5 / 12 / 12,5px sont indiscernables à l'œil,
+     donc quatre tailles faisaient le travail d'une seule et aucun
+     niveau ne se détachait. C'est la cause du manque de hiérarchie,
+     pas une affaire de goût.
+
+     Huit paliers, chacun avec un rôle. Un terminal dense a besoin de
+     paliers rapprochés en bas d'échelle — l'important est qu'ils
+     servent des rôles DIFFÉRENTS, pas qu'ils soient interchangeables. */
+  --fs-micro:10px;  /* unité, horodatage */
+  --fs-xs:11px;     /* étiquette, puce */
+  --fs-sm:12px;     /* texte secondaire */
+  --fs-base:13px;   /* corps */
+  --fs-md:15px;     /* valeur mise en avant */
+  --fs-lg:18px;     /* titre de carte */
+  --fs-xl:23px;     /* titre de page */
+  --fs-2xl:29px;    /* titre d'accroche */
+
+  /* Graisses. font-weight:600 était posé 67 fois contre 400 deux fois :
+     quand presque tout est semi-gras, la graisse ne hiérarchise plus
+     rien. Le corps revient en 400, 600 est réservé aux titres. */
+  --fw-body:400;
+  --fw-medium:500;
+  --fw-bold:600;
+
+  /* Interlettrages : dix-huit valeurs ramenées à quatre rôles. */
+  --ls-tight:-.01em;  /* grands titres */
+  --ls-none:0;
+  --ls-label:.08em;   /* petite étiquette */
+  --ls-caps:.16em;    /* surtitre en capitales */
+
+  /* ══════════ RAYONS ══════════
+     Douze valeurs de 1 à 20px, sans système. Cinq suffisent, et
+     l'uniformité est précisément ce qui fait paraître une interface
+     tenue plutôt que bricolée. */
+  --r-xs:3px;      /* puce, badge */
+  --r-sm:6px;      /* bouton, champ */
+  --r-md:10px;     /* carte, panneau */
+  --r-lg:16px;     /* fenêtre modale */
+  --r-full:999px;  /* pastille, point d'état */
+
+  /* ══════════ ESPACEMENT ══════════
+     Base de 4px. Les marges étaient posées à la valeur (11px, 13px,
+     9px…), ce qui fait que deux en-têtes de pages voisines ne
+     s'alignaient pas. */
+  --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px;
+
+  /* ══════════ ÉLÉVATION ══════════
+     Le halo doré (box-shadow:0 0 8px or) posé partout est ce qui date
+     le plus le rendu — c'est un tic de 2018. Ici la profondeur vient
+     d'ombres noires sobres ; le halo doré est conservé mais réservé
+     à ce qui est réellement VIVANT (point de séance en direct), où il
+     porte alors une information au lieu d'être une décoration. */
+  --el-1:0 1px 2px rgba(var(--black-rgb),.30);
+  --el-2:0 4px 12px rgba(var(--black-rgb),.40);
+  --el-3:0 12px 32px rgba(var(--black-rgb),var(--a-heavy));
+  --glow-live:0 0 8px rgba(var(--teal-rgb),var(--a-strong));
+
+  /* ══════════ TRANSITIONS ══════════ */
+  --t-fast:.12s ease;
+  --t-base:.16s ease;
+  --t-slow:.30s cubic-bezier(.22,.61,.36,1);
+
   /* ══════════ TYPOGRAPHIE ══════════
      Un seul nom pour la police d'affichage : --sans. index.html et
      dash.html l'appelaient --disp, les 9 autres --sans, pour la même
