@@ -176,7 +176,8 @@
     <div id="rows"></div>
     <div class="note">
       Laisser un champ vide = inchangé · bouton ✕ = retirer le webhook du marché.<br>
-      Un marché sans webhook utilise « Défaut », puis la variable d'environnement.<br>
+      Un marché sans webhook utilise « Défaut », puis la variable d'environnement. « Horizon » sans
+      webhook utilise « News ».<br>
       Après « Enregistrer », utilise « Test » pour vérifier l'arrivée dans le bon channel.
     </div>
   </section>
@@ -260,8 +261,8 @@
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const ROWS = ["NQ", "ES", "SPX", "GC", "XAU", "default", "news"];
-const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", GC:"GOLD · GC", XAU:"GOLD · XAUUSD", default:"Défaut", news:"News (annonces refresh)"};
+const ROWS = ["NQ", "ES", "SPX", "GC", "XAU", "default", "news", "horizon"];
+const LABEL = {NQ:"NQ", ES:"ES", SPX:"SPX", GC:"GOLD · GC", XAU:"GOLD · XAUUSD", default:"Défaut", news:"News (annonces refresh + Flux lancée)", horizon:"Horizon (annonce lancement)"};
 let KEY = "";
 
 function getKey(){
@@ -499,7 +500,8 @@ function paintStatus(cfg, envFallback){
   for (const t of ROWS){
     const st = document.querySelector(`[data-st="${t}"]`);
     if (cfg[t]) st.innerHTML = `<b class="on">configuré ✓</b> (${cfg[t]})`;
-    else if (t !== "default" && cfg["default"]) st.innerHTML = `hérite de <b class="on">Défaut</b>`;
+    else if (t === "horizon" && cfg["news"]) st.innerHTML = `hérite de <b class="on">News</b>`;
+    else if (t !== "default" && t !== "horizon" && cfg["default"]) st.innerHTML = `hérite de <b class="on">Défaut</b>`;
     else if (envFallback) st.innerHTML = `<b class="env">fallback variable d'environnement</b>`;
     else st.innerHTML = `<b style="color:var(--red)">aucun webhook — pas de ping ${LABEL[t]}</b>`;
   }

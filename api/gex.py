@@ -2167,7 +2167,7 @@ class handler(BaseHTTPRequestHandler):
             body = self._read_json()
             cfg = fetch_webhooks()
             changed = []
-            for tgt in list(TARGETS) + ["default", "news"]:
+            for tgt in list(TARGETS) + ["default", "news", "horizon"]:
                 if tgt not in body:
                     continue
                 v = (body.get(tgt) or "").strip()
@@ -2263,6 +2263,18 @@ class handler(BaseHTTPRequestHandler):
             if tgt == "NEWS":
                 ok = discord_news("🧪 Test du canal News — GEX Terminal")
                 self._send(200, json.dumps({"sent": ok, "target": "NEWS"}).encode(),
+                           "application/json")
+                return
+            if tgt == "HORIZON":
+                cfg = fetch_webhooks()
+                if not cfg.get("horizon"):
+                    self._send(200, json.dumps(
+                        {"sent": False, "target": "HORIZON",
+                         "error": "aucun webhook configuré sur cette ligne"}
+                    ).encode(), "application/json")
+                    return
+                ok = discord_news("🧪 Test du canal Horizon — GEX Terminal", key="horizon")
+                self._send(200, json.dumps({"sent": ok, "target": "HORIZON"}).encode(),
                            "application/json")
                 return
             if tgt not in TARGETS and tgt != "DEFAULT":
@@ -2519,6 +2531,27 @@ class handler(BaseHTTPRequestHandler):
                     "news": news, "targets": results,
                 }).encode(), "application/json")
                 return
+            # ---- Annonce de lancement Flux/Horizon : une fois par jour, au
+            # tout premier tir intrajournalier qui passe (peu importe l'heure
+            # reelle -- pas de dependance a un horaire fige). Message COURT
+            # et distinct du "niveaux mis a jour" plus bas : ce dernier
+            # parle de gamma/niveaux, celui-ci annonce juste le demarrage du
+            # module pour la seance. _refresh_flow et _refresh_horizon
+            # tournent tous les deux dans le meme bloc "intraday" plus bas,
+            # au meme tir -- Horizon demarre donc toujours EXACTEMENT en
+            # meme temps que Flux, jamais decale.
+            if "intraday" in qs:
+                start_guard = f"gex:fluxstart:{today}"
+                if not kv_get(start_guard):
+                    kv_set(start_guard, "1", ex=16 * 3600)
+                    flux_ping = discord_news(
+                        "🚀 **FLUX lancée** — " + paris_hhmm() + " Paris"
+                        "\nhttps://gexdash.wealthbuilders.group/flux")
+                    horizon_ping = discord_news(
+                        "🚀 **Horizon lancé** — " + paris_hhmm() + " Paris"
+                        "\nhttps://gexdash.wealthbuilders.group/horizon",
+                        key="horizon")
+                    journal_flow(f"start ping flux={flux_ping} horizon={horizon_ping}")
             force = "force" in qs
             for target in TARGETS:
                 latest = _latest_payload(target)

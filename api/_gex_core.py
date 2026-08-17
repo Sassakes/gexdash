@@ -1225,10 +1225,12 @@ def discord_send(url, payload, note=None,
         return False
 
 
-def discord_news(text):
-    """Short plain message to the 'news' webhook (refresh announcements).
-    No-op when unset. Never raises."""
-    url = fetch_webhooks().get("news")
+def discord_news(text, key="news"):
+    """Short plain message to a specific webhook (default: 'news', the refresh
+    announcements channel). A more specific key (e.g. 'horizon') falls back to
+    'news' when it has no webhook configured. No-op when unset. Never raises."""
+    cfg = fetch_webhooks()
+    url = cfg.get(key) or (cfg.get("news") if key != "news" else None)
     if not url:
         return False
     try:
