@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - GexDashboard</title>
+<title>GexDash — Terminal</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <meta name="description" content="Gamma Levels et GEX Levels quotidiens pour NQ, ES et SPX : call wall, put wall, gamma flip, expected move et grille sigma, en temps réel pendant la session US.">
@@ -60,11 +60,15 @@
   }
   .mark{width:30px; height:30px; flex:none}
   .brand{display:flex; flex-direction:column; gap:1px; margin-right:4px}
+  /* Logotype : 18px en interlettrage neutre, comme les en-tetes des
+     autres pages. Les capitales a .22em faisaient lire le nom du produit
+     comme une etiquette de section. */
   .brand h1{
-    font-family:var(--sans); font-size:16px; font-weight:700;
-    letter-spacing:.22em; color:var(--text); text-transform:uppercase; white-space:nowrap;
+    font-family:var(--sans); font-size:var(--fs-lg); font-weight:var(--fw-bold);
+    letter-spacing:var(--ls-tight); color:var(--text); white-space:nowrap;
   }
-  .brand h1 em{font-style:normal; color:var(--gold)}
+  .brand h1 b{color:var(--gold)}
+  .brand h1 .pg{color:var(--muted); font-weight:var(--fw-medium)}
   .brand .sub{font-size:10.5px; color:var(--faint); letter-spacing:.08em}
   #statusPill{
     display:inline-flex; align-items:center; gap:7px;
@@ -572,7 +576,7 @@
     .hdrtools{flex-wrap:wrap; row-gap:6px}
     .hdrdiv{display:none}
     header{gap:10px; padding-bottom:14px; margin-bottom:14px}
-    .brand h1{font-size:14px; letter-spacing:.16em}
+    .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
     .hdrtools{width:100%; margin-left:0; justify-content:flex-start}
     .community a{padding:6px 8px}
@@ -628,7 +632,7 @@
   ::-webkit-scrollbar-thumb:hover{background:var(--line-hi)}
   ::-webkit-scrollbar-track{background:transparent}
 
-  .brand h1 em{text-shadow:0 0 22px var(--gold-glow)}
+  .brand h1 b{text-shadow:0 0 22px var(--gold-glow)}
   .brand .sub{font-variant-numeric:tabular-nums}
 
 
@@ -753,8 +757,10 @@
   #statusPill.live::before{opacity:1; animation:ring 3.2s linear infinite}
   @keyframes ring{to{--pa:360deg}}
 
-  /* — wordmark : reflet doré balayant — */
-  .brand h1 em{
+  /* — wordmark : reflet dore balayant. Seule animation decorative que je
+     garde sur la marque : elle se declenche toutes les 7s, sur le seul
+     logotype, et s'arrete sous prefers-reduced-motion. — */
+  .brand h1 b{
     background:linear-gradient(100deg, var(--gold) 42%, var(--gold-pale) 50%, var(--gold) 58%);
     background-size:230% 100%;
     -webkit-background-clip:text; background-clip:text; color:transparent;
@@ -776,7 +782,7 @@
   }
   @media(prefers-reduced-motion:reduce){
     html::before, html::after{animation:none}
-    .brand h1 em{animation:none; color:var(--gold); background:none}
+    .brand h1 b{animation:none; color:var(--gold); background:none}
     #statusPill.live::before{animation:none}
   }
   /* Bouton de soutien : même gabarit que les autres liens de la barre,
@@ -914,7 +920,7 @@
     <circle cx="50" cy="50" r="13" fill="var(--gold)"/>
   </svg>
   <div class="brand">
-    <h1>GEX <em>Terminal</em></h1>
+    <h1><b>Gex</b>Dash · <span class="pg">Terminal</span></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
 
