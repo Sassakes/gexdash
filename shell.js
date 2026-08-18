@@ -14,12 +14,16 @@
    demandait neuf éditions cohérentes. DESTS ci-dessous est désormais la
    seule liste. Ajouter un module = une ligne, et il apparaît partout.
 
-   Regroupement : les surfaces d'analyse (Terminal, Dashboard, Heatmap)
-   sont des vues des mêmes données — présentées en sélecteur segmenté,
-   elles se lisent comme UN commutateur d'app et non comme des liens en
-   vrac. C'est ce qui désencombre la zone : le nombre d'éléments ne
-   change pas, leur poids visuel oui. Doc et News sont du contexte, pas
-   des vues de marché : ils reculent à droite en liens simples.
+   Présentation : UN seul sélecteur segmenté, qui contient toutes les
+   destinations visibles. Une première version separait les surfaces
+   d'analyse (dans le bloc) de Doc et News (posés à côté en liens
+   simples), au motif que ces derniers relèvent du contexte et non du
+   marché. Distinction juste sur le fond, ratée à l'écran : deux
+   traitements pour une même barre cassent l'unité au lieu de la
+   hiérarchiser, et News avait l'air posé là par accident plutôt que
+   rangé avec le reste. Un bloc unique, et la destination active se
+   distingue par son fond doré — c'est la seule hiérarchie dont la
+   barre a besoin.
 
    Le module unique ne DÉCIDE PAS de ce qui est public. Les règles de
    visibilité en place sont reprises telles quelles : News reste réservé
@@ -54,21 +58,21 @@
                   ici pour que la connaissance ne se perde pas, mais
                   n'est jamais rendu. Le rouvrir = retirer le drapeau. */
 const SHELL_DESTS = [
-  {id: "terminal", href: "/",        fr: "Terminal",  en: "Terminal",  group: "app"},
-  {id: "dash",     href: "/dash",    fr: "Dashboard", en: "Dashboard", group: "app"},
-  {id: "heatmap",  href: "/heatmap", fr: "Heatmap",   en: "Heatmap",   group: "app"},
+  {id: "terminal", href: "/",        fr: "Terminal",  en: "Terminal"},
+  {id: "dash",     href: "/dash",    fr: "Dashboard", en: "Dashboard"},
+  {id: "heatmap",  href: "/heatmap", fr: "Heatmap",   en: "Heatmap"},
   /* /flux est la PAGE D'EXPLICATION du module Flux, pas une vue de
      marché : elle appartient à la documentation et s'atteint depuis le
      contenu de /doc (bloc "fluxcta"). À ne pas confondre avec le bouton
      FLUX du terminal, qui bascule le panneau central entre chart de prix
      et gamma projeté — celui-là vit dans la barre de contexte, pas ici. */
-  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",      group: "ctx",
+  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",
    enabled: false},
   /* Horizon : pas encore ouvert. Ne pas rendre. */
-  {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",   group: "app",
+  {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",
    auth: true, enabled: false},
-  {id: "news",     href: "/news",    fr: "News",      en: "News",      group: "ctx", auth: true},
-  {id: "doc",      href: "/doc",     fr: "Doc",       en: "Docs",      group: "ctx"},
+  {id: "news",     href: "/news",    fr: "News",      en: "News", auth: true},
+  {id: "doc",      href: "/doc",     fr: "Doc",       en: "Docs"},
 ];
 
 /* Destinations réellement affichables dans l'état courant. */
@@ -107,14 +111,6 @@ function shellCss(){
   .appnav-seg a[aria-current="page"]{
     background:rgba(var(--gold-rgb,240,185,11),var(--a-subtle,.10));
     color:var(--gold,#F0B90B); font-weight:var(--fw-bold,600)}
-  .appnav-ctx{display:flex; align-items:center; gap:1px}
-  .appnav-ctx a{
-    font-family:var(--sans,sans-serif); font-size:var(--fs-sm,12px);
-    color:var(--faint,#5C5C66); text-decoration:none; white-space:nowrap;
-    padding:5px 9px; border-radius:var(--r-xs,3px); min-height:30px;
-    display:inline-flex; align-items:center; transition:color var(--t-fast,.12s ease)}
-  .appnav-ctx a:hover{color:var(--text,#ECEAE4)}
-  .appnav-ctx a[aria-current="page"]{color:var(--gold,#F0B90B)}
 
   /* ══════════ EN-TÊTE PARTAGÉ ══════════
      Les neuf pages portaient chacune leur propre règle header{} : padding
@@ -172,7 +168,7 @@ function shellCss(){
   @media (max-width:720px){
     .appnav{gap:var(--sp-2,8px); width:100%; overflow-x:auto; scrollbar-width:none}
     .appnav::-webkit-scrollbar{display:none}
-    .appnav-seg a, .appnav-ctx a{min-height:40px; padding:8px 12px}
+    .appnav-seg a{min-height:40px; padding:8px 12px}
     .appheader{padding:var(--sp-2,8px) var(--sp-4,16px)}
     .appheader h1{font-size:var(--fs-md,15px)}
     .appLang button{min-height:40px; padding:8px 12px}
@@ -201,11 +197,8 @@ function shellRender(el, current){
     const on = d.id === current ? ' aria-current="page"' : "";
     return `<a href="${d.href}"${on} data-shell="${d.id}">${d[lang]}</a>`;
   };
-  const vis = shellVisible();
-  const app = vis.filter((d) => d.group === "app").map(link).join("");
-  const ctx = vis.filter((d) => d.group === "ctx").map(link).join("");
   el.className = "appnav";
-  el.innerHTML = `<div class="appnav-seg">${app}</div><div class="appnav-ctx">${ctx}</div>`;
+  el.innerHTML = `<div class="appnav-seg">${shellVisible().map(link).join("")}</div>`;
 }
 
 /* Bascules de langue montées, et rappels enregistrés par les pages. */
