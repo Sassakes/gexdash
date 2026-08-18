@@ -139,6 +139,13 @@
     width:1px; height:16px; background:var(--hair-strong);
     flex:0 0 auto; margin:0 var(--sp-1);
   }
+  /* Tiroir "plus d'options" (cf. commentaire HTML ci-dessus) : neutre par
+     defaut, display:contents fait que #community et .hdrtools se
+     comportent comme des enfants directs de .hdr-bar, identiques a avant
+     ce changement. Seul le seuil mobile (640px, plus bas) l'active. */
+  .hdr-more-chk{position:absolute; opacity:0; pointer-events:none}
+  .hdr-more-btn{display:none}
+  .hdr-more{display:contents}
 
   /* Palier intermédiaire (tablette / fenêtre réduite) : entre le plein
      desktop et le seuil mobile (640px plus bas), rien ne gouvernait la
@@ -604,7 +611,12 @@
     /* cibles tactiles confortables + pas de zoom auto iOS sur les champs */
     .chips button, .ivs button, .tabs button, .fluxToggle, #tzTop{min-height:40px}
     .chips button{padding:8px 13px; font-size:11.5px}
-    .fluxToggle{width:100%; margin:2px 0 16px; justify-content:center}
+    /* FLUX et String Pine partagent desormais une seule rangee (flex:1
+       chacun) au lieu d'une rangee pleine largeur par bouton -- c'est,
+       avec le tiroir hdr-more ci-dessous, ce qui fait descendre le chart
+       de 441px a environ 250px de chrome sur un ecran 390x844 (mesure
+       avant/apres via Playwright, cf. commit). */
+    .fluxToggle{flex:1; width:auto; margin:0; justify-content:center}
     .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
     /* .hdrtools passe déjà sur sa propre ligne dès 900px (cf. plus haut) ;
@@ -615,9 +627,34 @@
     /* L'appel au don ferme la rangee et reste pleine cible tactile. */
     .cta-support{margin-left:auto; min-height:40px}
     .hdr-id #statusPill{margin-left:0}
-    #pineTopBtn{padding:9px 12px; margin-left:auto}
+    #pineTopBtn{flex:none; padding:9px 12px; margin-left:0}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
+    /* Tiroir "plus d'options" : communaute (Discord/TradingView/Doc) +
+       reglages (fuseau/langue) replies derriere un bouton compact plutot
+       que deux rangees pleine largeur supplementaires -- ce sont des
+       controles secondaires sur telephone, pas la premiere chose a
+       montrer avant le chart. */
+    .hdr-bar{position:relative}
+    .hdr-more-btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:40px; height:40px; flex:none; margin-left:auto;
+      background:var(--surface2); border:1px solid var(--hair-strong);
+      color:var(--muted); font-size:18px; line-height:1; cursor:pointer;
+      border-radius:var(--r-xs);
+    }
+    .hdr-more-btn:hover{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+    .hdr-more-chk:checked ~ .hdr-more-btn{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+    .hdr-more-chk:focus-visible ~ .hdr-more-btn{outline:2px solid var(--gold); outline-offset:2px}
+    .hdr-more{
+      display:none; flex-direction:column; align-items:stretch; gap:var(--sp-2);
+      width:100%; margin-top:var(--sp-1); padding-top:var(--sp-2);
+      border-top:1px solid var(--hair);
+    }
+    .hdr-more-chk:checked ~ .hdr-more{display:flex}
+    .hdr-more #community{margin-left:0}
+    .hdr-more .hdrtools{width:100%; margin-top:0; padding-top:0; border-top:none}
+    .hdr-more .hdrdiv{display:none}
     .stats{grid-template-columns:repeat(2, 1fr)}
     .cell{padding:10px 12px}
     .cell.price .val{font-size:22px}
@@ -992,6 +1029,18 @@
          par toutes les pages : c'est ce qui empeche une destination de
          redevenir introuvable, comme /horizon l'etait. -->
     <nav id="appnav"></nav>
+    <!-- Tiroir "plus d'options" : sur telephone uniquement (cf. media
+         640px), communaute+reglages passaient sur DEUX rangees pleine
+         largeur supplementaires (bascule forcee par la nav en width:100%
+         a 720px cote shell.js) -- 120px de chrome pour des controles
+         secondaires, avant meme d'atteindre le chart. Repli en case a
+         cocher pure CSS (aucun JS, aucun id existant deplace) : invisible
+         et neutre en desktop via display:contents, qui laisse #community
+         et .hdrtools participer au flex de .hdr-bar exactement comme
+         avant -- zero changement visuel au-dessus du seuil mobile. -->
+    <input type="checkbox" id="hdrMoreChk" class="hdr-more-chk">
+    <label for="hdrMoreChk" class="hdr-more-btn" aria-label="Plus d'options">⋯</label>
+    <div class="hdr-more">
     <!-- Communaute (Discord/TradingView) + Doc : composant partage avec
          les 8 autres pages (cf. Shell.mountCommunity, shell.js). Doc
          n'est plus dans le selecteur segmente ci-dessus -- ce n'est pas
@@ -1008,6 +1057,7 @@
       <option value="UTC">UTC</option>
     </select>
     <span id="langSel"></span>
+  </div>
   </div>
 </header>
 
