@@ -53,10 +53,9 @@
   .scen-foot{display:flex; justify-content:space-between; margin-top:7px; font-family:var(--mono); font-size:10.5px; color:var(--faint)}
 
   /* ── columns ────────────────────────────────────────────────── */
-  /* Meme largeur que l'en-tete (--shell-w), pas plein bord : meme
-     raisonnement que heatmap.html. */
-  .wrap{display:flex; gap:14px; padding:14px 20px; height:calc(100vh - 250px); min-height:340px;
-        max-width:var(--shell-w); margin:0 auto}
+  /* Plein LARGEUR, a dessein : demande explicite -- meme motif que
+     heatmap.html et dash.html. */
+  .wrap{display:flex; gap:14px; padding:14px 20px; height:calc(100vh - 250px); min-height:340px}
   /* Flux direct : pastille de source colorée par thème, mise en avant des
      événements à fort impact. */
   .feeditem{display:block; padding:9px 12px; border-bottom:1px solid var(--line);
