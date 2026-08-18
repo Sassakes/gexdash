@@ -2696,6 +2696,26 @@ class handler(BaseHTTPRequestHandler):
                 canonical = ("notify" in qs) or (
                     ok_vercel and "1520" <= now_p <= "1800"
                     and "intraday" not in qs)
+                # Garde anti-course (regression constatee le 2026-08-18,
+                # 15h25 Paris) : en heure d'ete, le tick intraday
+                # `0,5,10,15,20,25 13 * * 1-5` de vercel.json tombe sur la
+                # MEME minute UTC que le publish canonique QStash "15h25
+                # Paris" (13:25 UTC = Paris UTC+2). `latest` a ete lu en
+                # haut de boucle, potentiellement AVANT que la requete
+                # canonique concurrente n'ait fini d'ecrire son payload
+                # frais dans Redis -- ce tir intraday gelait alors sur les
+                # niveaux d'HIER, puis republiait avec un generated_utc
+                # d'AUJOURD'HUI (>11:30 UTC) qui passe la garde de
+                # fraicheur : si son ecriture arrivait apres celle du
+                # canonique, elle l'ecrasait silencieusement (Discord avait
+                # deja notifie les bons niveaux depuis son payload en
+                # memoire ; seul Redis -- donc le site -- restait sur
+                # hier). On relit Redis en direct (hors cache memoire 5s de
+                # _news_cached) juste avant de figer, pour regeler sur le
+                # payload le plus frais possible si le canonique vient de
+                # publier entre-temps.
+                if not canonical:
+                    latest = _upstash_get(target) or latest
                 # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
                 if latest:
                     self._preserve_daily(payload, latest)
