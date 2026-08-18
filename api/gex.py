@@ -1511,10 +1511,29 @@ def _latest_payload(target="NQ"):
     _check_embed_key, cf. _news_cached) : le terminal poll /levels.json
     toutes les 3s en seance active, or le payload publie ne change pas a
     cette cadence -- une lecture par instance chaude toutes les 5s suffit
-    largement et evite une lecture Redis par tick utilisateur."""
+    largement et evite une lecture Redis par tick utilisateur.
+
+    Piege corrige le 2026-08-18 : le fichier GitHub Actions est une
+    PRE-publication du jour (souvent 1h-3h avant le refresh canonique de
+    15h25), pas le refresh canonique lui-meme. Avant ce correctif, des que
+    son generated_utc depassait celui du payload Redis (systematique des
+    la fin du run GH Actions, puisque sa date est "aujourd'hui" contre
+    "hier" pour Redis), il ecrasait immediatement les niveaux affiches --
+    donc AVANT le refresh de 15h25, en violation directe du verrou des
+    niveaux (le flip a saute de 29902 a 29713 en pleine matinee, cf.
+    session du 2026-08-18). Tant que gex:lock=1 (etat normal), Redis reste
+    seul autoritaire ; le fichier ne reprend la main que si Redis est vide
+    (cold start / panne) ou si le verrou est explicitement leve -- memes
+    conventions que le reste du module (cf. _gex_locked)."""
     file_p = _load_file_payload(target)
     up_p = _news_cached(f"payload:{target}", 5, lambda: _upstash_get(target))
     if file_p and up_p:
+        try:
+            locked = kv_get("gex:lock") == "1"
+        except Exception:
+            locked = False
+        if locked:
+            return up_p
         return up_p if up_p.get("generated_utc", "") >= file_p.get("generated_utc", "") else file_p
     return up_p or file_p
 
@@ -2680,7 +2699,18 @@ class handler(BaseHTTPRequestHandler):
                 # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
                 if latest:
                     self._preserve_daily(payload, latest)
-                if (not canonical) and self._gex_locked() and latest:
+                # gex:lock est une bascule pensee pour /api/gex (refresh manuel
+                # admin) : quand elle est a "0", un tir intrajournalier tombant
+                # ICI (branche "not fresh" plus haut -- ex. GitHub Actions a
+                # publie les niveaux du jour AVANT le seuil 11:30 UTC de la
+                # garde de fraicheur, donc `fresh` reste faux jusqu'au publish
+                # canonique ~13h25 UTC) recalculait et republiait des niveaux
+                # differents a chaque tir de 5-10 min -- exactement ce que le
+                # commentaire ci-dessus dit vouloir eviter. Un tir intraday ne
+                # doit donc JAMAIS deverrouiller les niveaux, meme gex:lock=0
+                # (regression constatee le 2026-08-18).
+                if (not canonical) and latest and (
+                        self._gex_locked() or "intraday" in qs):
                     self._freeze_levels(payload, latest)
                 self._stamp_iv_ref(payload, latest, canonical)
                 if flow_capture:

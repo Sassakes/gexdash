@@ -2191,6 +2191,7 @@ function liveBadge(msg, ok){
 
 async function pollQuote(){
   if (!CHART.series || !CHART.lastBar || document.hidden) return;
+  refreshBadges();      // même cadence, cf. définition -- ne bloque pas sur sa réponse
   try{
     const r = await fetch(`/api/quote?target=${TARGET}`);
     const d = await r.json();
@@ -2281,15 +2282,14 @@ function applyLevelLines(){
   setLineGroup("levels", specs);
 }
 
-async function show(d, barsFetch){
-  $("status").style.display = "none";
-  $("app").style.display = "block";
-
-  LAST_D = d;
+// Bandeau prix/basis/NetGEX/regime/PC OI/IV -- SEUL morceau du payload que
+// refreshBadges() retouche entre deux loadTarget() (cf. plus bas). Isolé de
+// show() pour que le rafraîchissement live ne puisse toucher ni CHART.levels/
+// CHART.grid, ni renderLevels/renderEM/renderPine -- ces derniers restent
+// verrouillés côté serveur jusqu'au refresh canonique (cf. CLAUDE.md "Verrou
+// des niveaux"), le bandeau n'a pas vocation à les redessiner.
+function renderBadges(d){
   const tgt = d.target || "NQ";
-  $("hdrDate").textContent = d.date + " · " + tgt + " (" + d.symbol + ")";
-  $("levelsTitle").textContent = t("levels")(tgt);
-
   const live = d.mode === "live";
   const pill = $("statusPill");
   pill.classList.toggle("live", live);
@@ -2331,6 +2331,45 @@ async function show(d, barsFetch){
 
   $("badges").innerHTML = stats.map(([k,v,c],i) =>
     `<div class="cell${i===0?" price":""}"><span class="lbl">${k}</span><span class="val ${c!=="price"?c:""}">${v}</span></div>`).join("");
+  $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T", " ").slice(0, 16));
+}
+
+// Champs "live" que refreshBadges() a le droit de rafraîchir sur LAST_D --
+// tout le reste (levels, gex_by_strike, open_grid, expected_move, pine, ...)
+// reste tel que reçu au dernier loadTarget(), jamais écrasé ici.
+const BADGE_LIVE_FIELDS = ["nq_price", "basis", "basis_source", "net_gex_bn",
+  "regime", "pc_oi", "iv_atm", "iv_diag", "intraday", "generated_utc", "mode", "published"];
+
+// Rafraîchit UNIQUEMENT le bandeau (prix/basis/NetGEX/régime/PC OI/IV), à la
+// même cadence que la bougie live (pollQuote, cf. marketPollMs -- ~3s en
+// séance US). /levels.json reste la même route que loadTarget() : le serveur
+// la cache 5s en mémoire (cf. _latest_payload), donc ce tick ne coûte pas de
+// lecture Redis supplémentaire. Ne touche jamais CHART.levels/CHART.grid ni
+// n'appelle renderLevels/renderEM/renderPine/applyLevelLines -- ceux-ci ne
+// bougent qu'au prochain loadTarget() (switch de marché / rechargement).
+async function refreshBadges(){
+  if (!LAST_D || document.hidden) return;
+  const tgt = TARGET;
+  try{
+    const r = await fetch(`/levels.json?target=${tgt}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    if (tgt !== TARGET || d.target !== TARGET) return;   // cible changée entretemps
+    for (const k of BADGE_LIVE_FIELDS) LAST_D[k] = d[k];
+    renderBadges(LAST_D);
+  }catch(_){}
+}
+
+async function show(d, barsFetch){
+  $("status").style.display = "none";
+  $("app").style.display = "block";
+
+  LAST_D = d;
+  const tgt = d.target || "NQ";
+  $("hdrDate").textContent = d.date + " · " + tgt + " (" + d.symbol + ")";
+  $("levelsTitle").textContent = t("levels")(tgt);
+
+  renderBadges(d);
 
   CHART.levels = d.levels;
   CHART.grid = d.open_grid || null;
@@ -2339,7 +2378,6 @@ async function show(d, barsFetch){
   renderLevels(d);
   renderEM(d);
   renderPine(d);
-  $("footer").innerHTML = t("genFoot")(d.generated_utc.replace("T", " ").slice(0, 16));
   // repères "prix courant / CW / PW / Flip" superposés au flux : redessiner
   // à chaque payload frais plutôt que d'attendre le prochain calcul serveur
   // (qui ne tourne que 3x/jour, cf. docs/BRIEF-flux.md)
