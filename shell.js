@@ -166,12 +166,22 @@ function shellCss(){
      portait déjà le design d'origine) : element::before en pleine
      largeur de viewport (left:50%, margin-left:-50vw, technique dite
      "full-bleed breakout") porte l'un, tandis que .appheader lui-même,
-     limité à --shell-w et centré, porte l'autre. Cette séparation
-     évite de devoir modifier le markup des 8 pages pour ajouter un
-     conteneur interne : le hack tient tout entier dans ce fichier. */
+     limité à --shell-w et centré, porte l'autre.
+
+     DEUX RANGÉES — .appheader-id (titre seul) puis .appheader-bar (nav +
+     communauté + langue), même principe que .hdr-id/.hdr-bar sur le
+     terminal. Nécessaire, pas cosmétique : sur une seule ligne, le titre
+     entrait en concurrence pour la largeur avec nav/communauté/langue, et
+     cette concurrence variait selon la longueur du titre de CHAQUE page
+     ("Documentation" mange plus de place que "Doc") — la rupture de mise
+     en page n'arrivait donc pas au même seuil sur deux pages différentes.
+     En isolant le titre sur sa propre rangée, nav + communauté + langue
+     disposent seules de toute la largeur de --shell-w, un budget qui leur
+     suffit jusqu'à un seuil commun à toutes les pages, bien plus bas que
+     ce qu'exigeait la compétition avec le titre. */
   .appheader{
     position:relative;
-    display:flex; align-items:center; gap:var(--sp-3,12px); flex-wrap:wrap;
+    display:flex; flex-direction:column; gap:var(--sp-2,8px);
     max-width:var(--shell-w,1180px); margin:0 auto;
     padding:var(--sp-3,12px) var(--sp-5,20px);
   }
@@ -181,6 +191,8 @@ function shellCss(){
     background:var(--bg,#0A0A0C);
     border-bottom:1px solid var(--hair,rgba(255,255,255,.06));
   }
+  .appheader-id{display:flex; align-items:center; gap:var(--sp-2,8px)}
+  .appheader-bar{display:flex; align-items:center; gap:var(--sp-3,12px); flex-wrap:wrap}
   .appheader .mark{width:24px; height:24px; flex:none}
   .appheader h1{
     font-family:var(--sans,sans-serif); font-size:var(--fs-lg,18px);
@@ -189,7 +201,6 @@ function shellCss(){
   }
   .appheader h1 b{color:var(--gold,#F0B90B)}
   .appheader h1 span{color:var(--muted,#8A8A94); font-weight:var(--fw-medium,500)}
-  .appheader #appnav{margin-left:var(--sp-2,8px)}
   .appheader .appLang{margin-left:auto}
 
   /* ══════════ CLUSTER COMMUNAUTÉ (Discord / TradingView / Doc) ══════════
