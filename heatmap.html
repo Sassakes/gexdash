@@ -3,43 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - Heatmap</title>
+<title>GexDash — Heatmap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter sur une
      déclaration display: portée par un id ou une classe. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12); --gold-glow:rgba(240,185,11,.30);
-    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350;
-    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
-  }
+  
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden}
 
-  header{display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
-  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
-  header h1 b{color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
-  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
-  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em}
-  .langsel button+button{border-left:1px solid var(--line-strong)}
-  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
 
   .toolbar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:9px 20px;
     border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
@@ -49,21 +31,21 @@
   .seg{display:flex; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; background:var(--surface2)}
   .seg button{font-family:var(--mono); font-size:11px; color:var(--muted); background:transparent; border:0; padding:5px 11px; cursor:pointer; letter-spacing:.03em; transition:background .12s,color .12s}
   .seg button+button{border-left:1px solid var(--line-strong)}
-  .seg button:hover{color:var(--text); background:rgba(255,255,255,.03)}
+  .seg button:hover{color:var(--text); background:rgba(var(--white-rgb),.03)}
   .seg.assets button{font-size:11.5px; font-weight:600; padding:5px 14px; letter-spacing:.06em}
   .seg.assets button.on{background:var(--teal-soft); color:var(--teal)}
   .seg.chips{flex-wrap:wrap; border:0; background:transparent; gap:5px}
   .seg.chips button{border:1px solid var(--line-strong); border-radius:5px; padding:4px 8px; font-size:10px; background:var(--surface2)}
-  .seg.chips button.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .seg.chips button.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(var(--gold-rgb),.4)}
   .toggle{font-family:var(--mono); font-size:11px; color:var(--muted); background:var(--surface2); border:1px solid var(--line-strong); border-radius:6px; padding:5px 11px; cursor:pointer; display:inline-flex; align-items:center; gap:5px}
-  .toggle.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(240,185,11,.4)}
-  .toggle.lockon{background:var(--teal-soft); color:var(--teal); border-color:rgba(38,166,154,.45)}
+  .toggle.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(var(--gold-rgb),.4)}
+  .toggle.lockon{background:var(--teal-soft); color:var(--teal); border-color:rgba(var(--teal-rgb),.45)}
   .iconbtn{width:26px; height:26px; border-radius:50%; border:1px solid var(--line-strong); background:var(--surface2); color:var(--muted); font-family:var(--sans); font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center}
-  .iconbtn:hover, .iconbtn.on{color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .iconbtn:hover, .iconbtn.on{color:var(--gold); border-color:rgba(var(--gold-rgb),.4)}
   .tspacer{flex:1}
   .sess{display:flex; align-items:center; gap:6px; font-size:10px; color:var(--muted); letter-spacing:.08em}
   .dot{width:8px; height:8px; border-radius:50%; background:var(--faint); display:inline-block}
-  .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(38,166,154,.85); animation:pulse 1.8s infinite}
+  .dot.live{background:var(--teal); box-shadow:0 0 7px rgba(var(--teal-rgb),.85); animation:pulse 1.8s infinite}
   .dot.pre,.dot.post{background:var(--gold)}
   .dot.globex{background:#6E7681}
   /* Repère de prix : le rectangle d'origine, détaché du flux du tableau pour
@@ -73,8 +55,8 @@
   .tblwrap{position:relative}
   .pxbox{position:absolute; left:0; right:0; z-index:0; pointer-events:none;
     border:1px solid var(--gold); border-radius:2px;
-    background:rgba(240,185,11,.06);
-    box-shadow:0 0 10px rgba(240,185,11,.16);
+    background:rgba(var(--gold-rgb),.06);
+    box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
     transition:top .4s cubic-bezier(.22,.61,.36,1), height .2s ease;
     will-change:top}
   .pxbox.noanim{transition:none}
@@ -84,20 +66,20 @@
   .dd-trig{font-family:var(--mono); font-size:11.5px; color:var(--gold); background:var(--surface2);
     border:1px solid var(--line-strong); border-radius:6px; padding:4px 9px; cursor:pointer; display:flex; align-items:center; gap:6px; min-width:44px; justify-content:center; white-space:nowrap}
   .dd-trig .car{color:var(--muted); font-size:8px}
-  .dd.open .dd-trig{border-color:rgba(240,185,11,.5)}
+  .dd.open .dd-trig{border-color:rgba(var(--gold-rgb),.5)}
   .dd-menu{position:absolute; top:calc(100% + 6px); left:50%; transform:translateX(-50%); z-index:60; min-width:100%;
-    background:var(--surface3); border:1px solid var(--line-strong); border-radius:9px; box-shadow:0 12px 30px rgba(0,0,0,.6);
+    background:var(--surface3); border:1px solid var(--line-strong); border-radius:9px; box-shadow:0 12px 30px rgba(var(--black-rgb),.6);
     padding:5px; max-height:230px; overflow-y:auto; display:none; flex-direction:column; gap:2px; scrollbar-width:thin}
   .dd.open .dd-menu{display:flex}
   .dd-menu::-webkit-scrollbar{width:6px} .dd-menu::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:3px}
   .dd-opt{font-family:var(--mono); font-size:12px; color:var(--muted); background:none; border:0; border-radius:6px;
     padding:7px 15px; cursor:pointer; text-align:center; white-space:nowrap; transition:background .1s,color .1s}
-  .dd-opt:hover{background:rgba(255,255,255,.06); color:var(--text)}
+  .dd-opt:hover{background:rgba(var(--white-rgb),.06); color:var(--text)}
   .dd-opt.on{background:var(--gold-soft); color:var(--gold); font-weight:600}
 
   /* help bubble — anchored to the ? button via JS */
   .help{position:fixed; z-index:40; width:300px; max-width:calc(100vw - 24px);
-    background:var(--surface3); border:1px solid var(--line-strong); border-radius:10px; box-shadow:0 14px 36px rgba(0,0,0,.6); padding:14px 15px}
+    background:var(--surface3); border:1px solid var(--line-strong); border-radius:10px; box-shadow:0 14px 36px rgba(var(--black-rgb),.6); padding:14px 15px}
   .help[hidden]{display:none}
   .help::after{content:""; position:absolute; top:-6px; right:var(--caret,18px); width:11px; height:11px;
     background:var(--surface3); border-left:1px solid var(--line-strong); border-top:1px solid var(--line-strong); transform:rotate(45deg)}
@@ -120,13 +102,13 @@
   .pxstate{font-family:var(--mono); font-size:8.5px; letter-spacing:.10em; padding:2px 6px; border-radius:4px; text-transform:uppercase}
   .pxstate.live{color:var(--teal); background:var(--teal-soft)}
   .pxstate.live::before{content:"●"; margin-right:4px; animation:pulse 1.8s infinite; display:inline-block}
-  .pxstate.delay{color:var(--faint); background:rgba(255,255,255,.03)}
+  .pxstate.delay{color:var(--faint); background:rgba(var(--white-rgb),.03)}
   .pas{display:flex; align-items:center; gap:6px}
   .phead .meta{margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--muted); text-align:right}
   .phead .meta b{font-weight:600}
   .reg{padding:1px 6px; border-radius:3px; font-size:9px; letter-spacing:.06em; text-transform:uppercase}
-  .reg.negative{color:var(--red); background:rgba(239,83,80,.12)}
-  .reg.positive{color:var(--teal); background:rgba(38,166,154,.12)}
+  .reg.negative{color:var(--red); background:rgba(var(--red-rgb),.12)}
+  .reg.positive{color:var(--teal); background:rgba(var(--teal-rgb),.12)}
 
   .tblwrap{flex:1; overflow-y:auto; overflow-x:auto; -webkit-overflow-scrolling:touch}
   .tblwrap::-webkit-scrollbar{width:8px; height:8px} .tblwrap::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:4px}
@@ -179,15 +161,10 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<header>
-  <h1><b>GEX</b>DASH · HEATMAP</h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/dash" id="navDash">Dashboard</a>
-    <a href="/news" id="navNews" hidden>News</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
-  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+<header class="appheader">
+  <h1><b>Gex</b>Dash · <span>Heatmap</span></h1>
+  <nav class="topnav" id="appnav"></nav>
+  <div id="langSel"></div>
 </header>
 
 <div class="toolbar">
@@ -223,7 +200,9 @@
 const $  = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const TARGETS = ["NQ", "ES", "SPX", "GC"];
-const C = { gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94" };
+/* Couleurs lues depuis theme.css via THEME (cf. theme.js) : var() ne
+   résout pas dans une string de style construite en JS. */
+const C = { gold:THEME.gold, teal:THEME.teal, red:THEME.red, muted:THEME.muted };
 
 const NOISE_PCT = 0.70;   // « zones fortes » = les 30% de cellules les plus lourdes
 const GRAN_STEPS  = [20, 10, 5];   // pas de la grille, en points d'indice
@@ -283,16 +262,16 @@ function fmt$(v){ const a = Math.abs(v), s = v < 0 ? "-" : "";
 function cellStyle(v, p95, p99){
   if (!v || !p95) return "";
   const x = Math.pow(Math.min(1, Math.abs(v) / p95), 0.7);
-  if (Math.abs(v) >= p99) return "background:#F0B90B;color:#0A0A0C;font-weight:600;box-shadow:0 0 9px rgba(240,185,11,.45)";
+  if (Math.abs(v) >= p99) return `background:${THEME.gold};color:${THEME.bg};font-weight:600;box-shadow:0 0 9px ${THEME.alpha("gold", .45)}`;
   if (v > 0){ const R=Math.round(15+23*x), G=Math.round(26+140*x), B=Math.round(24+130*x);
-    return `background:rgb(${R},${G},${B});color:${x>.5?"#05140F":"#7FCDBF"}`; }
+    return `background:rgb(${R},${G},${B});color:${x>.5?THEME.onTealDark:THEME.onTealLight}`; }
   const R=Math.round(28+211*x), G=Math.round(18+65*x), B=Math.round(18+62*x);
-  return `background:rgb(${R},${G},${B});color:${x>.5?"#1C0707":"#E6A6A4"}`;
+  return `background:rgb(${R},${G},${B});color:${x>.5?THEME.onRedDark:THEME.onRedLight}`;
 }
 function pct(a, q){ return a.length ? a[Math.min(a.length-1, Math.floor(a.length*q))] : 0; }
 
 const KEEP = {res:1, sup:1, res0:1, sup0:1, flip:1, mpain:1, emh:1, eml:1};
-const KCOL = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, mpain:"#B9903A", emh:C.muted, eml:C.muted};
+const KCOL = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, mpain:THEME.goldDim, emh:C.muted, eml:C.muted};
 const KLAB = {res:"CW", sup:"PW", res0:"CW·0", sup0:"PW·0", flip:"FLIP", mpain:"MP", emh:"EM▲", eml:"EM▼"};
 function parseLevels(pine){ if (!pine) return [];
   return pine.split(";").map(s => { const [p,,k] = s.split(","); return {price:+p, kind:k}; })
@@ -459,7 +438,7 @@ function buildHelp(){
     + row("var(--teal)", t("cPos")) + row("var(--red)", t("cNeg")) + row("var(--gold)", t("cExt"))
     + `<p style="margin:8px 0 4px;color:var(--faint);font-size:10px">— ${t("overlay")} —</p>`
     + lv(C.teal,"CW",t("lCW")) + lv(C.red,"PW",t("lPW")) + lv(C.gold,"FLIP",t("lFlip"))
-    + lv("#B9903A","MP",t("lMP")) + lv(C.muted,"EM▲",t("lEM"))
+    + lv(THEME.goldDim,"MP",t("lMP")) + lv(C.muted,"EM▲",t("lEM"))
     + `<p style="margin-top:9px;color:var(--muted);font-size:10.5px;line-height:1.5">${t("helpFilter")}</p>`
     + `<p style="margin-top:7px;color:var(--faint);font-size:10.5px">${t("tip")}</p>`;
 }
@@ -473,10 +452,8 @@ function paintLevelDate(){
 }
 
 function applyLang(){
-  $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
-  $("#navTerm").textContent = t("term"); $("#navDash").textContent = t("dash");
-  $("#navNews").textContent = t("news"); $("#navDoc").textContent = t("doc");
-  const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
+  Shell.mount("appnav"); Shell.setLang(LANG);
+    const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
   paintLevelDate();
   $("#lblExp").textContent = t("exp"); $("#lblOverlay").textContent = t("overlay"); $("#lblLock").textContent = t("lock");
@@ -618,7 +595,8 @@ document.addEventListener("click", e => {
   $$(".dd.open").forEach(d => { if (!d.contains(e.target)) d.classList.remove("open"); });
   if (!$("#help").hidden && !$("#help").contains(e.target) && e.target !== $("#btnHelp")){ $("#help").hidden = true; $("#btnHelp").classList.remove("on"); }
 });
-$$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
+Shell.mountLang("langSel");
+Shell.onLang(l => { LANG = l; applyLang(); });
 
 /* Défilement synchronisé — RELATIF AU PRIX, pas en pixels.
    Copier scrollTop d'un panneau à l'autre ne marche pas : NQ cote ~29 000 et
@@ -690,7 +668,7 @@ TARGETS.forEach(loadStatic);
 (async function gateNewsNav(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  const nl = $("#navNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 /* La heatmap interroge TROIS marchés à chaque tour : un intervalle fixe de
    20 s coûtait ~540 requêtes/heure, week-end compris. On garde 20 s pendant

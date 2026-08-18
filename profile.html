@@ -3,38 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - Profil</title>
+<title>GexDash — Profil</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/shell.js"></script>
 <style>
-  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md).
+     Dupliqué depuis theme.css à dessein — si la feuille partagée ne
+     charge pas, une fenêtre modale doit rester fermable. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.12);
-    --teal:#26A69A; --teal-soft:rgba(38,166,154,.14); --red:#EF5350; --red-soft:rgba(239,83,80,.12);
-    --mono:"IBM Plex Mono",ui-monospace,monospace; --sans:"Space Grotesk",sans-serif;
-  }
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
 
-  header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line)}
-  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
-  header h1 b{color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px; background:var(--gold); transform:scaleX(0); transform-origin:left; transition:transform .16s ease}
-  .topnav a:hover::after{transform:scaleX(1)}
-  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden; margin-left:12px}
-  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em; min-height:26px}
-  .langsel button+button{border-left:1px solid var(--line-strong)}
-  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
 
   main{max-width:640px; margin:0 auto; padding:28px 20px 60px}
   h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:30px 0 12px}
@@ -48,9 +34,9 @@
   .actions{display:flex; gap:8px; justify-content:flex-end; margin-top:14px}
   button{font-family:var(--sans); font-size:12.5px; padding:9px 16px; border-radius:6px; border:1px solid var(--line-strong); background:var(--surface2); color:var(--text); cursor:pointer; min-height:38px; transition:background .12s ease, color .12s ease}
   button:hover{background:var(--surface3)}
-  button.primary{background:var(--gold); color:#0A0A0C; border-color:var(--gold); font-weight:600}
-  button.primary:hover{background:#ffd23f}
-  button.danger{color:var(--red); border-color:rgba(239,83,80,.4)}
+  button.primary{background:var(--gold); color:var(--bg); border-color:var(--gold); font-weight:600}
+  button.primary:hover{background:var(--gold-hi)}
+  button.danger{color:var(--red); border-color:rgba(var(--red-rgb),.4)}
   button:disabled{opacity:.5; cursor:default}
   .msg{font-size:12px; margin-top:10px; min-height:16px}
   .msg.err{color:var(--red)} .msg.ok{color:var(--teal)}
@@ -74,14 +60,10 @@
 </style>
 </head>
 <body>
-<header>
-  <h1><b>GEX</b>DASH · <span id="hTitle">PROFIL</span></h1>
-  <nav class="topnav">
-    <a href="/" id="navTerm">Terminal</a>
-    <a href="/news" id="navNews">News</a>
-    <a href="/doc" id="navDoc">Doc</a>
-  </nav>
-  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+<header class="appheader">
+  <h1><b>Gex</b>Dash · <span id="hTitle">Profil</span></h1>
+  <nav class="topnav" id="appnav"></nav>
+  <div id="langSel"></div>
 </header>
 
 <main id="app" hidden>
@@ -140,7 +122,7 @@ const $ = id => document.getElementById(id);
 
 const T = {
   fr: {
-    title:"PROFIL", account:"Compte", user:"Identifiant", newUser:"Nouveau pseudo", save:"Enregistrer",
+    title:"Profil", account:"Compte", user:"Identifiant", newUser:"Nouveau pseudo", save:"Enregistrer",
     email:"E-mail", emailLbl:"Adresse", pwd:"Mot de passe", cur:"Actuel", new:"Nouveau",
     api:"Clé API personnelle", copy:"Copier", copied:"Copié ✓", regen:"Régénérer",
     apiNote:"Utilisée par l'extension Chrome pour remplir automatiquement l'indicateur Pine. Régénérer invalide immédiatement l'ancienne clé.",
@@ -153,7 +135,7 @@ const T = {
     active:"active", blocked:"bloquée", revoked:"révoquée",
   },
   en: {
-    title:"PROFILE", account:"Account", user:"Username", newUser:"New username", save:"Save",
+    title:"Profile", account:"Account", user:"Username", newUser:"New username", save:"Save",
     email:"Email", emailLbl:"Address", pwd:"Password", cur:"Current", new:"New",
     api:"Personal API key", copy:"Copy", copied:"Copied ✓", regen:"Regenerate",
     apiNote:"Used by the Chrome extension to auto-fill the Pine indicator. Regenerating invalidates the old key immediately.",
@@ -172,6 +154,8 @@ if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 
 function applyLang(){
+  Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.setAuth(true);   // page gardee par session : si elle s'affiche, on est connecte
   document.documentElement.lang = LANG;
   $("hTitle").textContent = t("title");
   $("hAccount").textContent = t("account");
@@ -190,13 +174,9 @@ function applyLang(){
   $("apiNote").textContent = t("apiNote");
   $("apiRegen").textContent = t("regen");
   $("logoutBtn").textContent = t("logout");
-  document.querySelectorAll("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
 }
-document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
-  LANG = b.dataset.l;
-  try{ localStorage.setItem("gexLang", LANG); }catch(_){}
-  applyLang();
-});
+Shell.mountLang("langSel");
+Shell.onLang(l => { LANG = l; applyLang(); });
 
 function msg(id, text, ok){
   const m = $(id);

@@ -3,11 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - Admin</title>
+<title>GexDash — Admin</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -15,10 +19,7 @@
      fermer. Le !important est ici volontaire et sûr. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0E0E10; --panel:#131316; --panel2:#17171B; --border:#222228;
-    --text:#E8E6E1; --muted:#7A7A85; --gold:#F0B90B; --teal:#26A69A; --red:#EF5350;
-  }
+  
   *{box-sizing:border-box; margin:0; padding:0}
   body{
     background:var(--bg); color:var(--text);
@@ -31,34 +32,34 @@
     letter-spacing:.2em; color:var(--text); margin-bottom:4px; text-transform:uppercase;
     display:flex; align-items:center; gap:10px;
   }
-  h1 em{font-style:normal; color:var(--gold)}
+  h1 b{color:var(--gold)}
   h1 svg{width:24px; height:24px; flex:none}
   .sub{color:var(--muted); font-size:12px; margin-bottom:20px}
   .sub a{color:var(--gold); text-decoration:none}
-  .panel{background:var(--panel); border:1px solid var(--border); margin-bottom:14px}
+  .panel{background:var(--surface); border:1px solid var(--line); margin-bottom:14px}
   .panel h2{
     font-size:11px; font-weight:600; letter-spacing:.14em; color:var(--muted);
-    text-transform:uppercase; padding:9px 14px; border-bottom:1px solid var(--border);
+    text-transform:uppercase; padding:9px 14px; border-bottom:1px solid var(--line);
   }
   .row{display:grid; grid-template-columns:56px 1fr auto auto; gap:8px; align-items:center;
-       padding:10px 14px; border-bottom:1px solid var(--border)}
+       padding:10px 14px; border-bottom:1px solid var(--line)}
   .row:last-child{border-bottom:none}
   .row .t{font-weight:600; color:var(--gold)}
   .row .status{grid-column:2 / 5; font-size:11.5px; color:var(--muted); padding-left:2px}
   .status b.on{color:var(--teal)} .status b.env{color:var(--muted)}
   input{
-    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    background:var(--surface2); border:1px solid var(--line); color:var(--text);
     font:inherit; font-size:12px; padding:6px 8px; width:100%;
   }
   input::placeholder{color:#55555f}
   input:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   button{
-    background:rgba(240,185,11,.14); color:var(--gold); border:1px solid var(--gold);
+    background:rgba(var(--gold-rgb),.14); color:var(--gold); border:1px solid var(--gold);
     font:inherit; font-size:12px; padding:6px 12px; cursor:pointer; white-space:nowrap;
   }
-  button:hover{background:rgba(240,185,11,.24)}
+  button:hover{background:rgba(var(--gold-rgb),.24)}
   button:disabled{opacity:.5; cursor:wait}
-  button.ghost{border-color:var(--border); color:var(--muted); background:var(--panel2)}
+  button.ghost{border-color:var(--line); color:var(--muted); background:var(--surface2)}
   #saveBtn, #saveLinksBtn{width:100%; padding:9px}
   #msg{margin-top:10px; font-size:12px; display:none}
   #msg.ok{color:var(--teal)} #msg.err{color:var(--red)}
@@ -67,53 +68,53 @@
   /* ═══════════════ couche de raffinement ═══════════════ */
   body{
     background:
-      radial-gradient(900px 360px at 50% -160px, rgba(240,185,11,.05), transparent 62%),
+      radial-gradient(900px 360px at 50% -160px, rgba(var(--gold-rgb),.05), transparent 62%),
       var(--bg);
   }
   ::-webkit-scrollbar{width:9px}
-  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
-  h1 em{text-shadow:0 0 20px rgba(240,185,11,.3)}
-  .panel{box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -16px rgba(0,0,0,.6)}
+  ::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border:2px solid var(--bg)}
+  h1 b{text-shadow:0 0 20px rgba(var(--gold-rgb),.3)}
+  .panel{box-shadow:inset 0 1px 0 rgba(var(--white-rgb),.03), 0 12px 30px -16px rgba(var(--black-rgb),.6)}
   button{transition:background .12s ease, color .12s ease, border-color .12s ease}
   button:active{transform:translateY(1px)}
   #saveBtn, #saveLinksBtn{
-    background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1));
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.2), rgba(var(--gold-rgb),.1));
   }
   #saveBtn:hover, #saveLinksBtn:hover{
-    background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16));
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.3), rgba(var(--gold-rgb),.16));
   }
   input:focus-visible, select:focus-visible{outline:2px solid var(--gold); outline-offset:1px}
   .row{transition:background .12s ease}
-  .row:hover{background:rgba(255,255,255,.014)}
+  .row:hover{background:rgba(var(--white-rgb),.014)}
 
   /* ═══════════════ couche premium ═══════════════ */
   html::before{
     content:""; position:fixed; z-index:-2; border-radius:50%;
     width:760px; height:460px; top:-240px; left:50%; margin-left:-380px;
     filter:blur(90px); pointer-events:none;
-    background:radial-gradient(closest-side, rgba(240,185,11,.12), transparent 70%);
+    background:radial-gradient(closest-side, rgba(var(--gold-rgb),.12), transparent 70%);
   }
   .panel{
     background:
       linear-gradient(180deg, rgba(21,21,25,.78), rgba(16,16,20,.84)) padding-box,
-      linear-gradient(135deg, rgba(240,185,11,.28), rgba(255,255,255,.05) 45%,
-                      rgba(38,166,154,.18)) border-box;
+      linear-gradient(135deg, rgba(var(--gold-rgb),.28), rgba(var(--white-rgb),.05) 45%,
+                      rgba(var(--teal-rgb),.18)) border-box;
     border:1px solid transparent;
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
   }
 .tb{width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px}
 .tb th{text-align:left; color:var(--muted); font-weight:600; font-size:10px;
        letter-spacing:.08em; text-transform:uppercase; padding:5px 8px;
-       border-bottom:1px solid var(--border)}
-.tb td{padding:5px 8px; border-bottom:1px solid rgba(255,255,255,.04);
+       border-bottom:1px solid var(--line)}
+.tb td{padding:5px 8px; border-bottom:1px solid rgba(var(--white-rgb),.04);
        font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap}
 .tb tr:last-child td{border-bottom:none}
-.tb .ok{color:#26A69A} .tb .ko{color:#EF5350} .tb .mut{color:var(--muted)}
-.chip{display:inline-block; padding:3px 9px; border:1px solid var(--border);
+.tb .ok{color:var(--teal)} .tb .ko{color:var(--red)} .tb .mut{color:var(--muted)}
+.chip{display:inline-block; padding:3px 9px; border:1px solid var(--line);
       font-size:11px; margin:0 6px 6px 0; color:var(--text)}
 .chip b{color:var(--gold)}
   /* liste déroulante native en thème sombre (sinon fond blanc système) */
-  select{color-scheme:dark; accent-color:#F0B90B}
+  select{color-scheme:dark; accent-color:var(--gold)}
 
   /* ───── mobile ───── */
   @media (max-width:720px){
@@ -135,7 +136,7 @@
 </head>
 <body>
 <main>
-  <h1><svg viewBox="0 0 100 100" aria-hidden="true"><g stroke="#F0B90B" stroke-width="6" fill="none"><line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/><line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/><line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/></g><circle cx="50" cy="50" r="13" fill="#F0B90B"/></svg>GEX <em>Terminal</em> · Admin</h1>
+  <h1><svg viewBox="0 0 100 100" aria-hidden="true"><g stroke="var(--gold)" stroke-width="6" fill="none"><line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/><line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/><line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/></g><circle cx="50" cy="50" r="13" fill="var(--gold)"/></svg><b>Gex</b>Dash · <span>Admin</span></h1>
   <div class="sub">Route les niveaux de chaque marché vers son channel. <a href="/">← retour au dashboard</a></div>
 
   <section class="panel">
@@ -152,7 +153,7 @@
   <section class="panel">
     <h2>Refresh des niveaux (publication silencieuse)</h2>
     <div class="row" style="grid-template-columns:auto 1fr auto auto auto">
-      <select id="rfTarget" style="background:var(--panel2); border:1px solid var(--border); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
+      <select id="rfTarget" style="background:var(--surface2); border:1px solid var(--line); color:var(--text); font:inherit; font-size:12px; padding:6px 8px">
         <option>NQ</option><option>ES</option><option>SPX</option><option value="GC">GOLD · GC</option><option value="XAU">GOLD · XAUUSD</option>
       </select>
       <input id="rfBasis" inputmode="decimal" placeholder="basis manuelle (optionnel, ex: 145.5)">
@@ -165,7 +166,7 @@
       <span class="status" id="rfStatus">Recalcule et publie le marché choisi. Par défaut sans ping Discord — coche la case pour notifier.</span>
     </div>
     <div class="row" style="grid-template-columns:auto auto 1fr; margin-top:10px; align-items:center">
-      <span id="lockPill" style="font-size:11px; padding:4px 10px; border:1px solid var(--border); color:var(--muted)">verrou : …</span>
+      <span id="lockPill" style="font-size:11px; padding:4px 10px; border:1px solid var(--line); color:var(--muted)">verrou : …</span>
       <button id="lockBtn" style="font-size:12px">…</button>
       <span class="status">Après le refresh 15h25, les niveaux (GEX, grille Open, EM) sont <b>verrouillés automatiquement</b> : les refresh intraday ne les bougent plus (prix/IV/badges continuent de vivre). Déverrouille ici pour les recalculer, ou coche « Envoyer sur Discord » (chemin canonique) qui outrepasse toujours le verrou.</span>
     </div>
@@ -247,7 +248,7 @@
     </div>
     <textarea id="feedsTa" rows="9" style="width:100%; font-family:ui-monospace,Menlo,monospace;
       font-size:11.5px; background:var(--surface2); color:var(--text);
-      border:1px solid var(--border); padding:10px"></textarea>
+      border:1px solid var(--line); padding:10px"></textarea>
     <div class="row" style="grid-template-columns:auto auto 1fr; margin-top:8px">
       <button id="feedsSave">Enregistrer les sources</button>
       <button id="feedsReset">Revenir aux sources par défaut</button>
@@ -367,7 +368,7 @@ function apikeyActions(u, v){
     h += st === "blocked"
       ? `<button data-unblock="${u}" style="font-size:11px">Débloquer</button>`
       : `<button data-block="${u}" style="font-size:11px">Bloquer</button>`;
-    h += `<button data-revokekey="${u}" style="font-size:11px;color:#EF5350">Révoquer clé</button>`;
+    h += `<button data-revokekey="${u}" style="font-size:11px;color:${THEME.red}">Révoquer clé</button>`;
   }
   h += `<button data-regen="${u}" style="font-size:11px">${hasKey ? "Régénérer" : "Générer"} clé</button>`;
   return h;
@@ -395,7 +396,7 @@ async function loadUsers(){
            <td style="text-align:right;white-space:nowrap">
              <button data-reset="${u}" style="font-size:11px">Mot de passe</button>
              ${apikeyActions(u, v)}
-             <button data-del="${u}" style="font-size:11px;color:#EF5350">Supprimer</button>
+             <button data-del="${u}" style="font-size:11px;color:${THEME.red}">Supprimer</button>
            </td></tr>`).join("") + "</tbody></table></div>"
       : `<div class="status">Aucun compte pour l'instant.</div>`;
     h += `<div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;

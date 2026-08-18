@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TheHub — atelier de refonte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Consomme le VRAI theme.css : la galerie ne peut pas divulguer d'une
+     palette qu'elle décrirait en double. Doit donc être servie depuis la
+     racine du dépôt (/dev/gallery.html), pas ouverte en file://. -->
+<link rel="stylesheet" href="/theme.css">
+<style>
+  [hidden]{display:none !important}
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans);
+       font-size:var(--fs-base); font-weight:var(--fw-body); line-height:1.55}
+
+  /* ══════════ CHÂSSIS DE LA GALERIE (pas le sujet, volontairement neutre) ══════════ */
+  .gh{padding:var(--sp-5) var(--sp-6); border-bottom:1px solid var(--line);
+      display:flex; align-items:baseline; gap:var(--sp-4); flex-wrap:wrap}
+  .gh h1{font-size:var(--fs-lg); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight)}
+  .gh h1 b{color:var(--gold)}
+  .gh p{color:var(--muted); font-size:var(--fs-sm); max-width:60ch}
+  main{max-width:1180px; margin:0 auto; padding:var(--sp-6)}
+  section{margin-bottom:var(--sp-10)}
+  .stitle{font-family:var(--mono); font-size:var(--fs-xs); letter-spacing:var(--ls-caps);
+          text-transform:uppercase; color:var(--gold); margin-bottom:var(--sp-2)}
+  .snote{color:var(--muted); font-size:var(--fs-sm); max-width:74ch; margin-bottom:var(--sp-4)}
+
+  /* Paire avant/après */
+  .pair{display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4)}
+  @media (max-width:900px){ .pair{grid-template-columns:1fr} }
+  .col{min-width:0}
+  .clab{font-family:var(--mono); font-size:var(--fs-micro); letter-spacing:var(--ls-label);
+        text-transform:uppercase; color:var(--faint); margin-bottom:var(--sp-2)}
+  .col.now .clab::before{content:"◦ "; color:var(--faint)}
+  .col.next .clab{color:var(--teal)}
+  .col.next .clab::before{content:"● "; color:var(--teal)}
+  .stage{padding:var(--sp-4); border:1px dashed var(--line); border-radius:var(--r-md);
+         background:var(--bg); min-height:96px; display:flex; flex-direction:column;
+         gap:var(--sp-3); justify-content:center}
+
+  /* Bandeaux d'échelle */
+  .scale{display:flex; flex-wrap:wrap; gap:var(--sp-2); align-items:flex-end}
+  .swatch{display:flex; flex-direction:column; gap:6px; align-items:center}
+  .swatch i{display:block; width:64px; height:34px; border-radius:var(--r-xs)}
+  .swatch span{font-family:var(--mono); font-size:var(--fs-micro); color:var(--faint)}
+  .typerow{display:flex; align-items:baseline; gap:var(--sp-3); padding:5px 0;
+           border-bottom:1px solid var(--line)}
+  .typerow code{font-family:var(--mono); font-size:var(--fs-micro); color:var(--faint);
+                min-width:96px; flex:none}
+
+  /* ─────────── ACTUEL : reproduit l'état du site aujourd'hui ─────────── */
+  .n-head{display:flex; align-items:center; gap:16px; padding:11px 14px;
+          border-bottom:1px solid var(--line); background:var(--bg)}
+  .n-head h3{font-size:13px; letter-spacing:.22em; text-transform:uppercase; font-weight:600}
+  .n-head h3 b{color:var(--gold)}
+  .n-nav{margin-left:auto; display:flex; gap:4px}
+  .n-nav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px}
+
+  .n-btn{font-family:var(--sans); font-size:12.5px; padding:9px 16px; border-radius:6px;
+         border:1px solid var(--line-strong); background:var(--surface2); color:var(--text);
+         cursor:pointer; font-weight:600}
+  .n-btn.pri{background:var(--gold); color:var(--bg); border-color:var(--gold)}
+  .n-card{background:linear-gradient(180deg,var(--card-top),var(--card-bottom));
+          border:1px solid var(--line); border-radius:10px; padding:18px 20px}
+  .n-card h4{font-size:13px; letter-spacing:.16em; text-transform:uppercase;
+             color:var(--muted); font-weight:600; margin-bottom:12px}
+  .n-card .v{font-family:var(--mono); font-size:14px; font-weight:600}
+  .n-chip{font-family:var(--mono); font-size:10px; padding:4px 8px; border-radius:5px;
+          border:1px solid var(--line-strong); background:var(--surface2); color:var(--muted)}
+  .n-chip.on{background:var(--gold-soft); color:var(--gold); border-color:rgba(var(--gold-rgb),.4);
+             box-shadow:0 0 8px rgba(var(--gold-rgb),.4)}
+  .n-lv{display:flex; align-items:center; gap:9px; font-family:var(--mono); font-size:11.5px;
+        padding:7px 10px; border:1px solid var(--line); border-radius:5px;
+        background:var(--surface2); box-shadow:0 0 8px rgba(var(--gold-rgb),.16)}
+  .n-lv i{width:6px; height:6px; border-radius:50%; flex:none;
+          box-shadow:0 0 8px rgba(var(--gold-rgb),.4)}
+  .n-stat{border:1px solid var(--line); border-radius:10px; padding:14px 16px;
+          background:linear-gradient(180deg,var(--card-top),var(--card-bottom))}
+  .n-stat .k{font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+             color:var(--muted); font-weight:600}
+  .n-stat .n{font-family:var(--mono); font-size:15px; font-weight:600; margin-top:6px}
+
+  /* ─────────── PROPOSÉ : mêmes composants, échelles du socle ─────────── */
+  .p-head{display:flex; align-items:center; gap:var(--sp-4); padding:var(--sp-3) var(--sp-4);
+          background:var(--surface2); border-radius:var(--r-md);
+          border:1px solid var(--hair)}
+  .p-head h3{font-size:var(--fs-lg); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight)}
+  .p-head h3 b{color:var(--gold)}
+  .p-nav{margin-left:auto; display:flex; gap:var(--sp-1)}
+  .p-nav a{color:var(--muted); text-decoration:none; font-size:var(--fs-sm);
+           padding:var(--sp-1) var(--sp-2); border-radius:var(--r-sm);
+           transition:background var(--t-fast), color var(--t-fast)}
+  .p-nav a:hover{color:var(--text); background:rgba(var(--white-rgb),var(--a-faint))}
+
+  .p-btn{font-family:var(--sans); font-size:var(--fs-sm); font-weight:var(--fw-medium);
+         padding:var(--sp-2) var(--sp-4); border-radius:var(--r-sm); border:0;
+         background:var(--surface2); color:var(--text); cursor:pointer;
+         transition:background var(--t-fast)}
+  .p-btn:hover{background:var(--surface3)}
+  .p-btn.pri{background:var(--gold); color:var(--bg); font-weight:var(--fw-bold)}
+  .p-card{background:var(--surface2); border-radius:var(--r-md); padding:var(--sp-5);
+          border:1px solid var(--hair)}
+  .p-card .eyebrow{font-family:var(--mono); font-size:var(--fs-micro);
+                   letter-spacing:var(--ls-caps); text-transform:uppercase; color:var(--faint)}
+  .p-card h4{font-size:var(--fs-lg); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight);
+             margin:var(--sp-1) 0 var(--sp-3)}
+  .p-card .v{font-family:var(--mono); font-size:var(--fs-xl); font-weight:var(--fw-medium);
+             letter-spacing:var(--ls-tight)}
+  .p-chip{font-family:var(--mono); font-size:var(--fs-xs); padding:var(--sp-1) var(--sp-2);
+          border-radius:var(--r-xs); border:0; background:var(--surface2);
+          color:var(--muted); cursor:pointer}
+  .p-chip.on{background:rgba(var(--gold-rgb),var(--a-subtle)); color:var(--gold)}
+  .p-lv{display:flex; align-items:center; gap:var(--sp-2); font-family:var(--mono);
+        font-size:var(--fs-sm); padding:var(--sp-2) var(--sp-3); border-radius:var(--r-sm);
+        background:var(--surface2); border:1px solid var(--hair)}
+  .p-lv i{width:3px; height:18px; border-radius:var(--r-full); flex:none}
+  .p-lv .lab{color:var(--faint); font-size:var(--fs-micro); letter-spacing:var(--ls-label);
+             text-transform:uppercase}
+  .p-lv .px{margin-left:auto; color:var(--text); font-weight:var(--fw-medium)}
+  .p-stat{background:var(--surface2); border-radius:var(--r-md); padding:var(--sp-4) var(--sp-5);
+          border:1px solid var(--hair)}
+  .p-stat .k{font-family:var(--mono); font-size:var(--fs-micro); letter-spacing:var(--ls-caps);
+             text-transform:uppercase; color:var(--faint)}
+  .p-stat .n{font-family:var(--mono); font-size:var(--fs-xl); font-weight:var(--fw-medium);
+             letter-spacing:var(--ls-tight); margin-top:var(--sp-1)}
+  .p-stat .d{font-size:var(--fs-xs); color:var(--muted); margin-top:2px}
+
+  .dotlive{width:7px; height:7px; border-radius:var(--r-full); background:var(--teal);
+           box-shadow:var(--glow-live); display:inline-block}
+  .row{display:flex; gap:var(--sp-2); align-items:center; flex-wrap:wrap}
+  .teal{color:var(--teal)} .red{color:var(--red)} .gold{color:var(--gold)}
+  .bgteal{background:var(--teal)} .bgred{background:var(--red)} .bggold{background:var(--gold)}
+</style>
+</head>
+<body>
+
+<div class="gh">
+  <h1><b>THE</b>HUB · atelier de refonte</h1>
+  <p>Colonne de gauche : l'état du site aujourd'hui. Colonne de droite : la
+     proposition, construite sur les échelles de <code>theme.css</code>.
+     Rien ici n'est en production.</p>
+</div>
+
+<main>
+
+<section>
+  <div class="stitle">Échelle typographique</div>
+  <p class="snote">Vingt-neuf tailles coexistaient, avec des pas d'un demi-pixel
+     indiscernables à l'œil : c'est la cause mécanique du manque de hiérarchie.
+     Huit paliers, chacun avec un rôle assigné.</p>
+  <div class="typerow"><code>--fs-2xl 29</code><span style="font-size:var(--fs-2xl); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight)">Titre d'accroche</span></div>
+  <div class="typerow"><code>--fs-xl 23</code><span style="font-size:var(--fs-xl); font-weight:var(--fw-bold); letter-spacing:var(--ls-tight)">Titre de page</span></div>
+  <div class="typerow"><code>--fs-lg 18</code><span style="font-size:var(--fs-lg); font-weight:var(--fw-bold)">Titre de carte</span></div>
+  <div class="typerow"><code>--fs-md 15</code><span style="font-size:var(--fs-md)">Valeur mise en avant</span></div>
+  <div class="typerow"><code>--fs-base 13</code><span style="font-size:var(--fs-base)">Corps de texte courant</span></div>
+  <div class="typerow"><code>--fs-sm 12</code><span style="font-size:var(--fs-sm); color:var(--muted)">Texte secondaire</span></div>
+  <div class="typerow"><code>--fs-xs 11</code><span style="font-size:var(--fs-xs); color:var(--muted)">Étiquette, puce</span></div>
+  <div class="typerow"><code>--fs-micro 10</code><span style="font-size:var(--fs-micro); color:var(--faint); letter-spacing:var(--ls-caps); text-transform:uppercase">Unité · horodatage</span></div>
+</section>
+
+<section>
+  <div class="stitle">Échelle de transparence</div>
+  <p class="snote">Les dix-neuf alphas de l'or, réglés à la main, ramenés à six
+     paliers nommés. On choisit désormais par intention, pas par tâtonnement.</p>
+  <div class="scale">
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-faint))"></i><span>faint .05</span></div>
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-subtle))"></i><span>subtle .10</span></div>
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-soft))"></i><span>soft .16</span></div>
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-medium))"></i><span>medium .28</span></div>
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-strong))"></i><span>strong .45</span></div>
+    <div class="swatch"><i style="background:rgba(var(--gold-rgb),var(--a-heavy))"></i><span>heavy .60</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">Rayons et élévation</div>
+  <p class="snote">Douze rayons sans système deviennent cinq. Pour la profondeur, une
+     ombre noire ne sert à rien sur un fond à #0A0A0C — constat fait en rendant cette
+     page, les trois paliers d'ombre y étaient indiscernables. Elle vient donc d'une
+     surface plus claire que le fond et d'un filet blanc translucide ; l'ombre est
+     réservée au flottant (menu, modale) et l'or lumineux à ce qui est vivant.</p>
+  <div class="row">
+    <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-xs)"></i><span>xs 3</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-sm)"></i><span>sm 6</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-md)"></i><span>md 10</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-lg)"></i><span>lg 16</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border:1px solid var(--hair); border-radius:var(--r-sm)"></i><span>hair .06</span></div>
+    <div class="swatch"><i style="background:var(--surface3); border:1px solid var(--hair-strong); border-radius:var(--r-sm)"></i><span>hair .10</span></div>
+    <div class="swatch"><i style="background:var(--surface3); box-shadow:var(--el-float); border-radius:var(--r-sm)"></i><span>el-float</span></div>
+    <div class="swatch"><i style="background:var(--surface2); border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center"><span class="dotlive"></span></i><span>glow-live</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">En-tête de page</div>
+  <p class="snote">Le titre en capitales très espacées à 13px lit comme une
+     étiquette, pas comme un titre — quand tout est étiquette, rien ne domine.
+     À droite, un vrai titre à 18px en casse normale, et les capitales espacées
+     réservées aux surtitres minuscules. La bordure cède la place à une surface.</p>
+  <div class="pair">
+    <div class="col now"><div class="clab">actuel</div><div class="stage">
+      <div class="n-head"><h3><b>GEX</b> TERMINAL · NQ</h3>
+        <nav class="n-nav"><a>Dashboard</a><a>Heatmap</a><a>Doc</a></nav></div>
+    </div></div>
+    <div class="col next"><div class="clab">proposé</div><div class="stage">
+      <div class="p-head"><h3><b>GEX</b> Terminal <span style="color:var(--faint); font-weight:var(--fw-body)">· NQ</span></h3>
+        <nav class="p-nav"><a>Dashboard</a><a>Heatmap</a><a>Doc</a></nav></div>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">Carte de données</div>
+  <p class="snote">Le dégradé vertical produit le rendu « boîte » qui date. À droite :
+     surface plate mais plus claire que le fond, filet blanc à 6 % au lieu d'un gris
+     opaque, et surtout une hiérarchie à trois niveaux nets — surtitre minuscule,
+     titre affirmé, valeur dominante en chiffres.</p>
+  <div class="pair">
+    <div class="col now"><div class="clab">actuel</div><div class="stage">
+      <div class="n-card"><h4>Net GEX</h4>
+        <div class="v gold">+2.41 Bn</div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:8px">Régime positif · gamma long</div></div>
+    </div></div>
+    <div class="col next"><div class="clab">proposé</div><div class="stage">
+      <div class="p-card"><div class="eyebrow">Net GEX</div>
+        <h4>Régime positif</h4>
+        <div class="v gold">+2.41 Bn</div>
+        <div style="font-size:var(--fs-sm); color:var(--muted); margin-top:var(--sp-2)">Gamma long · dealers stabilisateurs</div></div>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">Niveaux</div>
+  <p class="snote">Le cœur du terminal. À gauche, chaque ligne porte une bordure
+     et un halo doré : l'œil ne peut pas trier. À droite, un filet vertical coloré
+     porte la catégorie, le prix est aligné à droite en graisse moyenne, et
+     l'étiquette recule en gris minuscule.</p>
+  <div class="pair">
+    <div class="col now"><div class="clab">actuel</div><div class="stage">
+      <div class="n-lv"><i class="bgteal"></i> CALL WALL <span style="margin-left:auto">22 000,0</span></div>
+      <div class="n-lv"><i class="bggold"></i> GAMMA FLIP <span style="margin-left:auto">21 484,9</span></div>
+      <div class="n-lv"><i class="bgred"></i> PUT WALL <span style="margin-left:auto">21 000,0</span></div>
+    </div></div>
+    <div class="col next"><div class="clab">proposé</div><div class="stage">
+      <div class="p-lv"><i class="bgteal"></i><span class="lab">Call wall</span><span class="px">22 000,0</span></div>
+      <div class="p-lv"><i class="bggold"></i><span class="lab">Gamma flip</span><span class="px">21 484,9</span></div>
+      <div class="p-lv"><i class="bgred"></i><span class="lab">Put wall</span><span class="px">21 000,0</span></div>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">Tuiles de statistique</div>
+  <p class="snote">Le contraste de taille entre l'étiquette et le chiffre est ce
+     qui rend une tuile lisible d'un coup d'œil : 11px contre 15px ne suffit pas,
+     10px contre 23px oui.</p>
+  <div class="pair">
+    <div class="col now"><div class="clab">actuel</div><div class="stage">
+      <div class="row" style="gap:12px">
+        <div class="n-stat" style="flex:1"><div class="k">Max Pain</div><div class="n">21 500</div></div>
+        <div class="n-stat" style="flex:1"><div class="k">IV 1D</div><div class="n">±216,7</div></div>
+      </div>
+    </div></div>
+    <div class="col next"><div class="clab">proposé</div><div class="stage">
+      <div class="row" style="gap:var(--sp-3)">
+        <div class="p-stat" style="flex:1"><div class="k">Max Pain</div><div class="n">21 500</div><div class="d">Strike de douleur maximale</div></div>
+        <div class="p-stat" style="flex:1"><div class="k">IV 1D</div><div class="n teal">±216,7</div><div class="d">Écart-type d'un jour</div></div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<section>
+  <div class="stitle">Contrôles</div>
+  <p class="snote">Boutons et puces : la bordure systématique et le halo doré sur
+     l'état actif partent. L'état actif se lit par un fond teinté au palier
+     <code>--a-subtle</code>, ce qui suffit et cesse de crier.</p>
+  <div class="pair">
+    <div class="col now"><div class="clab">actuel</div><div class="stage">
+      <div class="row"><button class="n-btn pri">+ Ajouter</button><button class="n-btn">Éditer</button></div>
+      <div class="row"><span class="n-chip on">GEX</span><span class="n-chip">EM</span><span class="n-chip">Open</span></div>
+    </div></div>
+    <div class="col next"><div class="clab">proposé</div><div class="stage">
+      <div class="row"><button class="p-btn pri">+ Ajouter</button><button class="p-btn">Éditer</button></div>
+      <div class="row"><span class="p-chip on">GEX</span><span class="p-chip">EM</span><span class="p-chip">Open</span></div>
+    </div></div>
+  </div>
+</section>
+
+</main>
+</body>
+</html>

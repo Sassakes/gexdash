@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - GexDashboard</title>
+<title>GexDash — Terminal</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <meta name="description" content="Gamma Levels et GEX Levels quotidiens pour NQ, ES et SPX : call wall, put wall, gamma flip, expected move et grille sigma, en temps réel pendant la session US.">
@@ -14,6 +14,11 @@
 <script src="/ui.js"></script>
 <script src="/loader.js"></script>
 <script src="/flux-panel.js"></script>
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter. Sans cette règle,
      une déclaration display: sur un id ou une classe le neutralise — c'est ce
@@ -21,20 +26,12 @@
      fermer. Le !important est ici volontaire et sûr. */
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A;
-    --line:#212127; --line-strong:#2B2B33;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --gold-soft:rgba(240,185,11,.13); --gold-glow:rgba(240,185,11,.32);
-    --teal:#26A69A; --red:#EF5350;
-    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --disp:"Space Grotesk", var(--mono);
-  }
+  
   *{box-sizing:border-box; margin:0; padding:0}
   html{scrollbar-color:var(--line-strong) var(--bg)}
   body{
     background:
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.055), transparent 62%),
       var(--bg);
     color:var(--text); font-family:var(--mono); font-size:13px; line-height:1.55;
     -webkit-font-smoothing:antialiased;
@@ -49,18 +46,29 @@
   button, input{font-family:var(--mono)}
 
   /* ============ header ============ */
+  /* Header en DEUX bandes empilees, chacune avec un role lisible :
+     "qui je suis" en haut (marque, compte, appel au don, etat de la
+     donnee), "ou je vais" en bas (navigation + outils). Avant, tout
+     partageait une seule rangee a repli libre : la marque restait a
+     gauche pendant que le reste etait pousse a droite, d'ou le decalage
+     visible, et l'ajout du bouton de don faisait basculer sur une
+     troisieme ligne. */
   header{
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    display:flex; flex-direction:column; gap:var(--sp-2);
     padding-bottom:18px; margin-bottom:18px;
     border-bottom:1px solid var(--line);
   }
   .mark{width:30px; height:30px; flex:none}
   .brand{display:flex; flex-direction:column; gap:1px; margin-right:4px}
+  /* Logotype : 18px en interlettrage neutre, comme les en-tetes des
+     autres pages. Les capitales a .22em faisaient lire le nom du produit
+     comme une etiquette de section. */
   .brand h1{
-    font-family:var(--disp); font-size:16px; font-weight:700;
-    letter-spacing:.22em; color:var(--text); text-transform:uppercase; white-space:nowrap;
+    font-family:var(--sans); font-size:var(--fs-lg); font-weight:var(--fw-bold);
+    letter-spacing:var(--ls-tight); color:var(--text); white-space:nowrap;
   }
-  .brand h1 em{font-style:normal; color:var(--gold)}
+  .brand h1 b{color:var(--gold)}
+  .brand h1 .pg{color:var(--muted); font-weight:var(--fw-medium)}
   .brand .sub{font-size:10.5px; color:var(--faint); letter-spacing:.08em}
   #statusPill{
     display:inline-flex; align-items:center; gap:7px;
@@ -69,116 +77,185 @@
     white-space:nowrap;
   }
   #statusPill .dot{width:6px; height:6px; border-radius:50%; background:var(--faint); flex:none}
-  #statusPill.live{border-color:rgba(240,185,11,.45); color:var(--gold)}
+  #statusPill.live{border-color:rgba(var(--gold-rgb),.45); color:var(--gold)}
   #statusPill.live .dot{background:var(--gold); box-shadow:0 0 8px var(--gold-glow)}
   @media(prefers-reduced-motion:no-preference){
     #statusPill.live .dot{animation:pulse 2.2s ease-in-out infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   }
 
-  .topnav{
-    margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+  /* ============ ligne d'outils du header ============
+     Trois familles, separees par un filet, dans l'ordre de leur poids :
+     communaute (le plus discret) -> reglages -> compte, puis l'appel au
+     don en dernier. Avant, ces elements etaient melanges aux liens de
+     navigation dans une seule rangee : le bouton Soutenir s'y perdait
+     alors que c'est le seul element qui demande une action. */
+  .hdr-id{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .hdr-bar{display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap}
+  /* Etat de la donnee : remonte de la barre de contexte vers la ligne
+     d'identite. Il decrit la fraicheur du payload, pas le marche choisi
+     -- il appartient donc a "qui je suis", pas a "quel marche". Ca libere
+     aussi la place a droite, que la ligne d'identite laissait vide. */
+  .hdr-id #statusPill{margin-left:auto}
+  .hdrtools{
+    margin-left:auto; display:flex; align-items:center; gap:6px;
+    flex-wrap:wrap;
   }
-  .topnav a{
-    text-decoration:none; font-size:12px; white-space:nowrap;
-    display:inline-flex; align-items:center; gap:7px;
-    transition:color .12s ease, border-color .12s ease,
-               background .12s ease, box-shadow .12s ease;
+  /* Resserre a 2px de part et d'autre : la rangee complete (communaute,
+     reglages, compte, appel au don) depassait la largeur utile de DEUX
+     pixels et basculait le header sur une troisieme ligne. Le filet reste
+     lisible, et la rangee gagne ~30px de marge -- de quoi encaisser des
+     libelles anglais un peu plus longs sans rebasculer. */
+  .hdrdiv{
+    width:1px; height:16px; background:var(--hair-strong);
+    flex:0 0 auto; margin:0 2px;
   }
-  /* filet de séparation entre les 3 familles */
-  .nav-sep{
-    width:1px; height:18px; background:var(--line-strong);
-    margin:0 9px; flex:0 0 auto;
+
+  /* — communaute : volontairement le plus leger de la rangee. La pastille
+       porte la couleur de marque, elle suffit a identifier le service
+       sans que le libelle ait besoin de crier. — */
+  .community{display:flex; align-items:center; gap:0}
+  .community a{
+    display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+    color:var(--faint); font-size:var(--fs-sm); white-space:nowrap;
+    padding:5px 5px; border-radius:var(--r-xs);
+    transition:color var(--t-fast), background var(--t-fast);
   }
-  /* 1. section applicative : encadrée, c'est un "lieu" du produit */
-  .topnav a.nav-app{
-    color:var(--text); padding:7px 14px;
-    background:var(--surface2); border:1px solid var(--line-strong);
+  .community a .dot{
+    width:6px; height:6px; border-radius:var(--r-full); flex:0 0 auto;
   }
-  .topnav a.nav-app .ic{ color:var(--gold); font-size:11px; }
-  .topnav a.nav-app:hover{
-    color:var(--gold); border-color:rgba(240,185,11,.55);
-    box-shadow:0 6px 18px -10px var(--gold-glow);
-  }
-  /* 2. liens externes : sans cadre pour alléger, pastille colorée qui accroche */
-  .topnav a.nav-ext{
-    color:var(--muted); padding:7px 10px;
-    background:none; border:1px solid transparent;
-  }
-  .topnav a.nav-ext .dot{
-    width:7px; height:7px; border-radius:50%; flex:0 0 auto;
-    box-shadow:0 0 8px currentColor;
-  }
-  .topnav a.nav-ext.dc .dot{ background:#5865F2; color:#5865F2; }
-  .topnav a.nav-ext.tv .dot{ background:#2962FF; color:#2962FF; }
-  .topnav a.nav-ext:hover{
-    color:var(--text); border-color:var(--line-strong);
-    background:var(--surface2);
-  }
-  /* 3. soutien : seul élément plein de la barre -> il capte le regard */
-  .topnav a.nav-support{
-    color:#0A0A0C; background:var(--gold); padding:7px 15px;
-    border:1px solid var(--gold); font-weight:600;
-    animation:donGlow 3.8s ease-in-out infinite;
-  }
-  .topnav a.nav-support:hover{
-    background:#ffd23f; border-color:#ffd23f; animation:none;
-    box-shadow:0 8px 22px -10px var(--gold-glow);
-  }
-  @keyframes donGlow{
-    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
-    50%    { box-shadow:0 0 16px rgba(240,185,11,.35); }
-  }
-  @media (prefers-reduced-motion:reduce){
-    .topnav a.nav-support{ animation:none; }
-  }
+  .community a.dc .dot{background:#5865F2}   /* bleu de marque Discord */
+  .community a.tv .dot{background:#2962FF}   /* bleu de marque TradingView */
+  .community a:hover{color:var(--text); background:rgba(var(--white-rgb),var(--a-faint))}
+
+  /* — reglages — */
   #tzTop{
     background:none; border:1px solid transparent; color:var(--muted);
-    font:inherit; font-size:11.5px; padding:6px 6px; cursor:pointer; margin-left:0;
+    font:inherit; font-size:var(--fs-sm); padding:5px 2px;
+    cursor:pointer; border-radius:var(--r-xs);
   }
-  #tzTop:hover{ color:var(--text); border-color:var(--line-strong); }
-  #tzTop:hover{border-color:rgba(240,185,11,.55)}
+  #tzTop:hover{color:var(--text); border-color:var(--hair-strong)}
   #tzTop:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-  .topnav .ivs{margin-left:6px; opacity:.8}
-  .topnav .ivs:hover{opacity:1}
+  .hdrtools .ivs{opacity:.85}
+  .hdrtools .ivs:hover{opacity:1}
+
+  /* — appel au don : SEUL element plein de tout le header, donc le seul
+       que l'oeil lit comme cliquable avant meme d'avoir lu le libelle.
+       C'est aussi le seul endroit ou je garde un halo anime : ici il ne
+       decore pas, il designe l'unique action demandee a l'utilisateur.
+       Il respire lentement (4s) pour rester une invitation et non un
+       clignotant. — */
+  .cta-support{
+    display:inline-flex; align-items:center; gap:7px; text-decoration:none;
+    color:var(--bg); background:var(--gold);
+    font-size:var(--fs-sm); font-weight:var(--fw-bold);
+    padding:7px 13px; border-radius:var(--r-sm); white-space:nowrap;
+    box-shadow:0 2px 10px -4px rgba(var(--gold-rgb),var(--a-strong));
+    animation:donBreath 4s ease-in-out infinite;
+    transition:background var(--t-fast), transform var(--t-fast),
+               box-shadow var(--t-fast);
+  }
+  .cta-support .hrt{font-size:13px; line-height:1}
+  .cta-support:hover{
+    background:var(--gold-hi); animation:none; transform:translateY(-1px);
+    box-shadow:0 6px 18px -6px rgba(var(--gold-rgb),.55);
+  }
+  .cta-support:active{transform:none}
+  .cta-support:focus-visible{outline:2px solid var(--gold-hi); outline-offset:3px}
+  @keyframes donBreath{
+    0%,100%{box-shadow:0 2px 10px -4px rgba(var(--gold-rgb),var(--a-strong))}
+    50%    {box-shadow:0 2px 20px -2px rgba(var(--gold-rgb),.55)}
+  }
+  @media (prefers-reduced-motion:reduce){ .cta-support{animation:none} }
   .ctxbar{
     display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
   }
-  .ctxbar #statusPill{margin-left:auto}
+  /* statusPill est remonte dans le header : c'est String Pine qui ferme
+     desormais la barre de contexte. */
+  .ctxbar #pineTopBtn{margin-left:auto}
   #pineTopBtn{
     background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
     font-size:12px; font-weight:500; padding:7px 14px; cursor:pointer;
     transition:background .12s ease; white-space:nowrap;
   }
 
-  /* ============ tabs ============ */
-  .tabs{display:inline-flex; border:1px solid var(--line-strong); background:var(--surface); margin-bottom:16px}
+  /* ============ onglets marche ============
+     Meme forme que la barre de navigation : un segment unique plutot que
+     quatre boutons accoles. Le trait dore sous l'onglet actif et le halo
+     ont ete retires — le fond teinte suffit a designer l'actif, et c'est
+     le halo qui datait le plus le rendu. */
+  .tabs{
+    display:inline-flex; align-items:center; gap:2px; padding:2px;
+    background:var(--surface2); border:1px solid var(--hair);
+    border-radius:var(--r-sm);
+  }
   .tabs button{
-    position:relative; background:transparent; color:var(--muted); border:none;
-    border-right:1px solid var(--line); padding:8px 26px; font-size:12.5px;
-    letter-spacing:.04em; cursor:pointer; transition:color .12s ease;
+    background:transparent; color:var(--muted); border:0; cursor:pointer;
+    font-family:var(--mono); font-size:var(--fs-sm); font-weight:var(--fw-medium);
+    letter-spacing:var(--ls-label); padding:6px 20px; min-height:32px;
+    border-radius:var(--r-xs);
+    transition:color var(--t-fast), background var(--t-fast);
   }
-  .tabs button:last-child{border-right:none}
-  .tabs button:hover{color:var(--text)}
+  .tabs button:hover{color:var(--text); background:rgba(var(--white-rgb),var(--a-faint))}
+  .tabs button.on{
+    background:rgba(var(--gold-rgb),var(--a-subtle));
+    color:var(--gold); font-weight:var(--fw-bold);
+  }
   .tabs button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  .tabs button.on{color:var(--gold); font-weight:600; background:var(--gold-soft)}
-  .tabs button.on::after{
-    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--gold);
-  }
 
-  /* ============ bouton FLUX : détaché des onglets marchés — il ne
-     sélectionne pas un marché, il bascule le panneau central ============ */
+  /* ============ echelle de l'or ============
+     GC (future) et XAUUSD (comptant) sont deux marches DISTINCTS calcules
+     depuis la meme chaine GLD, pas deux affichages d'un meme marche : le
+     future cote au-dessus du comptant et l'ecart atteint plusieurs
+     dizaines de dollars. C'est donc un vrai choix, mais subordonne a
+     l'onglet GOLD — d'ou un segment plus petit et en retrait, introduit
+     par un chevron pour qu'on lise "GOLD > GC | XAUUSD" plutot qu'un
+     cinquieme marche pose a cote des quatre autres. L'onglet GOLD reste
+     allume sur les deux echelles (cf. paintTabs). */
+  .goldsel{
+    display:inline-flex; align-items:center; gap:2px; padding:2px;
+    background:var(--surface); border:1px solid var(--hair);
+    border-radius:var(--r-sm); animation:gsIn .18s ease-out;
+  }
+  .goldsel::before{
+    content:"\203A"; color:var(--faint); font-size:13px; line-height:1;
+    padding:0 3px 2px 5px;
+  }
+  @keyframes gsIn{from{opacity:0; transform:translateY(-3px)} to{opacity:1; transform:none}}
+  .goldsel button{
+    background:transparent; border:0; cursor:pointer;
+    font-family:var(--mono); font-size:var(--fs-xs); letter-spacing:var(--ls-label);
+    color:var(--faint); padding:5px 13px; min-height:28px; border-radius:var(--r-xs);
+    transition:color var(--t-fast), background var(--t-fast);
+  }
+  .goldsel button:hover{color:var(--text); background:rgba(var(--white-rgb),var(--a-faint))}
+  .goldsel button.on{
+    background:rgba(var(--gold-rgb),var(--a-faint));
+    color:var(--gold); font-weight:var(--fw-bold);
+  }
+  .goldsel button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
+
+  /* ============ bouton FLUX ============
+     Il ne selectionne pas un marche : il bascule le panneau central entre
+     chart de prix et gamma projete. Il reste donc HORS du segment des
+     marches — l'y integrer le ferait lire comme un cinquieme marche. */
   .fluxToggle{
-    position:relative; display:inline-flex; align-items:center; margin:0 0 16px 14px;
-    background:var(--surface2); color:var(--muted); border:1px solid var(--line-strong);
-    padding:8px 22px; font-size:12.5px; font-weight:600; letter-spacing:.08em;
-    cursor:pointer; transition:color .22s ease, background .22s ease, border-color .22s ease;
+    position:relative; display:inline-flex; align-items:center;
+    background:var(--surface2); color:var(--muted); border:1px solid var(--hair);
+    font-family:var(--mono); font-size:var(--fs-sm); font-weight:var(--fw-bold);
+    letter-spacing:var(--ls-label); padding:7px 20px; min-height:36px;
+    border-radius:var(--r-sm); cursor:pointer;
+    transition:color var(--t-fast), background var(--t-fast), border-color var(--t-fast);
   }
   .fluxToggle::before{
-    content:""; position:absolute; left:-14px; top:22%; bottom:22%; width:1px; background:var(--line);
+    content:""; position:absolute; left:-7px; top:20%; bottom:20%;
+    width:1px; background:var(--hair-strong);
   }
-  .fluxToggle:hover{color:var(--text); border-color:rgba(240,185,11,.35)}
-  .fluxToggle.on{color:var(--gold); background:var(--gold-soft); border-color:rgba(240,185,11,.5)}
+  .fluxToggle:hover{color:var(--text); border-color:var(--hair-strong)}
+  .fluxToggle.on{
+    color:var(--gold); background:rgba(var(--gold-rgb),var(--a-subtle));
+    border-color:rgba(var(--gold-rgb),var(--a-medium));
+  }
   .fluxToggle:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
   /* bascule au clic : 220ms, sobre — un aller-retour d'échelle/opacité, pas
      un effet appuyé */
@@ -190,7 +267,7 @@
   @media(prefers-reduced-motion:reduce){ .fluxToggle.swap{animation:none} }
 
   /* ============ pine top + hint ============ */
-  #pineTopBtn:hover{background:rgba(240,185,11,.24)}
+  #pineTopBtn:hover{background:rgba(var(--gold-rgb),.24)}
   #pineTopBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
 
   /* ============ stat strip ============ */
@@ -204,7 +281,7 @@
   }
   .cell:last-child{border-right:none}
   .cell .lbl{
-    font-family:var(--disp); font-size:9.5px; font-weight:600; letter-spacing:.18em;
+    font-family:var(--sans); font-size:9.5px; font-weight:600; letter-spacing:.18em;
     text-transform:uppercase; color:var(--faint); white-space:nowrap;
   }
   /* Delta intrajournalier : discret, il complète la valeur sans la concurrencer */
@@ -225,12 +302,12 @@
 
   /* ============ panels ============ */
   .panel{
-    background:linear-gradient(180deg, #131317, #101013);
+    background:linear-gradient(180deg, var(--card-top), var(--card-bottom));
     border:1px solid var(--line); margin-bottom:16px;
   }
   .panel > h2{
     display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-    font-family:var(--disp); font-size:10px; font-weight:600; letter-spacing:.2em;
+    font-family:var(--sans); font-size:10px; font-weight:600; letter-spacing:.2em;
     text-transform:uppercase; color:var(--muted);
     padding:11px 16px; border-bottom:1px solid var(--line);
   }
@@ -256,7 +333,7 @@
     font-size:10.5px; color:var(--muted); white-space:nowrap}
   .fluxsw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-left:10px}
   .fluxsw:first-child{margin-left:0}
-  .fluxsw-pos{background:#26A69A} .fluxsw-neg{background:#EF5350}
+  .fluxsw-pos{background:var(--teal)} .fluxsw-neg{background:var(--red)}
   /* trois canevas empilés : cvBg (dégradé) et cvMain (grille/niveaux) ne
      reçoivent aucun événement, seul cvCursor (réticule/infobulle) est
      interactif -- le glisser tactile ne doit jamais scroller la page. */
@@ -330,8 +407,8 @@
     display:inline-block; margin-top:8px; padding:3px 10px; font-size:9.5px;
     letter-spacing:.16em; text-transform:uppercase; border:1px solid var(--line-strong);
   }
-  .dp-tag.up{color:#26A69A; border-color:rgba(38,166,154,.45)}
-  .dp-tag.dn{color:#EF5350; border-color:rgba(239,83,80,.45)}
+  .dp-tag.up{color:var(--teal); border-color:rgba(var(--teal-rgb),.45)}
+  .dp-tag.dn{color:var(--red); border-color:rgba(var(--red-rgb),.45)}
   .dp-tag.mid{color:var(--muted)}
   #dpSpark{flex:none}
   /* Barre-séparateur repliable, réutilisable (dark pool, et gamma plus tard) */
@@ -341,18 +418,18 @@
     color:var(--muted); font-family:inherit; font-size:10.5px; letter-spacing:.1em;
     text-transform:uppercase; padding:4px 13px; cursor:pointer; display:inline-flex;
     align-items:center; gap:7px; transition:color .15s, border-color .15s}
-  .gtog button:hover{color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .gtog button:hover{color:var(--gold); border-color:rgba(var(--gold-rgb),.4)}
   .gtog .arw{font-size:8px; transition:transform .2s}
   .gtog.open .arw{transform:rotate(180deg)}
-  .gtog.open button{color:var(--gold); border-color:rgba(240,185,11,.4)}
+  .gtog.open button{color:var(--gold); border-color:rgba(var(--gold-rgb),.4)}
   /* Carte de contexte dark pool : verte accumulation, rouge distribution */
   #dpCtx{border:1px solid var(--line-strong); border-radius:10px; padding:13px 16px; margin-top:2px}
-  #dpCtx.up{border-color:rgba(38,166,154,.45); background:rgba(38,166,154,.06)}
-  #dpCtx.dn{border-color:rgba(239,83,80,.45); background:rgba(239,83,80,.06)}
+  #dpCtx.up{border-color:rgba(var(--teal-rgb),.45); background:rgba(var(--teal-rgb),.06)}
+  #dpCtx.dn{border-color:rgba(var(--red-rgb),.45); background:rgba(var(--red-rgb),.06)}
   #dpCtx.mid{border-color:var(--line-strong); background:transparent}
   #dpCtx .gc-h{font-size:14px; font-weight:600; margin-bottom:5px}
-  #dpCtx.up .gc-h{color:#26A69A}
-  #dpCtx.dn .gc-h{color:#EF5350}
+  #dpCtx.up .gc-h{color:var(--teal)}
+  #dpCtx.dn .gc-h{color:var(--red)}
   #dpCtx.mid .gc-h{color:var(--muted)}
   #dpCtx .gc-b{font-size:12.5px; line-height:1.5; color:var(--text)}
   #dpCtx .gc-f{font-size:9.5px; letter-spacing:.06em; color:var(--faint);
@@ -383,11 +460,11 @@
   }
   .chips button:hover{color:var(--text); border-color:var(--line-strong)}
   .chips button.on{
-    color:var(--gold); border-color:rgba(240,185,11,.5);
-    background:linear-gradient(180deg, rgba(240,185,11,.14), rgba(240,185,11,.06));
+    color:var(--gold); border-color:rgba(var(--gold-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.14), rgba(var(--gold-rgb),.06));
   }
   .chips .led{
-    width:7px; height:7px; border-radius:50%; background:#33333B; flex:none;
+    width:7px; height:7px; border-radius:50%; background:var(--line-hi); flex:none;
     transition:all .12s ease;
   }
   .chips button.on .led{background:var(--gold); box-shadow:0 0 7px var(--gold-glow)}
@@ -395,31 +472,31 @@
   /* CODE COULEUR PAR FAMILLE : or = GEX, teal = EM, violet = Open.
      La pastille garde une teinte même éteinte, pour identifier la famille
      d'un coup d'œil sans avoir à l'activer. */
-  .chips button[data-g="gex"] .led{background:rgba(240,185,11,.28)}
-  .chips button[data-g="gex"]:hover{border-color:rgba(240,185,11,.45)}
+  .chips button[data-g="gex"] .led{background:rgba(var(--gold-rgb),.28)}
+  .chips button[data-g="gex"]:hover{border-color:rgba(var(--gold-rgb),.45)}
   .chips button[data-g="gex"].on{
-    color:#F0B90B; border-color:rgba(240,185,11,.5);
-    background:linear-gradient(180deg, rgba(240,185,11,.15), rgba(240,185,11,.05));
+    color:var(--gold); border-color:rgba(var(--gold-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.15), rgba(var(--gold-rgb),.05));
   }
-  .chips button[data-g="gex"].on .led{background:#F0B90B; box-shadow:0 0 8px rgba(240,185,11,.6)}
-  .chips button[data-g="em"] .led{background:rgba(38,166,154,.28)}
-  .chips button[data-g="em"]:hover{border-color:rgba(38,166,154,.45)}
+  .chips button[data-g="gex"].on .led{background:var(--gold); box-shadow:0 0 8px rgba(var(--gold-rgb),.6)}
+  .chips button[data-g="em"] .led{background:rgba(var(--teal-rgb),.28)}
+  .chips button[data-g="em"]:hover{border-color:rgba(var(--teal-rgb),.45)}
   .chips button[data-g="em"].on{
-    color:#26A69A; border-color:rgba(38,166,154,.5);
-    background:linear-gradient(180deg, rgba(38,166,154,.15), rgba(38,166,154,.05));
+    color:var(--teal); border-color:rgba(var(--teal-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--teal-rgb),.15), rgba(var(--teal-rgb),.05));
   }
-  .chips button[data-g="em"].on .led{background:#26A69A; box-shadow:0 0 8px rgba(38,166,154,.6)}
-  .chips button[data-g="open"] .led{background:rgba(139,92,246,.28)}
-  .chips button[data-g="open"]:hover{border-color:rgba(139,92,246,.45)}
+  .chips button[data-g="em"].on .led{background:var(--teal); box-shadow:0 0 8px rgba(var(--teal-rgb),.6)}
+  .chips button[data-g="open"] .led{background:rgba(var(--violet-rgb),.28)}
+  .chips button[data-g="open"]:hover{border-color:rgba(var(--violet-rgb),.45)}
   .chips button[data-g="open"].on{
-    color:#8B5CF6; border-color:rgba(139,92,246,.5);
-    background:linear-gradient(180deg, rgba(139,92,246,.15), rgba(139,92,246,.05));
+    color:var(--violet); border-color:rgba(var(--violet-rgb),.5);
+    background:linear-gradient(180deg, rgba(var(--violet-rgb),.15), rgba(var(--violet-rgb),.05));
   }
-  .chips button[data-g="open"].on .led{background:#8B5CF6; box-shadow:0 0 8px rgba(139,92,246,.6)}
+  .chips button[data-g="open"].on .led{background:var(--violet); box-shadow:0 0 8px rgba(var(--violet-rgb),.6)}
   /* ============ table ============ */
   table{width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums}
   thead th{
-    font-family:var(--disp); font-size:9.5px; font-weight:600; letter-spacing:.16em;
+    font-family:var(--sans); font-size:9.5px; font-weight:600; letter-spacing:.16em;
     text-transform:uppercase; color:var(--faint); text-align:left;
     padding:9px 16px; border-bottom:1px solid var(--line);
   }
@@ -427,7 +504,7 @@
   td{padding:7px 16px; border-bottom:1px solid var(--line); font-size:12.5px}
   tbody tr:last-child td{border-bottom:none}
   tbody tr{transition:background .1s ease}
-  tbody tr:hover{background:rgba(255,255,255,.018)}
+  tbody tr:hover{background:rgba(var(--white-rgb),.018)}
   td.price{font-weight:600; text-align:right; white-space:nowrap}
   td.dist{color:var(--muted); text-align:right; white-space:nowrap; width:92px; font-size:11.5px}
   .tick{display:inline-block; width:8px; height:8px; margin-right:9px; vertical-align:baseline; border:1.5px solid currentColor}
@@ -466,7 +543,7 @@
     border:1px solid var(--gold); font-size:12px; font-weight:500;
     padding:9px 14px; cursor:pointer; transition:background .12s ease;
   }
-  #copyBtn:hover{background:rgba(240,185,11,.24)}
+  #copyBtn:hover{background:rgba(var(--gold-rgb),.24)}
   #copyBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
 
   /* ============ states / footer ============ */
@@ -496,15 +573,16 @@
     .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
     /* le sélecteur de fuseau et la langue passent à la ligne proprement */
-    .topnav{flex-wrap:wrap; row-gap:6px}
-    .nav-sep{display:none}
+    .hdrtools{flex-wrap:wrap; row-gap:6px}
+    .hdrdiv{display:none}
     header{gap:10px; padding-bottom:14px; margin-bottom:14px}
-    .brand h1{font-size:14px; letter-spacing:.16em}
+    .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
-    .topnav{width:100%; margin-left:0; justify-content:flex-start}
-    .topnav a{padding:6px 8px; font-size:11.5px}
-    .topnav .ivs{margin-left:auto}
-    .ctxbar #statusPill{margin-left:0}
+    .hdrtools{width:100%; margin-left:0; justify-content:flex-start}
+    .community a{padding:6px 8px}
+    /* L'appel au don ferme la rangee et reste pleine cible tactile. */
+    .cta-support{margin-left:auto; min-height:40px}
+    .hdr-id #statusPill{margin-left:0}
     #pineTopBtn{padding:9px 12px; margin-left:auto}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
@@ -545,51 +623,42 @@
   /* — profondeur d'ambiance : lueur froide basse en écho au beam doré haut — */
   body{
     background:
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.055), transparent 62%),
-      radial-gradient(900px 500px at 50% 118%, rgba(38,166,154,.035), transparent 60%),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.055), transparent 62%),
+      radial-gradient(900px 500px at 50% 118%, rgba(var(--teal-rgb),.035), transparent 60%),
       var(--bg);
   }
   ::-webkit-scrollbar{width:9px; height:9px}
-  ::-webkit-scrollbar-thumb{background:#26262E; border:2px solid var(--bg)}
-  ::-webkit-scrollbar-thumb:hover{background:#33333D}
+  ::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb:hover{background:var(--line-hi)}
   ::-webkit-scrollbar-track{background:transparent}
 
-  .brand h1 em{text-shadow:0 0 22px var(--gold-glow)}
+  .brand h1 b{text-shadow:0 0 22px var(--gold-glow)}
   .brand .sub{font-variant-numeric:tabular-nums}
 
 
-  .tabs{background:var(--surface)}
-  .tabs button{min-height:38px; letter-spacing:.06em}
-  .tabs button.on{
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 18px -10px var(--gold-glow);
-  }
-  .fluxToggle{min-height:38px}
-  .fluxToggle.on{
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 18px -10px var(--gold-glow);
-  }
   #statusPill{min-height:32px; font-variant-numeric:tabular-nums}
   #pineTopBtn{min-height:32px}
 
   .stats{
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+    box-shadow:inset 0 1px 0 rgba(var(--white-rgb),.03), 0 14px 34px -18px rgba(var(--black-rgb),.65);
   }
   .cell{transition:background .14s ease}
-  .cell:hover{background:rgba(255,255,255,.016)}
+  .cell:hover{background:rgba(var(--white-rgb),.016)}
   .cell.price{
-    background:radial-gradient(340px 130px at 18% 0%, rgba(240,185,11,.09), transparent 70%);
+    background:radial-gradient(340px 130px at 18% 0%, rgba(var(--gold-rgb),.09), transparent 70%);
   }
-  .cell.price .val{font-size:28px; letter-spacing:-.015em; text-shadow:0 0 26px rgba(240,185,11,.22)}
+  .cell.price .val{font-size:28px; letter-spacing:-.015em; text-shadow:0 0 26px rgba(var(--gold-rgb),.22)}
   .cell .lbl{padding-bottom:1px}
 
   .panel{
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 14px 34px -18px rgba(0,0,0,.65);
+    box-shadow:inset 0 1px 0 rgba(var(--white-rgb),.03), 0 14px 34px -18px rgba(var(--black-rgb),.65);
   }
   .panel > h2{
-    background:linear-gradient(180deg, rgba(255,255,255,.015), transparent);
+    background:linear-gradient(180deg, rgba(var(--white-rgb),.015), transparent);
   }
   .panel > h2::before{text-shadow:0 0 8px var(--gold-glow)}
 
-  .cbar{background:linear-gradient(180deg, rgba(255,255,255,.012), transparent)}
+  .cbar{background:linear-gradient(180deg, rgba(var(--white-rgb),.012), transparent)}
   .ivs button, .chips button{min-height:32px}
   .ivs button:active, .chips button:active, #pineTopBtn:active, .tabs button:active,
   .fluxToggle:active{
@@ -597,32 +666,32 @@
   }
 
   tbody tr:hover{
-    background:rgba(255,255,255,.02);
-    box-shadow:inset 2px 0 0 rgba(240,185,11,.5);
+    background:rgba(var(--white-rgb),.02);
+    box-shadow:inset 2px 0 0 rgba(var(--gold-rgb),.5);
   }
   tbody tr{box-shadow:inset 2px 0 0 transparent; transition:background .12s ease, box-shadow .12s ease}
   td.price{font-size:13px}
   thead th{border-bottom:1px solid var(--line-strong)}
 
   #pineStr{
-    box-shadow:inset 0 2px 8px rgba(0,0,0,.4);
+    box-shadow:inset 0 2px 8px rgba(var(--black-rgb),.4);
     scrollbar-width:thin;
   }
   #copyBtn{
-    background:linear-gradient(180deg, rgba(240,185,11,.2), rgba(240,185,11,.1));
+    background:linear-gradient(180deg, rgba(var(--gold-rgb),.2), rgba(var(--gold-rgb),.1));
   }
-  #copyBtn:hover{background:linear-gradient(180deg, rgba(240,185,11,.3), rgba(240,185,11,.16))}
+  #copyBtn:hover{background:linear-gradient(180deg, rgba(var(--gold-rgb),.3), rgba(var(--gold-rgb),.16))}
   #copyBtn:active{transform:translateY(1px)}
 
   .em-band{
-    box-shadow:inset 3px 0 0 rgba(239,83,80,.45), inset -3px 0 0 rgba(38,166,154,.45);
+    box-shadow:inset 3px 0 0 rgba(var(--red-rgb),.45), inset -3px 0 0 rgba(var(--teal-rgb),.45);
   }
   .em-mid b{font-size:15px}
 
   footer{position:relative; border-top:none; padding-top:16px}
   footer::before{
     content:""; position:absolute; top:0; left:0; right:0; height:1px;
-    background:linear-gradient(90deg, var(--line), rgba(240,185,11,.28), var(--line));
+    background:linear-gradient(90deg, var(--line), rgba(var(--gold-rgb),.28), var(--line));
   }
 
   @media(prefers-reduced-motion:no-preference){
@@ -641,13 +710,13 @@
   }
   html::before{
     width:820px; height:520px; top:-260px; left:50%; margin-left:-500px;
-    background:radial-gradient(closest-side, rgba(240,185,11,.14), transparent 70%);
+    background:radial-gradient(closest-side, rgba(var(--gold-rgb),.14), transparent 70%);
     animation:drift1 46s ease-in-out infinite alternate;
   }
   html::after{
     width:760px; height:560px; bottom:-320px; right:-180px;
     background:
-      radial-gradient(closest-side, rgba(38,166,154,.11), transparent 70%),
+      radial-gradient(closest-side, rgba(var(--teal-rgb),.11), transparent 70%),
       radial-gradient(closest-side, rgba(99,102,241,.07), transparent 75%);
     animation:drift2 58s ease-in-out infinite alternate;
   }
@@ -656,9 +725,9 @@
   /* trame d'ingénierie à peine perceptible */
   body{
     background:
-      linear-gradient(rgba(255,255,255,.014) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px),
-      radial-gradient(1100px 420px at 50% -180px, rgba(240,185,11,.05), transparent 62%),
+      linear-gradient(rgba(var(--white-rgb),.014) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--white-rgb),.014) 1px, transparent 1px),
+      radial-gradient(1100px 420px at 50% -180px, rgba(var(--gold-rgb),.05), transparent 62%),
       var(--bg);
     background-size:44px 44px, 44px 44px, auto, auto;
   }
@@ -666,9 +735,9 @@
   /* — panneaux verre + bordure en dégradé — */
   .panel, .stats{
     background:
-      linear-gradient(180deg, #141419, #101014) padding-box,
-      linear-gradient(135deg, rgba(240,185,11,.32), rgba(255,255,255,.06) 34%,
-                      rgba(255,255,255,.04) 66%, rgba(38,166,154,.22)) border-box;
+      linear-gradient(180deg, var(--card-top), var(--card-bottom)) padding-box,
+      linear-gradient(135deg, rgba(var(--gold-rgb),.32), rgba(var(--white-rgb),.06) 34%,
+                      rgba(var(--white-rgb),.04) 66%, rgba(var(--teal-rgb),.22)) border-box;
     border:1px solid transparent;
   }
 
@@ -679,7 +748,7 @@
   #statusPill::before{
     content:""; position:absolute; inset:-1px; z-index:-1; padding:1px;
     background:conic-gradient(from var(--pa, 0deg),
-      rgba(240,185,11,.0), rgba(240,185,11,.7), rgba(240,185,11,.0) 32%);
+      rgba(var(--gold-rgb),.0), rgba(var(--gold-rgb),.7), rgba(var(--gold-rgb),.0) 32%);
     -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite:xor; mask-composite:exclude;
     opacity:0; transition:opacity .3s ease;
@@ -688,9 +757,11 @@
   #statusPill.live::before{opacity:1; animation:ring 3.2s linear infinite}
   @keyframes ring{to{--pa:360deg}}
 
-  /* — wordmark : reflet doré balayant — */
-  .brand h1 em{
-    background:linear-gradient(100deg, var(--gold) 42%, #FFE9A3 50%, var(--gold) 58%);
+  /* — wordmark : reflet dore balayant. Seule animation decorative que je
+     garde sur la marque : elle se declenche toutes les 7s, sur le seul
+     logotype, et s'arrete sous prefers-reduced-motion. — */
+  .brand h1 b{
+    background:linear-gradient(100deg, var(--gold) 42%, var(--gold-pale) 50%, var(--gold) 58%);
     background-size:230% 100%;
     -webkit-background-clip:text; background-clip:text; color:transparent;
     animation:shine 7s ease-in-out infinite;
@@ -698,9 +769,7 @@
   @keyframes shine{0%, 55%{background-position:120% 0} 85%, 100%{background-position:-40% 0}}
 
   /* — lueur au survol — */
-  .tabs button.on{box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 10px 24px -10px var(--gold-glow)}
   #pineTopBtn:hover, .chips button.on:hover{box-shadow:0 8px 22px -10px var(--gold-glow)}
-  .topnav a{border-radius:2px}
 
   /* — cellule prix : halo respirant discret — */
   @media(prefers-reduced-motion:no-preference){
@@ -713,28 +782,12 @@
   }
   @media(prefers-reduced-motion:reduce){
     html::before, html::after{animation:none}
-    .brand h1 em{animation:none; color:var(--gold); background:none}
+    .brand h1 b{animation:none; color:var(--gold); background:none}
     #statusPill.live::before{animation:none}
   }
   /* Bouton de soutien : même gabarit que les autres liens de la barre,
      juste souligné d'un liseré doré et d'un halo qui respire lentement.
      Aucun pop-up, aucune interruption : un simple lien externe. */
-  .topnav a.donate{
-    color:#F0B90B;
-    border-color:rgba(240,185,11,.42);
-    animation:donGlow 3.6s ease-in-out infinite;
-  }
-  .topnav a.donate:hover{
-    color:#0A0A0C; background:#F0B90B; border-color:#F0B90B;
-    animation:none;
-  }
-  @keyframes donGlow{
-    0%,100%{ box-shadow:0 0 0 rgba(240,185,11,0); }
-    50%    { box-shadow:0 0 12px rgba(240,185,11,.28); }
-  }
-  @media (prefers-reduced-motion:reduce){
-    .topnav a.donate{ animation:none; }
-  }
   /* Accès membre : chip près du logo, dans la même famille visuelle que les
      liens de navigation. Deux cibles de clic distinctes et sans ambiguïté :
      le corps du bouton mène toujours au profil (ou ouvre la connexion si
@@ -747,8 +800,8 @@
     cursor:pointer; display:inline-flex; align-items:center; gap:8px;
     white-space:nowrap; transition:color .12s ease, border-color .12s ease;
   }
-  #authBtn:hover{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  #authBtn.on{color:var(--text); border-color:rgba(38,166,154,.5)}
+  #authBtn:hover{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+  #authBtn.on{color:var(--text); border-color:rgba(var(--teal-rgb),.5)}
   #authBtn:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   .authAvatar{
     width:20px; height:20px; border-radius:50%; flex:none;
@@ -756,20 +809,20 @@
     font-size:11px; font-weight:600; background:var(--gold-soft); color:var(--gold);
     transition:background .12s ease, color .12s ease;
   }
-  #authBtn.on .authAvatar{background:rgba(38,166,154,.16); color:var(--teal)}
+  #authBtn.on .authAvatar{background:rgba(var(--teal-rgb),.16); color:var(--teal)}
   .authCaret{
     background:var(--surface2); border:1px solid var(--line-strong); border-left:none;
     color:var(--muted); cursor:pointer; padding:0 8px; align-self:stretch;
     display:inline-flex; align-items:center; font-size:9px;
     transition:color .12s ease, border-color .12s ease;
   }
-  .authCaret:hover{color:var(--gold); border-color:rgba(240,185,11,.5)}
+  .authCaret:hover{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
   .authCaret[aria-expanded="true"]{color:var(--gold)}
   .authCaret:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   .authMenu{
     position:absolute; top:calc(100% + 6px); left:0; min-width:180px; z-index:70;
     background:var(--surface); border:1px solid var(--line-strong);
-    box-shadow:0 14px 32px -14px rgba(0,0,0,.6);
+    box-shadow:0 14px 32px -14px rgba(var(--black-rgb),.6);
     display:flex; flex-direction:column; padding:6px;
   }
   .authMenuItem{
@@ -783,7 +836,7 @@
   .authMenuItem:hover .mi-ic, .authMenuItem:focus-visible .mi-ic{color:inherit}
   .authMenuItem--danger:hover, .authMenuItem--danger:focus-visible{color:var(--red)}
   #authWrap{
-    position:fixed; inset:0; background:rgba(0,0,0,.74); z-index:80;
+    position:fixed; inset:0; background:rgba(var(--black-rgb),.74); z-index:80;
     display:flex; align-items:center; justify-content:center; padding:18px;
   }
   #authCard{
@@ -801,10 +854,10 @@
   }
   #authCard input:focus{outline:none; border-color:var(--gold)}
   #authGo{
-    width:100%; margin-top:18px; background:var(--gold); border:none; color:#0A0A0C;
+    width:100%; margin-top:18px; background:var(--gold); border:none; color:var(--bg);
     font:inherit; font-size:13px; font-weight:600; padding:11px; cursor:pointer;
   }
-  #authGo:hover{background:#ffd23f}
+  #authGo:hover{background:var(--gold-hi)}
   #authGo:disabled{opacity:.5; cursor:default}
   #authSwap{background:none; border:none; color:var(--muted); font:inherit;
     font-size:11.5px; cursor:pointer; margin-top:14px; text-decoration:underline}
@@ -823,25 +876,7 @@
   /* Sélecteur d'échelle de l'or : le future GC cote au-dessus du comptant
      XAUUSD (portage), les niveaux diffèrent donc de plusieurs dizaines de
      dollars — d'où ce choix explicite. Même traitement que les onglets. */
-  .goldsel{
-    display:inline-flex; margin:-8px 0 16px; border:1px solid var(--line-strong);
-    background:var(--surface); animation:gsIn .18s ease-out;
-  }
-  @keyframes gsIn{from{opacity:0; transform:translateY(-3px)} to{opacity:1; transform:none}}
-  .goldsel button{
-    position:relative; background:transparent; border:none; cursor:pointer;
-    padding:6px 18px; font-family:inherit; font-size:11.5px; letter-spacing:.04em;
-    color:var(--muted); transition:color .12s ease, background .12s ease;
-  }
-  .goldsel button + button{border-left:1px solid var(--line)}
-  .goldsel button:hover{color:var(--text)}
-  .goldsel button.on{color:var(--gold); font-weight:600; background:var(--gold-soft)}
-  .goldsel button.on::after{
-    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px;
-    background:var(--gold);
-  }
-  .goldsel button:focus-visible{outline:2px solid var(--gold); outline-offset:-2px}
-  @media(max-width:640px){ .goldsel button{padding:0 16px; min-height:40px} }
+  @media(max-width:640px){ .goldsel button{padding:0 14px; min-height:40px} }
   }
 </style>
 <div id="authWrap" hidden>
@@ -872,18 +907,23 @@
 <main>
 
 <header>
+  <!-- Bande 1 : identite, compte, appel au don, etat de la donnee.
+       Le compte et le don sont colles a la marque plutot que renvoyes a
+       l'autre bout de la barre : c'est ce qui creait le decalage. -->
+  <div class="hdr-id">
   <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
-    <g stroke="#F0B90B" stroke-width="6" fill="none">
+    <g stroke="var(--gold)" stroke-width="6" fill="none">
       <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
       <line x1="50" y1="50" x2="79" y2="67"/><line x1="50" y1="50" x2="50" y2="84"/>
       <line x1="50" y1="50" x2="21" y2="67"/><line x1="50" y1="50" x2="21" y2="33"/>
     </g>
-    <circle cx="50" cy="50" r="13" fill="#F0B90B"/>
+    <circle cx="50" cy="50" r="13" fill="var(--gold)"/>
   </svg>
   <div class="brand">
-    <h1>GEX <em>Terminal</em></h1>
+    <h1><b>Gex</b>Dash · <span class="pg">Terminal</span></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
+
   <div class="authChip" id="authChip">
     <button id="authBtn" type="button" title="Accès membre">
       <span class="authAvatar" id="authAvatar" aria-hidden="true">⬡</span>
@@ -900,26 +940,30 @@
       </button>
     </div>
   </div>
-  <nav class="topnav">
-    <!-- 1. espace applicatif : le dashboard est une section du produit -->
-    <a href="/dash" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="dashLbl">Mon dashboard</span></a>
 
-    <a href="/heatmap" class="nav-app"><span class="ic" aria-hidden="true">▦</span><span id="heatLbl">Heatmap</span></a>
-    <a href="/news" class="nav-app" id="newsLink" hidden><span class="ic" aria-hidden="true">▤</span><span id="newsLbl">News</span></a>
-    <a href="/doc" class="nav-app"><span class="ic" aria-hidden="true">?</span><span id="docLbl">Doc</span></a>
+    <a id="donateLink" class="cta-support" target="_blank" rel="noopener" hidden
+       href="#"><span class="hrt" aria-hidden="true">♥</span><span id="donLbl">Soutenir</span></a>
 
-    <span class="nav-sep" aria-hidden="true"></span>
+    <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
+  </div>
 
-    <!-- 2. communauté & outils : pastilles colorées pour accrocher l'œil -->
-    <a id="dcLink" class="nav-ext dc" target="_blank" rel="noopener" href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
-    <a id="tvLink" class="nav-ext tv" target="_blank" rel="noopener"
-       href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span class="dot" aria-hidden="true"></span><span id="tvLbl">TradingView</span></a>
+  <!-- Bande 2 : navigation a gauche, outils a droite. Les regler sur la
+       meme ligne evite une troisieme bande et donne a chaque bande un
+       role lisible : qui je suis en haut, ou je vais en bas. -->
+  <div class="hdr-bar">
+    <!-- Navigation rendue par shell.js depuis une liste unique partagee
+         par toutes les pages : c'est ce qui empeche une destination de
+         redevenir introuvable, comme /horizon l'etait. -->
+    <nav id="appnav"></nav>
+    <div class="hdrtools">
+      <span class="community">
+      <a id="dcLink" class="dc" target="_blank" rel="noopener"
+         href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
+      <a id="tvLink" class="tv" target="_blank" rel="noopener"
+         href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span class="dot" aria-hidden="true"></span><span id="tvLbl">TradingView</span></a>
+    </span>
 
-    <!-- 3. soutien : unique élément plein, c'est l'appel à l'action -->
-    <a id="donateLink" class="nav-support" target="_blank" rel="noopener" hidden
-       href="#"><span aria-hidden="true">♥</span> <span id="donLbl">Soutenir</span></a>
-
-    <span class="nav-sep" aria-hidden="true"></span>
+    <span class="hdrdiv" aria-hidden="true"></span>
 
     <select id="tzTop" title="Fuseau horaire des charts">
       <option value="Europe/Paris">Paris</option>
@@ -927,11 +971,8 @@
       <option value="Europe/London">London</option>
       <option value="UTC">UTC</option>
     </select>
-    <span class="ivs" id="langSel">
-      <button data-l="fr" class="on">FR</button>
-      <button data-l="en">EN</button>
-    </span>
-  </nav>
+    <span id="langSel"></span>
+  </div>
 </header>
 
 <div class="ctxbar">
@@ -947,7 +988,6 @@
     <button data-g="GC" type="button">GC</button>
     <button data-g="XAU" type="button">XAUUSD</button>
   </div>
-  <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
 </div>
 
@@ -1000,7 +1040,7 @@
         <div class="fluxloader" id="fluxLoader">
           <svg class="fluxloader-ring" viewBox="0 0 60 60">
             <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(240,185,11,.15)" stroke-width="3"/>
-            <circle cx="30" cy="30" r="26" fill="none" stroke="#F0B90B" stroke-width="3"
+            <circle cx="30" cy="30" r="26" fill="none" stroke="var(--gold)" stroke-width="3"
                     stroke-linecap="round" stroke-dasharray="42 200"/>
           </svg>
           <img class="fluxloader-mark" src="/thehub-mark.png" alt="" aria-hidden="true">
@@ -1077,8 +1117,12 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
-const C = {gold:"#F0B90B", teal:"#26A69A", red:"#EF5350", muted:"#8A8A94",
-           faint:"#5C5C66", line:"#212127", text:"#ECEAE4"};
+/* Couleurs de dessin (canvas, lightweight-charts) : lues depuis
+   theme.css via THEME plutôt que recopiées en hex. var() ne résolvant
+   pas dans une string JS, sans ce relais un changement de palette
+   mettrait à jour le CSS en laissant les graphiques sur l'ancien or. */
+const C = {gold:THEME.gold, teal:THEME.teal, red:THEME.red, muted:THEME.muted,
+           faint:THEME.faint, line:THEME.line, text:THEME.text};
 const KIND_COLOR = {res:C.teal, sup:C.red, res0:C.teal, sup0:C.red, flip:C.gold, hgex:C.gold,
                     gpos:C.teal, gneg:C.red, emh:C.text, eml:C.text,
                     ivh:C.muted, ivl:C.muted, mpain:C.gold, emb:C.text};
@@ -1314,12 +1358,12 @@ async function loadDark(){
         ctx.beginPath(); ctx.moveTo(6, Y(d.avg20)); ctx.lineTo(W - 6, Y(d.avg20)); ctx.stroke();
         ctx.setLineDash([]);
       }
-      ctx.strokeStyle = "#26A69A"; ctx.lineWidth = 1.6;
+      ctx.strokeStyle = C.teal; ctx.lineWidth = 1.6;
       ctx.beginPath();
       rows.forEach((x, i) => { const px = X(i), py = Y(x.r); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
       ctx.stroke();
       const lx = X(rows.length - 1), ly = Y(rows[rows.length - 1].r);
-      ctx.fillStyle = "#F0B90B";
+      ctx.fillStyle = C.gold;
       ctx.beginPath(); ctx.arc(lx, ly, 2.6, 0, 7); ctx.fill();
     }
   }catch(_){
@@ -1424,8 +1468,7 @@ function authPaint(){
   btn.classList.toggle("on", !!AUTH_USER);
   lbl.textContent = AUTH_USER || t("authIn");
   if (avatar) avatar.textContent = AUTH_USER ? AUTH_USER.slice(0, 1).toUpperCase() : "⬡";
-  const nl = $("newsLink");                 // réservé aux membres
-  if (nl) nl.hidden = !AUTH_USER;
+  Shell.setAuth(!!AUTH_USER);   // retire le cadenas des destinations gardées
   btn.title = AUTH_USER ? t("authProfileTip") : t("authInTip");
   if (caret) { caret.hidden = !AUTH_USER; caret.title = t("authMenuAria"); }
   const mpl = $("authMenuProfileLbl"); if (mpl) mpl.textContent = t("authProfileTip");
@@ -1491,7 +1534,6 @@ async function authSubmit(){
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Erreur");
     AUTH_USER = d.user;
-    const nlb = $("newsLbl"); if (nlb) nlb.textContent = t("news");
     authPaint();
     msg.className = "ok"; msg.textContent = t("authWelcome");
     setTimeout(() => {
@@ -1561,8 +1603,6 @@ async function authSubmit(){
 })();
 
 function applyLang(){
-  document.querySelectorAll("#langSel button").forEach(b =>
-    b.classList.toggle("on", b.dataset.l === LANG));
   $("chartTitle").textContent = FLUX_ON ? t("fluxTitle") : t("chart");
   // libellé du bouton FLUX : annonce toujours la DESTINATION du clic, pas
   // la vue courante — "FLUX" sur le chart, "CHART" une fois dans le flux
@@ -1580,11 +1620,9 @@ function applyLang(){
   $("copyBtn").textContent = t("copy");
   $("pineTopBtn").textContent = t("pineTop");
   $("tvLbl").textContent = t("tv");
-  $("dashLbl").textContent = t("dash");
+  Shell.mount("appnav"); Shell.setLang(LANG);
   const dl = $("darkLbl"); if (dl) dl.textContent = t("dCtxLbl");
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
-  $("docLbl").textContent = t("doc");
-  const hl = $("heatLbl"); if (hl) hl.textContent = t("heat");
   authPaint();
   $("donLbl").textContent = t("don");
   $("donateLink").title = t("donTip");
@@ -1598,11 +1636,8 @@ function applyLang(){
 }
 
 async function load(){
-  document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
-    LANG = b.dataset.l;
-    try{ localStorage.setItem("gexLang", LANG); }catch(_){}
-    applyLang();
-  });
+  Shell.mountLang("langSel");
+  Shell.onLang(l => { LANG = l; applyLang(); });
   applyLang();
   const switchTarget = (t) => {
     TARGET = t;
@@ -2146,12 +2181,12 @@ function liveBadge(msg, ok){
   if (!el){
     el = document.createElement("div");
     el.id = "liveBadge";
-    el.style.cssText = "font:10px monospace;color:#5C5C66;padding:2px 8px;text-align:right";
+    el.style.cssText = "font:10px monospace;color:" + C.faint + ";padding:2px 8px;text-align:right";
     const box = document.getElementById("chartBox");
     if (box && box.parentNode) box.parentNode.insertBefore(el, box.nextSibling);
   }
   el.textContent = msg;
-  el.style.color = ok === null ? "#5C5C66" : (ok ? "#26A69A" : "#EF5350");
+  el.style.color = ok === null ? C.faint : (ok ? C.teal : C.red);
 }
 
 async function pollQuote(){
@@ -2240,8 +2275,8 @@ function applyLevelLines(){
     specs.push({price: CHART.grid.anchor, color: C.gold, solid: true, code: "Open", tier: 3});
     for (const g of CHART.grid.levels){
       const m = g.mult != null ? g.mult : "";
-      specs.push({price: g.up,   color: "#EF5350", solid: false, code: "σ+" + m, tier: 3});
-      specs.push({price: g.down, color: "#26A69A", solid: false, code: "σ−" + m, tier: 3});
+      specs.push({price: g.up,   color: C.red, solid: false, code: "σ+" + m, tier: 3});
+      specs.push({price: g.down, color: C.teal, solid: false, code: "σ−" + m, tier: 3});
     }
   }
   setLineGroup("levels", specs);

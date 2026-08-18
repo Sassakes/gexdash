@@ -3,48 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TheHub - Guide du Flux</title>
+<title>GexDash — Guide du Flux</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/favicon.png">
 <meta name="description" content="Le module Flux de gexdash expliqué point par point : pourquoi les dealers déplacent le prix sans conviction, comment lire le dégradé, exemples sur de vrais mouvements.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Palette : le :root vit dans theme.css, source unique partagée par
+     toutes les pages. Ne pas redéclarer de token de couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
+<script src="/shell.js"></script>
 <style>
   [hidden]{display:none !important}
 
-  :root{
-    --bg:#0A0A0C; --surface:#111114; --surface2:#16161A; --surface3:#1B1B20;
-    --line:#212127; --line-strong:#2E2E36;
-    --text:#ECEAE4; --muted:#8A8A94; --faint:#5C5C66;
-    --gold:#F0B90B; --teal:#26A69A; --red:#EF5350; --blue:#5B8DEF;
-    --mono:"IBM Plex Mono",monospace; --sans:"Space Grotesk",sans-serif;
-  }
+  
   *{box-sizing:border-box; margin:0}
   html{scroll-behavior:smooth}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.6}
   a{color:var(--gold)}
 
-  header{
-    display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
-    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
-    background:rgba(10,10,12,.95); backdrop-filter:blur(10px);
-  }
-  header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
-  header h1 b{color:var(--gold)}
-  .topnav{display:flex; gap:4px; margin-left:auto; align-items:center; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
-    position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
-  .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
-  .lang button{background:none; border:none; color:var(--muted); font:inherit;
-               font-size:11px; padding:5px 10px; cursor:pointer}
-  .lang button.on{background:var(--gold); color:#0A0A0C; font-weight:600}
 
   /* ── hero ── */
   .hero{padding:34px 20px 6px; max-width:1180px; margin:0 auto}
@@ -59,8 +37,8 @@
           font-weight:600; text-decoration:none; border:1px solid; white-space:nowrap;
           transition:background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease}
   .ctaBtn:active{transform:scale(.98)}
-  .ctaBtn.primary{background:var(--gold); color:#0A0A0C; border-color:var(--gold)}
-  .ctaBtn.primary:hover{background:#ffc93d}
+  .ctaBtn.primary{background:var(--gold); color:var(--bg); border-color:var(--gold)}
+  .ctaBtn.primary:hover{background:var(--gold-hi)}
   .ctaBtn.ghost{background:transparent; color:var(--muted); border-color:var(--line-strong)}
   .ctaBtn.ghost:hover{color:var(--text); border-color:var(--text)}
 
@@ -83,7 +61,7 @@
   .shead{display:flex; align-items:center; gap:12px; padding:16px 22px;
          border-bottom:1px solid var(--line); background:var(--surface2)}
   .shead i{font-family:var(--mono); font-size:11px; color:var(--gold); font-style:normal;
-           border:1px solid rgba(240,185,11,.35); padding:3px 8px}
+           border:1px solid rgba(var(--gold-rgb),.35); padding:3px 8px}
   .shead h3{font-size:15px; font-weight:600; letter-spacing:.01em}
   .sbody{padding:20px 22px}
   .sbody > * + *{margin-top:14px}
@@ -97,9 +75,9 @@
   .chip{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
   .chip .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
             display:inline-block; margin-bottom:9px}
-  .chip.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  .chip.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
-  .chip.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
+  .chip.g .tg{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+  .chip.t .tg{color:var(--teal); border-color:rgba(var(--teal-rgb),.5)}
+  .chip.r .tg{color:var(--red); border-color:rgba(var(--red-rgb),.5)}
   .chip p{font-size:12.5px; color:var(--muted)}
 
   /* blocs : scénarios (mini-chart + explication) */
@@ -107,10 +85,10 @@
   .scen-card{background:var(--surface2); border:1px solid var(--line); padding:14px 16px}
   .scen-card .tg{font-family:var(--mono); font-size:11px; padding:2px 9px; border:1px solid;
                  display:inline-block; margin-bottom:10px}
-  .scen-card.t .tg{color:var(--teal); border-color:rgba(38,166,154,.5)}
-  .scen-card.r .tg{color:var(--red); border-color:rgba(239,83,80,.5)}
-  .scen-card.g .tg{color:var(--gold); border-color:rgba(240,185,11,.5)}
-  .scen-card svg{width:100%; height:auto; display:block; background:#0C0C0F;
+  .scen-card.t .tg{color:var(--teal); border-color:rgba(var(--teal-rgb),.5)}
+  .scen-card.r .tg{color:var(--red); border-color:rgba(var(--red-rgb),.5)}
+  .scen-card.g .tg{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
+  .scen-card svg{width:100%; height:auto; display:block; background:var(--bg);
                  border:1px solid var(--line); margin:0 0 10px}
   .scen-card p{font-size:12.5px; color:var(--muted)}
 
@@ -127,12 +105,12 @@
   .steps{counter-reset:st}
   .steps li{list-style:none; counter-increment:st; position:relative;
             padding:11px 0 11px 42px; font-size:13px; color:var(--muted);
-            border-bottom:1px solid rgba(255,255,255,.05)}
+            border-bottom:1px solid rgba(var(--white-rgb),.05)}
   .steps li:last-child{border-bottom:none}
   .steps li::before{content:counter(st); position:absolute; left:0; top:10px;
     width:26px; height:26px; display:flex; align-items:center; justify-content:center;
     font-family:var(--mono); font-size:11px; color:var(--gold);
-    border:1px solid rgba(240,185,11,.35)}
+    border:1px solid rgba(var(--gold-rgb),.35)}
 
   /* blocs : note */
   .note{background:var(--surface2); border:1px solid var(--line);
@@ -196,16 +174,10 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<header>
-  <h1><b>THE</b>HUB · <span id="hTitle">Flux</span></h1>
-  <nav class="topnav">
-    <a href="/" id="nTerm">Terminal</a>
-    <a href="/dash" id="nDash">Dashboard</a>
-    <a href="/heatmap" id="nHeat">Heatmap</a>
-    <a href="/doc" id="nDoc">Doc</a>
-    <a href="/news" id="nNews" hidden>News</a>
-  </nav>
-  <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
+<header class="appheader">
+  <h1><b>Gex</b>Dash · <span id="hTitle">Flux</span></h1>
+  <nav class="topnav" id="appnav"></nav>
+  <span id="langSel"></span>
 </header>
 
 <div class="hero">
@@ -249,19 +221,19 @@ const SCEN_SHAPE = {
     path:[29050,29120,29200,29280,29350,29400,29430,29410,29360,29290,
           29220,29160,29110,29140,29210,29290,29360,29410,29440,29420,
           29370,29300,29230,29170,29130,29160,29230,29310,29380,29425],
-    wallY:29460, wallLabel:"CW", wallColor:"#26A69A"},
+    wallY:29460, wallLabel:"CW", wallColor:THEME.teal},
   brk: {
     lo:28950, hi:30500,
     path:[29050,29080,29120,29150,29190,29230,29270,29310,29350,29380,
           29400,29415,29440,29480,29530,29590,29660,29740,29830,29930,
           30040,30160,30290,30430],
-    wallY:29400, wallLabel:"CW", wallColor:"#F0B90B", shadeFromIdx:10, shadeColor:"#EF5350"},
+    wallY:29400, wallLabel:"CW", wallColor:THEME.gold, shadeFromIdx:10, shadeColor:THEME.red},
   drift: {
     lo:29130, hi:29400,
     path:[29200,29210,29195,29205,29215,29200,29190,29205,29220,29210,
           29195,29200,29215,29225,29210,29200,29215,29230,29245,29260,
           29275,29290,29310,29330,29350,29370],
-    shadeFromIdx:18, shadeColor:"#F0B90B"}
+    shadeFromIdx:18, shadeColor:THEME.gold}
 };
 function fluxScenSvg(cfg){
   const W = 560, H = 150, PAD = 14;
@@ -283,7 +255,7 @@ function fluxScenSvg(cfg){
   }
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img">
     ${extra}
-    <polyline points="${pts}" fill="none" stroke="#ECEAE4" stroke-width="1.6"
+    <polyline points="${pts}" fill="none" stroke="${THEME.text}" stroke-width="1.6"
       stroke-linejoin="round" opacity=".95"/>
   </svg>`;
 }
@@ -510,12 +482,8 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  $("nTerm").textContent = L.term;
-  $("nDash").textContent = L.dash;
-  $("nHeat").textContent = L.heat;
-  $("nDoc").textContent = L.doc;
-  $("nNews").textContent = L.news;
-  $("eyebrowLink").textContent = "Documentation";
+  Shell.mount("appnav"); Shell.setLang(LANG);
+          $("eyebrowLink").textContent = "Documentation";
   $("eyebrowHere").textContent = LANG === "fr" ? "Flux" : "Flow";
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
@@ -525,8 +493,6 @@ function render(){
   $("closerT").textContent = L.closerT;
   $("closerP").textContent = L.closerP;
   $("foot").textContent = L.foot;
-  $("bFr").className = LANG === "fr" ? "on" : "";
-  $("bEn").className = LANG === "en" ? "on" : "";
 
   $("toc").innerHTML = `<div class="lbl">${L.toc}</div>` + L.secs.map((s, i) =>
     `<a href="#${s.id}" data-s="${s.id}"><i>${String(i + 1).padStart(2, "0")}</i>${s.t}</a>`).join("");
@@ -560,13 +526,13 @@ function setLang(l){
   try{ localStorage.setItem("gexLang", l); }catch(_){}
   render();
 }
-$("bFr").onclick = () => setLang("fr");
-$("bEn").onclick = () => setLang("en");
+Shell.mountLang("langSel");
+Shell.onLang(setLang);
 render();
 (async function gateNewsNav(){
   let ok = false;
   try{ ok = (await fetch("/api/auth")).ok; }catch(_){}
-  const nl = $("nNews"); if (nl) nl.hidden = !ok;
+  Shell.setAuth(ok);
 })();
 </script>
 </body>

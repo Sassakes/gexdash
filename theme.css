@@ -1,0 +1,240 @@
+/* GEX Terminal — socle de thème partagé (source unique de vérité).
+   ────────────────────────────────────────────────────────────────
+   Avant ce fichier, la palette était copiée-collée dans les 12 blocs
+   <style> inline des pages, avec des dérives invisibles à l'œil :
+   --line-strong valait #2B2B33 sur 6 pages et #2E2E36 sur 3 autres,
+   --gold-soft alternait entre .12 et .13, deux dégradés de carte
+   quasi identiques coexistaient (#131317→#101013 vs #141419→#101014),
+   et admin.html utilisait un jeu de noms entièrement séparé
+   (--panel/--panel2/--border). Toute refonte demandait 12 éditions
+   cohérentes ; elle en demande une désormais.
+
+   RÈGLE : aucune couleur en dur dans un bloc <style>. Utiliser
+   var(--token). Les valeurs de repli (var(--x,#hex)) restent
+   tolérées dans le CSS injecté par JS (cf. ui.js), où le token peut
+   ne pas encore être résolu au moment de l'injection.
+
+   CÔTÉ JS : var() ne résout PAS dans une string JavaScript. Les
+   couleurs passées à lightweight-charts ou à un canvas doivent venir
+   de window.THEME (cf. theme.js), jamais d'un hex recopié — sinon
+   changer un token ici met à jour le CSS mais laisse les graphiques
+   sur l'ancienne teinte, refonte à moitié appliquée. */
+
+:root{
+  /* ══════════ FONDS ET SURFACES ══════════
+     Empilement du plus profond au plus proche : bg (page) → surface
+     (panneau) → surface2 (contrôle, ligne de table) → surface3
+     (survol, état actif). */
+  --bg:#0A0A0C;
+  --surface:#111114;
+  --surface2:#16161A;
+  --surface3:#1B1B20;
+
+  /* Dégradé de carte. Une seule paire : les deux variantes
+     historiques ne différaient que d'un ou deux points de hex. */
+  --card-top:#141419;
+  --card-bottom:#101014;
+
+  /* ══════════ TRAITS ══════════
+     line = séparation par défaut ; line-strong = bordure d'élément
+     interactif ; line-hi = survol (ex-#33333B / #33333D fusionnés). */
+  --line:#212127;
+  --line-strong:#2B2B33;
+  --line-hi:#33333D;
+  --scroll-thumb:#26262E;
+
+  /* ══════════ TEXTE ══════════
+     text = corps ; muted = libellé secondaire ; faint = mention
+     tertiaire (unités, horodatage). */
+  --text:#ECEAE4;
+  --muted:#8A8A94;
+  --faint:#5C5C66;
+
+  /* ══════════ OR — accent de marque ══════════
+     gold porte l'identité (niveaux, Flip, marque). gold-hi est
+     réservé au survol (les deux teintes historiques #FFD23F et
+     #FFC93D sont fusionnées ici). gold-dim sert aux séries de
+     graphique secondaires type Max Pain, où l'or plein écraserait
+     le niveau principal. */
+  --gold:#F0B90B;
+  --gold-hi:#FFD23F;
+  --gold-pale:#FFE9A3;
+  --gold-dim:#B9903A;
+  --gold-soft:rgba(240,185,11,.13);
+  --gold-glow:rgba(240,185,11,.32);
+
+  /* ══════════ DIRECTIONNEL ══════════
+     teal = haussier / gamma positif, red = baissier / gamma négatif.
+     Convention tenue sur tout le terminal : ne pas l'inverser
+     localement, un signe inversé est invisible à la relecture. */
+  --teal:#26A69A;
+  --teal-soft:rgba(38,166,154,.14);
+  /* Teal assourdi, pendant de --gold-dim : série de graphique
+     secondaire (bandes EM ±50%) que le teal plein écraserait. */
+  --teal-dim:#1E6F68;
+  --red:#EF5350;
+  --red-soft:rgba(239,83,80,.12);
+
+  /* ══════════ CATÉGORIEL ══════════
+     Teintes non directionnelles : ne jamais les employer pour du
+     hausse/baisse, elles n'en portent pas le sens. */
+  --blue:#5B8DEF;
+  --violet:#8B5CF6;
+  --orange:#F59E0B;
+  --yellow:#EAC54F;
+
+  /* ══════════ TEXTE SUR CELLULE COLORÉE (heatmap) ══════════
+     Le fond d'une cellule est calculé en rgb() selon l'intensité :
+     au-delà de 50 % il faut un texte sombre, en dessous un texte
+     clair. Ces quatre teintes sont les seules validées pour le
+     contraste sur teal et sur red. */
+  --on-teal-dark:#05140F;
+  --on-teal-light:#7FCDBF;
+  --on-red-dark:#1C0707;
+  --on-red-light:#E6A6A4;
+
+  /* ══════════ CANAUX RVB — le token qui rend la refonte possible ══════════
+     Le problème n'est pas l'or en hex, c'est l'or transparent. La
+     palette portait rgba(240,185,11, α) avec DIX-NEUF alphas
+     différents (.05 .055 .06 .1 .12 .13 .14 .16 .2 .24 .28 .3 .32
+     .35 .4 .45 .5 .55…), soit ~115 occurrences réglées à la main.
+     Un token par teinte finie n'y répond pas : il en faudrait
+     dix-neuf pour l'or seul.
+
+     D'où ces tokens de canal, à composer avec l'alpha voulu :
+
+         border:1px solid rgba(var(--gold-rgb), .28);
+
+     Une seule valeur à changer pour repeindre les 115 occurrences.
+     Choix de rgba(var(--x-rgb), α) plutôt que de color-mix() : aucune
+     question de compatibilité navigateur à se poser, et la migration
+     est un remplacement mécanique (rgba(240,185,11, → rgba(var(
+     --gold-rgb),) qui préserve chaque alpha au centième — donc
+     vérifiable par comparaison de captures.
+
+     ⚠ Garder ces canaux synchronisés avec les hex ci-dessus : ils
+     décrivent la MÊME couleur sous deux formes. Les faire dériver
+     donnerait un or plein et un or transparent de teintes
+     différentes, écart invisible à la relecture.
+
+     Réduire les dix-neuf alphas à une échelle de ~6 paliers nommés
+     est le travail de la refonte elle-même : cela déplace des pixels
+     et n'a donc pas sa place dans cette extraction, qui doit rester
+     strictement sans effet visuel. */
+  --gold-rgb:240,185,11;
+  --teal-rgb:38,166,154;
+  --red-rgb:239,83,80;
+  --blue-rgb:91,141,239;
+  --violet-rgb:139,92,246;
+  --bg-rgb:10,10,12;
+  --white-rgb:255,255,255;
+  --black-rgb:0,0,0;
+
+  /* ══════════ ÉCHELLE DE TRANSPARENCE ══════════
+     Les dix-neuf alphas de l'or ramenés à six paliers nommés. Composer
+     avec un canal : rgba(var(--gold-rgb), var(--a-medium)).
+     Choisir le palier par INTENTION, pas par tâtonnement — c'est ce qui
+     empêche la réapparition d'un vingtième alpha réglé à l'œil. */
+  --a-faint:.05;    /* fond de survol à peine perceptible */
+  --a-subtle:.10;   /* fond d'état actif discret */
+  --a-soft:.16;     /* fond d'état actif affirmé, halo lointain */
+  --a-medium:.28;   /* bordure d'élément actif */
+  --a-strong:.45;   /* bordure appuyée, halo proche */
+  --a-heavy:.60;    /* ombre portée de superposition */
+
+  /* ══════════ ÉCHELLE TYPOGRAPHIQUE ══════════
+     Vingt-neuf tailles coexistaient, de 6,5 à 30px, avec des pas d'un
+     demi-pixel : 11 / 11,5 / 12 / 12,5px sont indiscernables à l'œil,
+     donc quatre tailles faisaient le travail d'une seule et aucun
+     niveau ne se détachait. C'est la cause du manque de hiérarchie,
+     pas une affaire de goût.
+
+     Huit paliers, chacun avec un rôle. Un terminal dense a besoin de
+     paliers rapprochés en bas d'échelle — l'important est qu'ils
+     servent des rôles DIFFÉRENTS, pas qu'ils soient interchangeables. */
+  --fs-micro:10px;  /* unité, horodatage */
+  --fs-xs:11px;     /* étiquette, puce */
+  --fs-sm:12px;     /* texte secondaire */
+  --fs-base:13px;   /* corps */
+  --fs-md:15px;     /* valeur mise en avant */
+  --fs-lg:18px;     /* titre de carte */
+  --fs-xl:23px;     /* titre de page */
+  --fs-2xl:29px;    /* titre d'accroche */
+
+  /* Graisses. font-weight:600 était posé 67 fois contre 400 deux fois :
+     quand presque tout est semi-gras, la graisse ne hiérarchise plus
+     rien. Le corps revient en 400, 600 est réservé aux titres. */
+  --fw-body:400;
+  --fw-medium:500;
+  --fw-bold:600;
+
+  /* Interlettrages : dix-huit valeurs ramenées à quatre rôles. */
+  --ls-tight:-.01em;  /* grands titres */
+  --ls-none:0;
+  --ls-label:.08em;   /* petite étiquette */
+  --ls-caps:.16em;    /* surtitre en capitales */
+
+  /* ══════════ RAYONS ══════════
+     Douze valeurs de 1 à 20px, sans système. Cinq suffisent, et
+     l'uniformité est précisément ce qui fait paraître une interface
+     tenue plutôt que bricolée. */
+  --r-xs:3px;      /* puce, badge */
+  --r-sm:6px;      /* bouton, champ */
+  --r-md:10px;     /* carte, panneau */
+  --r-lg:16px;     /* fenêtre modale */
+  --r-full:999px;  /* pastille, point d'état */
+
+  /* ══════════ ESPACEMENT ══════════
+     Base de 4px. Les marges étaient posées à la valeur (11px, 13px,
+     9px…), ce qui fait que deux en-têtes de pages voisines ne
+     s'alignaient pas. */
+  --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px;
+  --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px;
+
+  /* ══════════ PROFONDEUR ══════════
+     Le halo doré (box-shadow:0 0 8px or) posé partout est ce qui date
+     le plus le rendu — un tic de 2018. Mais le remplacer par des
+     ombres noires ne marche PAS ici : sur un fond à #0A0A0C, une ombre
+     noire est invisible. Constat fait en rendant l'atelier, pas
+     supposé — les trois paliers d'ombre y étaient indiscernables.
+
+     Sur un thème sombre, la profondeur vient donc de deux choses :
+     une surface PLUS CLAIRE que le fond, et un filet blanc à très
+     faible opacité qui souligne l'arête supérieure. L'ombre ne sert
+     qu'aux éléments réellement flottants (menu, fenêtre modale), où
+     elle détache du contenu qu'elle recouvre.
+
+     --hair remplace --line comme séparation par défaut sur les
+     surfaces : un blanc translucide se pose sur n'importe quel fond
+     sans avoir à être réaccordé, là où un gris opaque doit l'être. */
+  --hair:rgba(var(--white-rgb),.06);
+  --hair-strong:rgba(var(--white-rgb),.10);
+  /* Ombres réservées au flottant, jamais pour poser une carte. */
+  --el-float:0 8px 24px rgba(var(--black-rgb),var(--a-heavy));
+  --el-modal:0 20px 60px rgba(var(--black-rgb),.75);
+  /* Halo doré conservé, mais réservé à ce qui est réellement VIVANT
+     (point de séance en direct) : il porte alors une information au
+     lieu d'être une décoration. */
+  --glow-live:0 0 8px rgba(var(--teal-rgb),var(--a-strong));
+
+  /* ══════════ TRANSITIONS ══════════ */
+  --t-fast:.12s ease;
+  --t-base:.16s ease;
+  --t-slow:.30s cubic-bezier(.22,.61,.36,1);
+
+  /* ══════════ TYPOGRAPHIE ══════════
+     Un seul nom pour la police d'affichage : --sans. index.html et
+     dash.html l'appelaient --disp, les 9 autres --sans, pour la même
+     valeur. Le repli est mono et non sans-serif : si Space Grotesk
+     ne charge pas, un terminal doit retomber sur du monospace, pas
+     sur la sans-serif système. */
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans:"Space Grotesk", var(--mono);
+}
+
+/* L'attribut hidden doit rester prioritaire sur toute règle display:
+   posée sur un id ou une classe — sans ce !important, une fenêtre
+   modale devient impossible à fermer (régression déjà vécue). Chaque
+   page portait cette règle en double ; elle vit ici désormais, mais
+   la laisser aussi en local est sans risque. */
+[hidden]{display:none !important}
