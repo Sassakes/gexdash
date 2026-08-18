@@ -46,11 +46,15 @@
   button, input{font-family:var(--mono)}
 
   /* ============ header ============ */
+  /* Header en DEUX bandes empilees, chacune avec un role lisible :
+     "qui je suis" en haut (marque, compte, appel au don, etat de la
+     donnee), "ou je vais" en bas (navigation + outils). Avant, tout
+     partageait une seule rangee a repli libre : la marque restait a
+     gauche pendant que le reste etait pousse a droite, d'ou le decalage
+     visible, et l'ajout du bouton de don faisait basculer sur une
+     troisieme ligne. */
   header{
-    /* 10px et non 14 : en francais ("Connexion", "Soutenir" sont plus longs
-       que leurs equivalents anglais) la rangee d'outils depassait de
-       quelques pixels et basculait le header sur une troisieme ligne. */
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    display:flex; flex-direction:column; gap:var(--sp-2);
     padding-bottom:18px; margin-bottom:18px;
     border-bottom:1px solid var(--line);
   }
@@ -82,12 +86,17 @@
      don en dernier. Avant, ces elements etaient melanges aux liens de
      navigation dans une seule rangee : le bouton Soutenir s'y perdait
      alors que c'est le seul element qui demande une action. */
+  .hdr-id{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .hdr-bar{display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap}
+  /* Etat de la donnee : remonte de la barre de contexte vers la ligne
+     d'identite. Il decrit la fraicheur du payload, pas le marche choisi
+     -- il appartient donc a "qui je suis", pas a "quel marche". Ca libere
+     aussi la place a droite, que la ligne d'identite laissait vide. */
+  .hdr-id #statusPill{margin-left:auto}
   .hdrtools{
     margin-left:auto; display:flex; align-items:center; gap:6px;
     flex-wrap:wrap;
   }
-  /* La nav applicative occupe sa propre bande sous la ligne d'identite. */
-  #appnav{flex:1 1 100%; margin-top:var(--sp-2)}
   /* Resserre a 2px de part et d'autre : la rangee complete (communaute,
      reglages, compte, appel au don) depassait la largeur utile de DEUX
      pixels et basculait le header sur une troisieme ligne. Le filet reste
@@ -157,7 +166,9 @@
   .ctxbar{
     display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
   }
-  .ctxbar #statusPill{margin-left:auto}
+  /* statusPill est remonte dans le header : c'est String Pine qui ferme
+     desormais la barre de contexte. */
+  .ctxbar #pineTopBtn{margin-left:auto}
   #pineTopBtn{
     background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
     font-size:12px; font-weight:500; padding:7px 14px; cursor:pointer;
@@ -567,7 +578,7 @@
     .community a{padding:6px 8px}
     /* L'appel au don ferme la rangee et reste pleine cible tactile. */
     .cta-support{margin-left:auto; min-height:40px}
-    .ctxbar #statusPill{margin-left:0}
+    .hdr-id #statusPill{margin-left:0}
     #pineTopBtn{padding:9px 12px; margin-left:auto}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
@@ -890,6 +901,10 @@
 <main>
 
 <header>
+  <!-- Bande 1 : identite, compte, appel au don, etat de la donnee.
+       Le compte et le don sont colles a la marque plutot que renvoyes a
+       l'autre bout de la barre : c'est ce qui creait le decalage. -->
+  <div class="hdr-id">
   <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
     <g stroke="var(--gold)" stroke-width="6" fill="none">
       <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
@@ -902,12 +917,40 @@
     <h1>GEX <em>Terminal</em></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
-  <!-- Rangee d'outils : communaute | reglages | compte + appel au don.
-       Les trois familles etaient melangees en une seule liste ou le
-       bouton Soutenir se perdait au milieu de liens de navigation. Il
-       ferme maintenant la rangee, seul element plein du header. -->
-  <div class="hdrtools">
-    <span class="community">
+
+  <div class="authChip" id="authChip">
+    <button id="authBtn" type="button" title="Accès membre">
+      <span class="authAvatar" id="authAvatar" aria-hidden="true">⬡</span>
+      <span id="authLbl">Connexion</span>
+    </button>
+    <button id="authCaret" type="button" class="authCaret" hidden
+            aria-haspopup="true" aria-expanded="false" title="Menu du compte">⌄</button>
+    <div id="authMenu" class="authMenu" hidden role="menu">
+      <a href="/profile" class="authMenuItem" role="menuitem">
+        <span class="mi-ic" aria-hidden="true">⬡</span><span id="authMenuProfileLbl">Mon profil</span>
+      </a>
+      <button type="button" id="authMenuLogout" class="authMenuItem authMenuItem--danger" role="menuitem">
+        <span class="mi-ic" aria-hidden="true">⏻</span><span id="authMenuLogoutLbl">Se déconnecter</span>
+      </button>
+    </div>
+  </div>
+
+    <a id="donateLink" class="cta-support" target="_blank" rel="noopener" hidden
+       href="#"><span class="hrt" aria-hidden="true">♥</span><span id="donLbl">Soutenir</span></a>
+
+    <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
+  </div>
+
+  <!-- Bande 2 : navigation a gauche, outils a droite. Les regler sur la
+       meme ligne evite une troisieme bande et donne a chaque bande un
+       role lisible : qui je suis en haut, ou je vais en bas. -->
+  <div class="hdr-bar">
+    <!-- Navigation rendue par shell.js depuis une liste unique partagee
+         par toutes les pages : c'est ce qui empeche une destination de
+         redevenir introuvable, comme /horizon l'etait. -->
+    <nav id="appnav"></nav>
+    <div class="hdrtools">
+      <span class="community">
       <a id="dcLink" class="dc" target="_blank" rel="noopener"
          href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
       <a id="tvLink" class="tv" target="_blank" rel="noopener"
@@ -926,39 +969,7 @@
       <button data-l="fr" class="on">FR</button>
       <button data-l="en">EN</button>
     </span>
-
-    <span class="hdrdiv" aria-hidden="true"></span>
-
-    <div class="authChip" id="authChip">
-      <button id="authBtn" type="button" title="Accès membre">
-        <span class="authAvatar" id="authAvatar" aria-hidden="true">⬡</span>
-        <span id="authLbl">Connexion</span>
-      </button>
-      <button id="authCaret" type="button" class="authCaret" hidden
-              aria-haspopup="true" aria-expanded="false" title="Menu du compte">⌄</button>
-      <div id="authMenu" class="authMenu" hidden role="menu">
-        <a href="/profile" class="authMenuItem" role="menuitem">
-          <span class="mi-ic" aria-hidden="true">⬡</span><span id="authMenuProfileLbl">Mon profil</span>
-        </a>
-        <button type="button" id="authMenuLogout" class="authMenuItem authMenuItem--danger" role="menuitem">
-          <span class="mi-ic" aria-hidden="true">⏻</span><span id="authMenuLogoutLbl">Se déconnecter</span>
-        </button>
-      </div>
-    </div>
-
-    <a id="donateLink" class="cta-support" target="_blank" rel="noopener" hidden
-       href="#"><span class="hrt" aria-hidden="true">♥</span><span id="donLbl">Soutenir</span></a>
   </div>
-
-  <!-- Navigation applicative : rendue par shell.js depuis une liste
-       unique partagee par toutes les pages. Les quatre liens ecrits ici
-       a la main ont ete retires -- c'est ce qui avait fait que /horizon
-       n'etait atteignable depuis aucune page et /flux depuis une seule.
-       Placee APRES les utilitaires et en flex-basis:100%, elle prend sa
-       propre bande : le header tient en deux lignes au lieu de trois,
-       et sur un terminal chaque ligne de header se paie en hauteur de
-       graphique. -->
-  <nav id="appnav"></nav>
 </header>
 
 <div class="ctxbar">
@@ -974,7 +985,6 @@
     <button data-g="GC" type="button">GC</button>
     <button data-g="XAU" type="button">XAUUSD</button>
   </div>
-  <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
   <button id="pineTopBtn" title="Copier la string des niveaux pour l'indicateur TradingView">⧉ String Pine</button>
 </div>
 
