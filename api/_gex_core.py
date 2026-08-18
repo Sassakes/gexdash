@@ -1129,6 +1129,46 @@ def kv_set(key, value, ex=None):
         return False
 
 
+def kv_set_nx(key, value, ex=None):
+    """SET key value NX [EX seconds] via Upstash REST -- atomic "only if
+    absent" lock primitive (Upstash mirrors Redis SET's option flags as
+    query params). Returns True only if THIS call created the key (lock
+    acquired); False if it already existed or on any error -- fail-closed,
+    a caller must treat a failed acquire as "someone else might hold it",
+    never as "safe to proceed unlocked"."""
+    url, token = _kv_conf()
+    if not url:
+        return False
+    try:
+        import requests
+
+        q = "?NX=true" + (f"&EX={int(ex)}" if ex else "")
+        r = requests.post(f"{url}/set/{key}{q}",
+                          headers={"Authorization": f"Bearer {token}"},
+                          data=value, timeout=5)
+        r.raise_for_status()
+        return r.json().get("result") is not None
+    except Exception:
+        return False
+
+
+def kv_del(key):
+    """DEL a key in Upstash REST. Best-effort early lock release -- never
+    raises; a lock left behind on failure still self-heals via its own EX."""
+    url, token = _kv_conf()
+    if not url:
+        return False
+    try:
+        import requests
+
+        r = requests.post(f"{url}/del/{key}",
+                          headers={"Authorization": f"Bearer {token}"}, timeout=5)
+        r.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
 WEBHOOKS_KEY = "gex:webhooks"
 
 

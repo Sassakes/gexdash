@@ -35,7 +35,7 @@ from urllib.parse import parse_qs, urlparse
 
 from api._gex_core import (TARGETS, build_payload, discord_news,
                            discord_notify, discord_send, et_today,
-                           fetch_webhooks, kv_get, kv_set,
+                           fetch_webhooks, kv_get, kv_set, kv_set_nx, kv_del,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
                            flow_gamma_matrix, flow_gamma_sanity, flow_volume_context,
                            horizon_envelope, horizon_hours,
@@ -2663,6 +2663,52 @@ class handler(BaseHTTPRequestHandler):
                                            "metrics_error": str(e)}
                         journal_flow(f"metrics refresh {target} KO: {e}")
                     continue
+                # verrou GEX : hors chemin CANONIQUE, les niveaux publiés
+                # restent ceux d'avant tant que c'est verrouillé. Canonique =
+                # ?notify=1 (QStash 15h25) OU le cron de secours Vercel dans
+                # son créneau 15h20-18h00 — les deux doivent pouvoir publier
+                # des niveaux FRAIS même verrouillé, sinon une panne QStash
+                # figerait les niveaux de la veille.
+                # Un tir INTRAJOURNALIER n'est jamais canonique : il tombe
+                # parfois dans la fenetre de secours du 15h25, et sans cette
+                # exclusion il republierait les niveaux — donc la string Pine
+                # changerait en pleine seance, ce qu'on veut precisement eviter.
+                # Decide AVANT le fetch CBOE (build_payload plus bas) : c'est
+                # tout l'interet du verrou Redis ci-dessous, qui doit couvrir
+                # la partie la plus lente du traitement, pas seulement le gel.
+                canonical = ("notify" in qs) or (
+                    ok_vercel and "1520" <= now_p <= "1800"
+                    and "intraday" not in qs)
+                # Garde anti-course (regression constatee le 2026-08-18,
+                # 15h25 Paris) : en heure d'ete, le tick intraday
+                # `0,5,10,15,20,25 13 * * 1-5` de vercel.json tombe sur la
+                # MEME minute UTC que le publish canonique QStash "15h25
+                # Paris" (13:25 UTC = Paris UTC+2). Un simple re-lu de `latest`
+                # juste avant de figer (premiere version de ce correctif)
+                # ne fait que RETRECIR la fenetre de course, sans l'eliminer :
+                # rien n'empechait un tir intraday de la re-lire "pas encore
+                # fraiche" puis d'ecrire APRES le canonique quelques instants
+                # plus tard. Verrou Redis (SET NX EX) a la place : le tir
+                # canonique le tient pendant TOUT son traitement (fetch CBOE
+                # inclus, la partie lente) ; un tir intraday qui le trouve
+                # pose attend sa liberation (borne, tres inferieur au
+                # maxDuration=60s de la fonction) avant d'ecrire quoi que ce
+                # soit, garantissant que son ecriture ne peut plus jamais
+                # precede -- ni ecraser -- celle du canonique en cours.
+                # Avant ce correctif, l'ecriture intraday pouvait arriver
+                # APRES celle du canonique et l'ecraser silencieusement avec
+                # les niveaux d'HIER (generated_utc restampe a aujourd'hui,
+                # donc invisible a la garde de fraicheur) : Discord notifiait
+                # deja les bons niveaux depuis son payload en memoire, seul
+                # Redis -- donc le site -- restait fige sur la veille.
+                pub_lock_key = f"gex:pub:lock:{target}"
+                if canonical:
+                    kv_set_nx(pub_lock_key, "1", ex=25)
+                elif kv_get(pub_lock_key):
+                    waited = 0.0
+                    while kv_get(pub_lock_key) and waited < 3.0:
+                        time.sleep(0.25)
+                        waited += 0.25
                 # Pre-ouverture (< 9h30 ET) : la publication canonique de
                 # 15h25 Paris tombe 5 minutes AVANT l'ouverture des cotations
                 # d'options. A cet instant, CBOE ne renvoie que des cotations
@@ -2683,38 +2729,10 @@ class handler(BaseHTTPRequestHandler):
                                         chain_cache=cache, iv_override=pre_open_iv,
                                         capture=flow_capture)
                 payload["iv_source"] = "close" if pre_open_iv else "session"
-                # verrou GEX : hors chemin CANONIQUE, les niveaux publiés
-                # restent ceux d'avant tant que c'est verrouillé. Canonique =
-                # ?notify=1 (QStash 15h25) OU le cron de secours Vercel dans
-                # son créneau 15h20-18h00 — les deux doivent pouvoir publier
-                # des niveaux FRAIS même verrouillé, sinon une panne QStash
-                # figerait les niveaux de la veille.
-                # Un tir INTRAJOURNALIER n'est jamais canonique : il tombe
-                # parfois dans la fenetre de secours du 15h25, et sans cette
-                # exclusion il republierait les niveaux — donc la string Pine
-                # changerait en pleine seance, ce qu'on veut precisement eviter.
-                canonical = ("notify" in qs) or (
-                    ok_vercel and "1520" <= now_p <= "1800"
-                    and "intraday" not in qs)
-                # Garde anti-course (regression constatee le 2026-08-18,
-                # 15h25 Paris) : en heure d'ete, le tick intraday
-                # `0,5,10,15,20,25 13 * * 1-5` de vercel.json tombe sur la
-                # MEME minute UTC que le publish canonique QStash "15h25
-                # Paris" (13:25 UTC = Paris UTC+2). `latest` a ete lu en
-                # haut de boucle, potentiellement AVANT que la requete
-                # canonique concurrente n'ait fini d'ecrire son payload
-                # frais dans Redis -- ce tir intraday gelait alors sur les
-                # niveaux d'HIER, puis republiait avec un generated_utc
-                # d'AUJOURD'HUI (>11:30 UTC) qui passe la garde de
-                # fraicheur : si son ecriture arrivait apres celle du
-                # canonique, elle l'ecrasait silencieusement (Discord avait
-                # deja notifie les bons niveaux depuis son payload en
-                # memoire ; seul Redis -- donc le site -- restait sur
-                # hier). On relit Redis en direct (hors cache memoire 5s de
-                # _news_cached) juste avant de figer, pour regeler sur le
-                # payload le plus frais possible si le canonique vient de
-                # publier entre-temps.
                 if not canonical:
+                    # Relu apres l'attente ci-dessus : si le canonique a
+                    # publie entretemps, on gele desormais sur SES niveaux
+                    # frais plutot que sur ceux lus en haut de boucle.
                     latest = _upstash_get(target) or latest
                 # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
                 if latest:
@@ -2770,6 +2788,11 @@ class handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 ok, why = _upstash_set(payload)
+                if canonical:
+                    # Liberation immediate (best-effort) : un tir intraday en
+                    # attente ci-dessus n'a pas a patienter l'EX=25s entiere.
+                    # Si ce kv_del echoue, le verrou s'auto-purge via son EX.
+                    kv_del(pub_lock_key)
                 results[target] = {"skipped": False, "published": ok,
                                    "locked": payload.get("levels_locked", False),
                                    "publish_info": why,
