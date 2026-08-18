@@ -201,7 +201,12 @@ function shellCss(){
   }
   .appheader h1 b{color:var(--gold,#F0B90B)}
   .appheader h1 span{color:var(--muted,#8A8A94); font-weight:var(--fw-medium,500)}
-  .appheader .appLang{margin-left:auto}
+  /* Communauté collée à DROITE, pas à la nav : margin-left:auto sur
+     #community (pas sur .appLang) fait que tout l'espace flexible se
+     prend entre nav et communauté -- .appLang suit ensuite avec un
+     simple gap, formant un seul groupe [communauté, langue] ancré à
+     droite plutôt que deux éléments séparés par un vide inégal. */
+  .appheader-bar #community{margin-left:auto}
 
   /* ══════════ CLUSTER COMMUNAUTÉ (Discord / TradingView / Doc) ══════════
      Discord et TradingView n'existaient que dans le header bespoke du

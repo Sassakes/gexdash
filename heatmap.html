@@ -89,7 +89,11 @@
   .help .sw{width:13px; height:13px; border-radius:3px; flex:none}
   .help .cx{font-size:8px; font-weight:600; padding:1px 4px; border:1px solid; border-radius:3px}
 
-  .wrap{display:flex; gap:14px; padding:14px 20px; align-items:stretch; flex-wrap:nowrap; height:calc(100vh - 116px)}
+  /* Meme largeur que l'en-tete (--shell-w), pas plein bord : sur un
+     ecran large, un wrap sans limite pendant que le header est centre
+     et inset cree le meme decalage que sur dash.html. */
+  .wrap{display:flex; gap:14px; padding:14px 20px; align-items:stretch; flex-wrap:nowrap;
+        height:calc(100vh - 116px); max-width:var(--shell-w); margin:0 auto}
   .panel{background:var(--surface); border:1px solid var(--line); border-radius:7px; overflow:hidden; display:flex; flex-direction:column; flex:1 1 0; min-width:0}
   .panel.off{display:none}
   .wrap.n1 tbody td{height:24px; font-size:11.5px} .wrap.n1 thead th{font-size:10.5px; padding:8px 6px}

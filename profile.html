@@ -22,7 +22,16 @@
   body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
 
 
-  main{max-width:640px; margin:0 auto; padding:28px 20px 60px}
+  /* main s'aligne sur --shell-w comme le header (meme raisonnement que
+     index.html) pour que le bord gauche de la page corresponde a celui
+     de la nav -- mais un formulaire de reglages reste plus lisible
+     etroit. Solution : chaque enfant DIRECT de main (h2, section,
+     #logoutBtn) est recentre a 640px individuellement, plutot que
+     restreindre main lui-meme -- ca garde le bord gauche de la page
+     aligne sur le header tout en gardant le formulaire etroit et
+     centre. */
+  main{max-width:var(--shell-w); margin:0 auto; padding:28px 20px 60px}
+  main > *{max-width:640px; margin-left:auto; margin-right:auto}
   h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:30px 0 12px}
   h2:first-child{margin-top:0}
   section{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px 20px}
