@@ -115,11 +115,67 @@ function shellCss(){
     display:inline-flex; align-items:center; transition:color var(--t-fast,.12s ease)}
   .appnav-ctx a:hover{color:var(--text,#ECEAE4)}
   .appnav-ctx a[aria-current="page"]{color:var(--gold,#F0B90B)}
+
+  /* ══════════ EN-TÊTE PARTAGÉ ══════════
+     Les neuf pages portaient chacune leur propre règle header{} : padding
+     à 11, 12 ou 13px, titre à 12,5 ou 13px, interlettrage à .2 ou .22em.
+     Des écarts invisibles isolément, mais qui font qu'en naviguant d'une
+     page à l'autre l'en-tête « saute » — c'est exactement ce qui donne
+     l'impression de pages assemblées plutôt que d'une application.
+
+     Le titre passe de 13px en capitales très espacées à 18px en
+     interlettrage neutre : à .22em un titre lit comme une étiquette, et
+     quand tout est étiquette rien ne domine. */
+  .appheader{
+    display:flex; align-items:center; gap:var(--sp-3,12px); flex-wrap:wrap;
+    padding:var(--sp-3,12px) var(--sp-5,20px);
+    border-bottom:1px solid var(--hair,rgba(255,255,255,.06));
+    background:var(--bg,#0A0A0C);
+  }
+  .appheader .mark{width:24px; height:24px; flex:none}
+  .appheader h1{
+    font-family:var(--sans,sans-serif); font-size:var(--fs-lg,18px);
+    font-weight:var(--fw-bold,600); letter-spacing:var(--ls-none,0);
+    white-space:nowrap; margin:0;
+  }
+  .appheader h1 b{color:var(--gold,#F0B90B)}
+  .appheader h1 span{color:var(--muted,#8A8A94); font-weight:var(--fw-medium,500)}
+  .appheader #appnav{margin-left:var(--sp-2,8px)}
+  .appheader .appLang{margin-left:auto}
+
+  /* ══════════ BASCULE DE LANGUE ══════════
+     Recopiée dans neuf pages, sous deux formes differentes (#langSel a
+     boutons data-l, et #bFr/#bEn) avec chacune son CSS et son cablage.
+     Le module la porte desormais : une seule apparence, un seul etat
+     actif, un seul ecrivain de localStorage. */
+  .appLang{
+    display:inline-flex; align-items:center; gap:1px; padding:2px;
+    background:var(--surface2,#16161A);
+    border:1px solid var(--hair,rgba(255,255,255,.06));
+    border-radius:var(--r-sm,6px);
+  }
+  .appLang button{
+    font-family:var(--mono,monospace); font-size:var(--fs-xs,11px);
+    letter-spacing:var(--ls-label,.08em); color:var(--muted,#8A8A94);
+    background:transparent; border:0; cursor:pointer;
+    padding:4px 9px; min-height:26px; border-radius:var(--r-xs,3px);
+    transition:color var(--t-fast,.12s ease), background var(--t-fast,.12s ease);
+  }
+  .appLang button:hover{color:var(--text,#ECEAE4)}
+  .appLang button.on{
+    background:rgba(var(--gold-rgb,240,185,11),var(--a-subtle,.10));
+    color:var(--gold,#F0B90B); font-weight:var(--fw-bold,600);
+  }
+  .appLang button:focus-visible{outline:2px solid var(--gold,#F0B90B); outline-offset:-2px}
+
   /* Cibles tactiles >= 40px et nav défilable sur mobile (cf. CLAUDE.md) */
   @media (max-width:720px){
     .appnav{gap:var(--sp-2,8px); width:100%; overflow-x:auto; scrollbar-width:none}
     .appnav::-webkit-scrollbar{display:none}
     .appnav-seg a, .appnav-ctx a{min-height:40px; padding:8px 12px}
+    .appheader{padding:var(--sp-2,8px) var(--sp-4,16px)}
+    .appheader h1{font-size:var(--fs-md,15px)}
+    .appLang button{min-height:40px; padding:8px 12px}
   }`;
   document.head.appendChild(s);
 }
@@ -152,6 +208,20 @@ function shellRender(el, current){
   el.innerHTML = `<div class="appnav-seg">${app}</div><div class="appnav-ctx">${ctx}</div>`;
 }
 
+/* Bascules de langue montées, et rappels enregistrés par les pages. */
+const SHELL_LANG_EL = [];
+const SHELL_LANG_CB = [];
+
+function shellLangRender(el){
+  const on = (l) => (l === SHELL_LANG ? ' class="on"' : "");
+  el.className = "appLang";
+  el.innerHTML = `<button type="button" data-l="fr"${on("fr")}>FR</button>` +
+                 `<button type="button" data-l="en"${on("en")}>EN</button>`;
+  el.querySelectorAll("button").forEach((b) => {
+    b.onclick = () => Shell.setLang(b.dataset.l, true);
+  });
+}
+
 const Shell = {
   /* current : id de destination, ou omis pour le déduire de l'URL. */
   mount(el, current){
@@ -167,10 +237,33 @@ const Shell = {
      l'applyLang() de la page : sans ça la nav resterait en français
      après une bascule, et une nav à moitié traduite est pire qu'une
      nav non traduite. */
-  setLang(lang){
+  /* persist : true quand le changement vient d'un clic sur la bascule —
+     le module ecrit alors gexLang et previent les pages. Appelee sans ce
+     drapeau depuis l'applyLang() d'une page, elle se contente de suivre
+     la langue que la page a deja decidee, sans re-declencher de rappel
+     (ce qui bouclerait). */
+  setLang(lang, persist){
     SHELL_LANG = lang === "en" ? "en" : "fr";
+    if (persist){
+      try{ localStorage.setItem("gexLang", SHELL_LANG); }catch(_){}
+    }
     Shell._redraw();
+    if (persist) SHELL_LANG_CB.forEach((fn) => { try{ fn(SHELL_LANG); }catch(_){} });
   },
+  /* Monte la bascule FR/EN. Le module possede l'apparence, l'etat actif
+     et l'ecriture de gexLang ; la page ne fournit que sa reaction. */
+  mountLang(el){
+    if (typeof el === "string") el = document.getElementById(el);
+    if (!el) return null;
+    shellCss();
+    shellLangRender(el);
+    if (!SHELL_LANG_EL.includes(el)) SHELL_LANG_EL.push(el);
+    return el;
+  },
+  /* Enregistre la reaction de la page a un changement de langue. */
+  onLang(fn){ if (typeof fn === "function") SHELL_LANG_CB.push(fn); },
+  /* La langue retenue au chargement, pour que la page parte du bon pied. */
+  lang(){ return SHELL_LANG; },
   /* À appeler dès que l'état de session est connu : révèle les
      destinations réservées aux membres. Remplace exactement le
      `nl.hidden = !ok` que chaque page portait sur son lien News.
@@ -182,6 +275,7 @@ const Shell = {
   },
   _redraw(){
     Shell._mounted.forEach((el) => shellRender(el, el._shellCurrent));
+    SHELL_LANG_EL.forEach(shellLangRender);
   },
   _mounted: [],
 };

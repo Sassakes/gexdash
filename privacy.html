@@ -25,21 +25,6 @@
   body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.62}
   a{color:var(--gold)}
 
-  header{
-    display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
-    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
-    background:rgba(var(--bg-rgb),.95); backdrop-filter:blur(10px);
-  }
-  header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
-  header h1 b{color:var(--gold)}
-  .topnav{display:flex; gap:4px; margin-left:auto; align-items:center; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
-    transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
-  .lang button{background:none; border:none; color:var(--muted); font:inherit;
-               font-size:11px; padding:5px 10px; cursor:pointer; min-height:28px}
-  .lang button.on{background:var(--gold); color:var(--bg); font-weight:600}
 
   .hero{padding:34px 20px 6px; max-width:760px; margin:0 auto}
   .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
@@ -87,10 +72,10 @@
 </style>
 </head>
 <body>
-<header>
+<header class="appheader">
   <h1><b>THE</b>HUB · <span id="hTitle">Confidentialité</span></h1>
   <nav class="topnav" id="appnav"></nav>
-  <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
+  <span id="langSel"></span>
 </header>
 
 <div class="hero">
@@ -221,8 +206,6 @@ function render(){
   $("heroP").textContent = L.heroP;
   $("upd").textContent = L.upd;
   $("foot").textContent = L.foot;
-  $("bFr").className = LANG === "fr" ? "on" : "";
-  $("bEn").className = LANG === "en" ? "on" : "";
 
   $("body").innerHTML = L.secs.map((s, i) =>
     `<section id="${s.id}"><div class="shead"><i>${String(i + 1).padStart(2, "0")}</i>
@@ -234,8 +217,8 @@ function setLang(l){
   try{ localStorage.setItem("gexLang", l); }catch(_){}
   render();
 }
-$("bFr").onclick = () => setLang("fr");
-$("bEn").onclick = () => setLang("en");
+Shell.mountLang("langSel");
+Shell.onLang(setLang);
 render();
 </script>
 </body>

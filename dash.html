@@ -65,22 +65,8 @@
   main{max-width:none; margin:0; padding:26px 24px 56px}  /* plan de travail pleine largeur */
   a{color:var(--gold)}
   button, select{font-family:var(--mono)}
-  header{
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    padding-bottom:18px; margin-bottom:18px; border-bottom:1px solid var(--line);
-  }
   .mark{width:26px; height:26px; flex:none}
-  header h1{
-    font-family:var(--sans); font-size:15px; font-weight:700;
-    letter-spacing:.2em; text-transform:uppercase; white-space:nowrap;
-  }
   header h1 em{font-style:normal; color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px}
-  .topnav a{
-    color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
-    transition:color .12s ease; white-space:nowrap;
-  }
-  .topnav a:hover{color:var(--gold)}
   .addbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
   .addbar select{
     background:var(--surface2); border:1px solid var(--line); color:var(--text);
@@ -340,13 +326,6 @@
   ::-webkit-scrollbar-thumb{background:var(--scroll-thumb); border:2px solid var(--bg)}
   ::-webkit-scrollbar-thumb:hover{background:var(--line-hi)}
   header h1 em{text-shadow:0 0 22px var(--gold-glow)}
-  .topnav a{position:relative}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
   .addbar select, #addBtn, #editBtn{min-height:36px}
   #addBtn{background:linear-gradient(180deg, rgba(var(--gold-rgb),.2), rgba(var(--gold-rgb),.1))}
   #addBtn:hover{background:linear-gradient(180deg, rgba(var(--gold-rgb),.3), rgba(var(--gold-rgb),.16))}
@@ -419,7 +398,7 @@
 </head>
 <body>
 <main>
-<header>
+<header class="appheader">
   <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
     <g stroke="var(--gold)" stroke-width="6" fill="none">
       <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
@@ -430,6 +409,7 @@
   </svg>
   <h1>GEX <em>Terminal</em> · <span id="hTitle">Mon dashboard</span></h1>
   <nav class="topnav" id="appnav"></nav>
+  <span id="langSel"></span>
 </header>
 
 <div class="addbar">
@@ -1562,6 +1542,12 @@ function firstFreeSpot(w, h){
 
 $("hTitle").textContent = tx("title");
 Shell.mount("appnav"); Shell.setLang(LANG);
+Shell.mountLang("langSel");
+/* dash pose ses libelles une seule fois au chargement (aucune fonction de
+   repeinture, contrairement aux autres pages) : le changement de langue
+   recharge donc la page. C'est assume et ca reste un gain -- avant, cette
+   page n'avait aucune bascule et restait figee sur la langue enregistree. */
+Shell.onLang(() => location.reload());
 enhanceAllSelects();
 $("addLbl").textContent = tx("add");
 $("hintLbl").textContent = tx("hint");

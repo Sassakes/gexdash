@@ -21,18 +21,6 @@
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
 
-  header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line)}
-  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
-  header h1 b{color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px; background:var(--gold); transform:scaleX(0); transform-origin:left; transition:transform .16s ease}
-  .topnav a:hover::after{transform:scaleX(1)}
-  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden; margin-left:12px}
-  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em; min-height:26px}
-  .langsel button+button{border-left:1px solid var(--line-strong)}
-  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
 
   main{max-width:640px; margin:0 auto; padding:28px 20px 60px}
   h2{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:30px 0 12px}
@@ -72,10 +60,10 @@
 </style>
 </head>
 <body>
-<header>
+<header class="appheader">
   <h1><b>GEX</b>DASH · <span id="hTitle">PROFIL</span></h1>
   <nav class="topnav" id="appnav"></nav>
-  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+  <div id="langSel"></div>
 </header>
 
 <main id="app" hidden>
@@ -186,13 +174,9 @@ function applyLang(){
   $("apiNote").textContent = t("apiNote");
   $("apiRegen").textContent = t("regen");
   $("logoutBtn").textContent = t("logout");
-  document.querySelectorAll("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
 }
-document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
-  LANG = b.dataset.l;
-  try{ localStorage.setItem("gexLang", LANG); }catch(_){}
-  applyLang();
-});
+Shell.mountLang("langSel");
+Shell.onLang(l => { LANG = l; applyLang(); });
 
 function msg(id, text, ok){
   const m = $(id);

@@ -965,10 +965,7 @@
       <option value="Europe/London">London</option>
       <option value="UTC">UTC</option>
     </select>
-    <span class="ivs" id="langSel">
-      <button data-l="fr" class="on">FR</button>
-      <button data-l="en">EN</button>
-    </span>
+    <span id="langSel"></span>
   </div>
 </header>
 
@@ -1600,8 +1597,6 @@ async function authSubmit(){
 })();
 
 function applyLang(){
-  document.querySelectorAll("#langSel button").forEach(b =>
-    b.classList.toggle("on", b.dataset.l === LANG));
   $("chartTitle").textContent = FLUX_ON ? t("fluxTitle") : t("chart");
   // libellé du bouton FLUX : annonce toujours la DESTINATION du clic, pas
   // la vue courante — "FLUX" sur le chart, "CHART" une fois dans le flux
@@ -1635,11 +1630,8 @@ function applyLang(){
 }
 
 async function load(){
-  document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
-    LANG = b.dataset.l;
-    try{ localStorage.setItem("gexLang", LANG); }catch(_){}
-    applyLang();
-  });
+  Shell.mountLang("langSel");
+  Shell.onLang(l => { LANG = l; applyLang(); });
   applyLang();
   const switchTarget = (t) => {
     TARGET = t;

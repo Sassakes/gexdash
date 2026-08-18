@@ -22,22 +22,6 @@
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden}
 
-  header{display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--bg)}
-  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
-  header h1 b{color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
-  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden}
-  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em}
-  .langsel button+button{border-left:1px solid var(--line-strong)}
-  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
 
   .toolbar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:9px 20px;
     border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
@@ -177,10 +161,10 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<header>
+<header class="appheader">
   <h1><b>GEX</b>DASH · HEATMAP</h1>
   <nav class="topnav" id="appnav"></nav>
-  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+  <div id="langSel"></div>
 </header>
 
 <div class="toolbar">
@@ -468,7 +452,6 @@ function paintLevelDate(){
 }
 
 function applyLang(){
-  $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   Shell.mount("appnav"); Shell.setLang(LANG);
     const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
@@ -612,7 +595,8 @@ document.addEventListener("click", e => {
   $$(".dd.open").forEach(d => { if (!d.contains(e.target)) d.classList.remove("open"); });
   if (!$("#help").hidden && !$("#help").contains(e.target) && e.target !== $("#btnHelp")){ $("#help").hidden = true; $("#btnHelp").classList.remove("on"); }
 });
-$$("#langSel button").forEach(b => b.onclick = () => { LANG = b.dataset.l; try{ localStorage.setItem("gexLang", LANG); }catch(_){} applyLang(); });
+Shell.mountLang("langSel");
+Shell.onLang(l => { LANG = l; applyLang(); });
 
 /* Défilement synchronisé — RELATIF AU PRIX, pas en pixels.
    Copier scrollTop d'un panneau à l'autre ne marche pas : NQ cote ~29 000 et

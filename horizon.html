@@ -21,16 +21,6 @@
   *{box-sizing:border-box; margin:0}
   body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
 
-  header{display:flex; align-items:center; gap:16px; padding:11px 20px; border-bottom:1px solid var(--line)}
-  header h1{font-size:13px; letter-spacing:.22em; text-transform:uppercase}
-  header h1 b{color:var(--gold)}
-  .topnav{margin-left:auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px; position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .langsel{display:flex; border:1px solid var(--line-strong); border-radius:5px; overflow:hidden; margin-left:12px}
-  .langsel button{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:0; padding:4px 9px; cursor:pointer; letter-spacing:.05em; min-height:26px}
-  .langsel button+button{border-left:1px solid var(--line-strong)}
-  .langsel button.on{background:var(--gold-soft); color:var(--gold)}
 
   .toolbar{display:flex; align-items:center; gap:13px; flex-wrap:wrap; padding:9px 20px;
     border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
@@ -99,10 +89,10 @@
 </head>
 <body>
 <script src="/loader.js"></script>
-<header>
+<header class="appheader">
   <h1><b>GEX</b>DASH · <span id="hTitle">HORIZON</span></h1>
   <nav class="topnav" id="appnav"></nav>
-  <div class="langsel" id="langSel"><button data-l="fr">FR</button><button data-l="en">EN</button></div>
+  <div id="langSel"></div>
 </header>
 
 <div class="toolbar">
@@ -241,15 +231,11 @@ function applyLang(){
   $("lgZ70").textContent = t("lgZ70");
   $("lgZ90").textContent = t("lgZ90");
   $("empty").textContent = t("notReady");
-  document.querySelectorAll("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   renderLimits();
   if (LAST) render(LAST); else $("summary").textContent = t("loading");
 }
-document.querySelectorAll("#langSel button").forEach(b => b.onclick = () => {
-  LANG = b.dataset.l;
-  try{ localStorage.setItem("gexLang", LANG); }catch(_){}
-  applyLang();
-});
+Shell.mountLang("langSel");
+Shell.onLang(l => { LANG = l; applyLang(); });
 
 function renderLimits(){
   $("limits").innerHTML =

@@ -23,27 +23,6 @@
   body{background:var(--bg); color:var(--text); font-family:var(--sans); line-height:1.6}
   a{color:var(--gold)}
 
-  header{
-    display:flex; align-items:center; gap:12px; padding:13px 20px; flex-wrap:wrap;
-    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:30;
-    background:rgba(var(--bg-rgb),.95); backdrop-filter:blur(10px);
-  }
-  header h1{font-size:12.5px; letter-spacing:.2em; text-transform:uppercase; font-weight:600}
-  header h1 b{color:var(--gold)}
-  .topnav{display:flex; gap:4px; margin-left:auto; align-items:center; flex-wrap:wrap}
-  .topnav a{color:var(--muted); text-decoration:none; font-size:12px; padding:6px 10px;
-    position:relative; transition:color .12s ease; white-space:nowrap}
-  .topnav a:hover{color:var(--gold)}
-  .topnav a::after{
-    content:""; position:absolute; left:10px; right:10px; bottom:3px; height:1px;
-    background:var(--gold); transform:scaleX(0); transform-origin:left;
-    transition:transform .16s ease;
-  }
-  .topnav a:hover::after{transform:scaleX(1)}
-  .lang{display:flex; border:1px solid var(--line-strong); margin-left:5px}
-  .lang button{background:none; border:none; color:var(--muted); font:inherit;
-               font-size:11px; padding:5px 10px; cursor:pointer}
-  .lang button.on{background:var(--gold); color:var(--bg); font-weight:600}
 
   /* ── hero ── */
   .hero{padding:34px 20px 6px; max-width:1180px; margin:0 auto}
@@ -195,10 +174,10 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<header>
+<header class="appheader">
   <h1><b>THE</b>HUB · <span id="hTitle">Flux</span></h1>
   <nav class="topnav" id="appnav"></nav>
-  <span class="lang"><button id="bFr" class="on">FR</button><button id="bEn">EN</button></span>
+  <span id="langSel"></span>
 </header>
 
 <div class="hero">
@@ -514,8 +493,6 @@ function render(){
   $("closerT").textContent = L.closerT;
   $("closerP").textContent = L.closerP;
   $("foot").textContent = L.foot;
-  $("bFr").className = LANG === "fr" ? "on" : "";
-  $("bEn").className = LANG === "en" ? "on" : "";
 
   $("toc").innerHTML = `<div class="lbl">${L.toc}</div>` + L.secs.map((s, i) =>
     `<a href="#${s.id}" data-s="${s.id}"><i>${String(i + 1).padStart(2, "0")}</i>${s.t}</a>`).join("");
@@ -549,8 +526,8 @@ function setLang(l){
   try{ localStorage.setItem("gexLang", l); }catch(_){}
   render();
 }
-$("bFr").onclick = () => setLang("fr");
-$("bEn").onclick = () => setLang("en");
+Shell.mountLang("langSel");
+Shell.onLang(setLang);
 render();
 (async function gateNewsNav(){
   let ok = false;
