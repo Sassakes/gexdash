@@ -177,6 +177,7 @@
 <header class="appheader">
   <h1><b>Gex</b>Dash · <span id="hTitle">Flux</span></h1>
   <nav class="topnav" id="appnav"></nav>
+  <div id="community"></div>
   <span id="langSel"></span>
 </header>
 
@@ -482,7 +483,7 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
           $("eyebrowLink").textContent = "Documentation";
   $("eyebrowHere").textContent = LANG === "fr" ? "Flux" : "Flow";
   $("heroT").textContent = L.heroT;

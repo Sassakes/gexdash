@@ -53,10 +53,23 @@
      gauche pendant que le reste etait pousse a droite, d'ou le decalage
      visible, et l'ajout du bouton de don faisait basculer sur une
      troisieme ligne. */
+  /* Ancrage horizontal identique aux 8 autres pages (cf. .appheader,
+     shell.js) : le CONTENU est centré sur --shell-w, indépendamment de
+     la largeur de main (880px, adaptée à la lecture du chart) ; le fond
+     et le filet restent plein-bord via ::before ("full-bleed
+     breakout"). C'est ce découplage — pas seulement déplacer header
+     hors de main — qui garantit que l'ancre ne bouge plus d'une page à
+     l'autre, quelle que soit la largeur de contenu de chacune. */
   header{
+    position:relative;
     display:flex; flex-direction:column; gap:var(--sp-2);
-    padding-bottom:18px; margin-bottom:18px;
-    border-bottom:1px solid var(--line);
+    max-width:var(--shell-w); margin:0 auto;
+    padding:16px 20px 18px;
+  }
+  header::before{
+    content:""; position:absolute; top:0; bottom:0; left:50%; right:50%;
+    margin-left:-50vw; margin-right:-50vw; z-index:-1;
+    background:var(--bg); border-bottom:1px solid var(--hair);
   }
   .mark{width:30px; height:30px; flex:none}
   .brand{display:flex; flex-direction:column; gap:1px; margin-right:4px}
@@ -97,47 +110,31 @@
      -- il appartient donc a "qui je suis", pas a "quel marche". Ca libere
      aussi la place a droite, que la ligne d'identite laissait vide. */
   .hdr-id #statusPill{margin-left:auto}
+  /* Discord/TradingView/Doc : composant partagé (#community, cf.
+     shell.js .appcommunity), plus la même famille de liens que sur les
+     8 autres pages désormais — plus de CSS bespoke ici. */
+  #community{margin-left:var(--sp-2)}
   .hdrtools{
-    margin-left:auto; display:flex; align-items:center; gap:6px;
+    margin-left:auto; display:flex; align-items:center; gap:var(--sp-2);
     flex-wrap:wrap;
   }
-  /* Resserre a 2px de part et d'autre : la rangee complete (communaute,
-     reglages, compte, appel au don) depassait la largeur utile de DEUX
-     pixels et basculait le header sur une troisieme ligne. Le filet reste
-     lisible, et la rangee gagne ~30px de marge -- de quoi encaisser des
-     libelles anglais un peu plus longs sans rebasculer. */
+  /* L'en-tête s'ancre désormais sur --shell-w (1180px) et non plus sur
+     les 880px de main : la rangée d'outils a largement la place, les
+     paddings resserrés à 2px qu'imposait l'ancienne contrainte de
+     largeur n'ont plus lieu d'être. */
   .hdrdiv{
     width:1px; height:16px; background:var(--hair-strong);
-    flex:0 0 auto; margin:0 2px;
+    flex:0 0 auto; margin:0 var(--sp-1);
   }
-
-  /* — communaute : volontairement le plus leger de la rangee. La pastille
-       porte la couleur de marque, elle suffit a identifier le service
-       sans que le libelle ait besoin de crier. — */
-  .community{display:flex; align-items:center; gap:0}
-  .community a{
-    display:inline-flex; align-items:center; gap:6px; text-decoration:none;
-    color:var(--faint); font-size:var(--fs-sm); white-space:nowrap;
-    padding:5px 5px; border-radius:var(--r-xs);
-    transition:color var(--t-fast), background var(--t-fast);
-  }
-  .community a .dot{
-    width:6px; height:6px; border-radius:var(--r-full); flex:0 0 auto;
-  }
-  .community a.dc .dot{background:#5865F2}   /* bleu de marque Discord */
-  .community a.tv .dot{background:#2962FF}   /* bleu de marque TradingView */
-  .community a:hover{color:var(--text); background:rgba(var(--white-rgb),var(--a-faint))}
 
   /* — reglages — */
   #tzTop{
     background:none; border:1px solid transparent; color:var(--muted);
-    font:inherit; font-size:var(--fs-sm); padding:5px 2px;
+    font:inherit; font-size:var(--fs-sm); padding:5px var(--sp-1);
     cursor:pointer; border-radius:var(--r-xs);
   }
   #tzTop:hover{color:var(--text); border-color:var(--hair-strong)}
   #tzTop:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
-  .hdrtools .ivs{opacity:.85}
-  .hdrtools .ivs:hover{opacity:1}
 
   /* — appel au don : SEUL element plein de tout le header, donc le seul
        que l'oeil lit comme cliquable avant meme d'avoir lu le libelle.
@@ -575,11 +572,10 @@
     /* le sélecteur de fuseau et la langue passent à la ligne proprement */
     .hdrtools{flex-wrap:wrap; row-gap:6px}
     .hdrdiv{display:none}
-    header{gap:10px; padding-bottom:14px; margin-bottom:14px}
+    header{gap:10px; padding:12px 14px 14px}
     .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
     .hdrtools{width:100%; margin-left:0; justify-content:flex-start}
-    .community a{padding:6px 8px}
     /* L'appel au don ferme la rangee et reste pleine cible tactile. */
     .cta-support{margin-left:auto; min-height:40px}
     .hdr-id #statusPill{margin-left:0}
@@ -904,9 +900,14 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<main>
-
 <header>
+  <!-- Sorti de <main> à dessein : <main> reste la colonne de LECTURE
+       (880px, adaptée à un chart et des tuiles), tandis que l'en-tête
+       s'ancre sur --shell-w (theme.css), commun aux 9 pages. Le
+       nichage précédent — header dans main — clampait la largeur
+       visible de l'en-tête à celle de main, empêchant tout ancrage
+       cohérent avec les autres pages : c'est la cause du décalage
+       visible en changeant de page. -->
   <!-- Bande 1 : identite, compte, appel au don, etat de la donnee.
        Le compte et le don sont colles a la marque plutot que renvoyes a
        l'autre bout de la barre : c'est ce qui creait le decalage. -->
@@ -955,14 +956,13 @@
          par toutes les pages : c'est ce qui empeche une destination de
          redevenir introuvable, comme /horizon l'etait. -->
     <nav id="appnav"></nav>
+    <!-- Communaute (Discord/TradingView) + Doc : composant partage avec
+         les 8 autres pages (cf. Shell.mountCommunity, shell.js). Doc
+         n'est plus dans le selecteur segmente ci-dessus -- ce n'est pas
+         une vue du produit, c'est une ressource au meme titre que les
+         deux autres liens. -->
+    <div id="community"></div>
     <div class="hdrtools">
-      <span class="community">
-      <a id="dcLink" class="dc" target="_blank" rel="noopener"
-         href="https://discord.gg/YfCbXDtb4"><span class="dot" aria-hidden="true"></span>Discord</a>
-      <a id="tvLink" class="tv" target="_blank" rel="noopener"
-         href="https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/"><span class="dot" aria-hidden="true"></span><span id="tvLbl">TradingView</span></a>
-    </span>
-
     <span class="hdrdiv" aria-hidden="true"></span>
 
     <select id="tzTop" title="Fuseau horaire des charts">
@@ -974,6 +974,8 @@
     <span id="langSel"></span>
   </div>
 </header>
+
+<main>
 
 <div class="ctxbar">
   <div class="tabs" id="tabs" role="tablist">
@@ -1619,8 +1621,7 @@ function applyLang(){
   $("pineNote").textContent = t("pineNote");
   $("copyBtn").textContent = t("copy");
   $("pineTopBtn").textContent = t("pineTop");
-  $("tvLbl").textContent = t("tv");
-  Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
   const dl = $("darkLbl"); if (dl) dl.textContent = t("dCtxLbl");
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
   authPaint();
@@ -2441,11 +2442,13 @@ function renderPine(d){
   $("pineTopBtn").onclick = () => copyPine(d, $("pineTopBtn"), "pineTop");
 }
 
+// Discord/TradingView : surcharge appliquée par shell.js (cf.
+// shellApplyLinkOverrides, partagée avec les 8 autres pages qui montent
+// le même cluster). Cette fonction ne gère plus que le CTA Soutenir,
+// propre au terminal.
 async function loadLinks(){
   try{
     const d = await (await fetch("/api/links")).json();
-    if (d.tradingview) $("tvLink").href = d.tradingview;
-    if (d.discord) $("dcLink").href = d.discord;
     if (d.donate){
       const a = $("donateLink");
       a.href = d.donate;

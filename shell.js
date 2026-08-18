@@ -14,16 +14,24 @@
    demandait neuf éditions cohérentes. DESTS ci-dessous est désormais la
    seule liste. Ajouter un module = une ligne, et il apparaît partout.
 
-   Présentation : UN seul sélecteur segmenté, qui contient toutes les
-   destinations visibles. Une première version separait les surfaces
-   d'analyse (dans le bloc) de Doc et News (posés à côté en liens
-   simples), au motif que ces derniers relèvent du contexte et non du
-   marché. Distinction juste sur le fond, ratée à l'écran : deux
-   traitements pour une même barre cassent l'unité au lieu de la
-   hiérarchiser, et News avait l'air posé là par accident plutôt que
-   rangé avec le reste. Un bloc unique, et la destination active se
-   distingue par son fond doré — c'est la seule hiérarchie dont la
-   barre a besoin.
+   Présentation : deux groupes, mais chacun avec UN traitement visuel
+   cohérent en lui-même — c'est la leçon d'une itération précédente, où
+   deux natures de liens (vues du produit / ressources externes) avaient
+   été mélangées dans un seul bloc puis, à l'inverse, un lien avait été
+   sorti du bloc sans lui donner de foyer propre : les deux erreurs
+   produisent le même symptôme, un élément qui semble posé au hasard.
+
+   — SHELL_DESTS → sélecteur segmenté (#appnav) : les VUES du produit
+     (Terminal, Dashboard, Heatmap, News). Toutes vivent dans la même
+     page, un clic y bascule le contenu principal.
+   — SHELL_COMMUNITY → cluster de liens (#community) : les RESSOURCES
+     externes au produit (Discord, TradingView) plus Doc, qui n'est pas
+     une vue mais une destination d'aide — de même nature que les deux
+     autres, donc du même bloc, pas de la barre de navigation.
+
+   La destination active se distingue par son fond doré (segmenté) ou
+   sa couleur dorée (cluster) — c'est la seule hiérarchie dont chacun a
+   besoin.
 
    Le module unique ne DÉCIDE PAS de ce qui est public. Les règles de
    visibilité en place sont reprises telles quelles : News reste réservé
@@ -33,12 +41,15 @@
    dans les règles elles-mêmes.
 
    API :
-     Shell.mount(el, "dash")   → rend la nav dans el, marque l'actif
-     Shell.setLang("en")       → réécrit les libellés (à appeler depuis
-                                 l'applyLang() de la page)
-     Shell.setAuth(true)       → révèle les destinations réservées aux
-                                 membres (à appeler dès que l'état de
-                                 session est connu)
+     Shell.mount(el, "dash")        → rend le sélecteur segmenté, marque
+                                      l'actif
+     Shell.mountCommunity(el)       → rend Discord / TradingView / Doc
+     Shell.setLang("en")            → réécrit les libellés des deux (à
+                                      appeler depuis l'applyLang() de la
+                                      page)
+     Shell.setAuth(true)            → révèle les destinations réservées
+                                      aux membres (à appeler dès que
+                                      l'état de session est connu)
 
    Le CSS est injecté une fois par ce module, pas recopié dans chaque
    page — sinon on recrée le problème qu'on vient de résoudre, un cran
@@ -72,10 +83,25 @@ const SHELL_DESTS = [
   {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",
    auth: true, enabled: false},
   {id: "news",     href: "/news",    fr: "News",      en: "News", auth: true},
-  {id: "doc",      href: "/doc",     fr: "Doc",       en: "Docs"},
 ];
 
-/* Destinations réellement affichables dans l'état courant. */
+/* Doc n'est pas une SURFACE D'ANALYSE — ce n'est pas une vue de marché
+   comme Terminal/Dashboard/Heatmap/News, c'est une ressource externe au
+   même titre que Discord ou TradingView. Elle rejoint ce cluster plutôt
+   que le sélecteur segmenté : un bloc mélangeant deux natures de liens
+   (vues du produit / ressources) ne se lit ni comme l'un ni comme
+   l'autre, exactement le défaut déjà corrigé une fois pour News avant
+   qu'elle ne rejoigne le bon groupe. */
+const SHELL_COMMUNITY = [
+  {id: "discord",     cls: "dc", external: true,
+   href: "https://discord.gg/YfCbXDtb4", fr: "Discord", en: "Discord"},
+  {id: "tradingview", cls: "tv", external: true,
+   href: "https://www.tradingview.com/script/TfBS3GjM-GEX-Levels-Dealer-Gamma-Exposure/",
+   fr: "TradingView", en: "TradingView"},
+  {id: "doc", href: "/doc", fr: "Doc", en: "Docs"},
+];
+
+/* Destinations réellement affichables dans le sélecteur segmenté. */
 function shellVisible(){
   return SHELL_DESTS.filter((d) => d.enabled !== false && (!d.auth || SHELL_AUTH));
 }
@@ -121,12 +147,39 @@ function shellCss(){
 
      Le titre passe de 13px en capitales très espacées à 18px en
      interlettrage neutre : à .22em un titre lit comme une étiquette, et
-     quand tout est étiquette rien ne domine. */
+     quand tout est étiquette rien ne domine.
+
+     ANCRAGE HORIZONTAL — le vrai bug corrigé ici, pas seulement un
+     ajustement de style. index.html centrait son <header> dans <main>
+     (880px), les huit autres pages rendaient .appheader en pleine
+     largeur collé au bord gauche (aucun max-width). Résultat : sur un
+     écran large, l'en-tête sautait visiblement d'une position centrée à
+     une position collée à gauche en passant du terminal à n'importe
+     quelle autre page.
+
+     .appheader centre désormais son CONTENU sur --shell-w (theme.css),
+     DÉCOUPLÉ de la largeur de la colonne de contenu propre à chaque
+     page (880px sur le terminal, aucune limite sur le dashboard,
+     960px sur horizon…) — c'est ce découplage qui rend l'ancre stable
+     quel que soit ce que la page affiche en dessous. Le fond et le
+     filet, eux, doivent rester plein-bord (l'effet "barre d'app" que
+     portait déjà le design d'origine) : element::before en pleine
+     largeur de viewport (left:50%, margin-left:-50vw, technique dite
+     "full-bleed breakout") porte l'un, tandis que .appheader lui-même,
+     limité à --shell-w et centré, porte l'autre. Cette séparation
+     évite de devoir modifier le markup des 8 pages pour ajouter un
+     conteneur interne : le hack tient tout entier dans ce fichier. */
   .appheader{
+    position:relative;
     display:flex; align-items:center; gap:var(--sp-3,12px); flex-wrap:wrap;
+    max-width:var(--shell-w,1180px); margin:0 auto;
     padding:var(--sp-3,12px) var(--sp-5,20px);
-    border-bottom:1px solid var(--hair,rgba(255,255,255,.06));
+  }
+  .appheader::before{
+    content:""; position:absolute; top:0; bottom:0; left:50%; right:50%;
+    margin-left:-50vw; margin-right:-50vw; z-index:-1;
     background:var(--bg,#0A0A0C);
+    border-bottom:1px solid var(--hair,rgba(255,255,255,.06));
   }
   .appheader .mark{width:24px; height:24px; flex:none}
   .appheader h1{
@@ -138,6 +191,29 @@ function shellCss(){
   .appheader h1 span{color:var(--muted,#8A8A94); font-weight:var(--fw-medium,500)}
   .appheader #appnav{margin-left:var(--sp-2,8px)}
   .appheader .appLang{margin-left:auto}
+
+  /* ══════════ CLUSTER COMMUNAUTÉ (Discord / TradingView / Doc) ══════════
+     Discord et TradingView n'existaient que dans le header bespoke du
+     terminal ; les huit autres pages n'avaient aucun accès à ces liens.
+     Le cluster est désormais un composant partagé au même titre que la
+     nav et la bascule de langue : chaque page qui monte #community
+     obtient le même trio, dans le même ordre, avec le même style. */
+  .appcommunity{display:flex; align-items:center; gap:2px; min-width:0}
+  .appcommunity a{
+    display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+    color:var(--faint,#5C5C66); font-size:var(--fs-sm,12px); white-space:nowrap;
+    padding:5px 9px; border-radius:var(--r-xs,3px);
+    transition:color var(--t-fast,.12s ease), background var(--t-fast,.12s ease);
+  }
+  .appcommunity a:hover{color:var(--text,#ECEAE4); background:rgba(255,255,255,var(--a-faint,.05))}
+  .appcommunity a .dot{width:6px; height:6px; border-radius:var(--r-full,999px); flex:0 0 auto}
+  .appcommunity a.dc .dot{background:#5865F2}  /* bleu de marque Discord */
+  .appcommunity a.tv .dot{background:#2962FF}  /* bleu de marque TradingView */
+  .appcommunity a.doc[aria-current="page"]{color:var(--gold,#F0B90B); font-weight:var(--fw-bold,600)}
+  .appcommunity .cdiv{
+    width:1px; height:14px; background:var(--hair-strong,rgba(255,255,255,.10));
+    margin:0 4px; flex:0 0 auto;
+  }
 
   /* ══════════ BASCULE DE LANGUE ══════════
      Recopiée dans neuf pages, sous deux formes differentes (#langSel a
@@ -172,6 +248,7 @@ function shellCss(){
     .appheader{padding:var(--sp-2,8px) var(--sp-4,16px)}
     .appheader h1{font-size:var(--fs-md,15px)}
     .appLang button{min-height:40px; padding:8px 12px}
+    .appcommunity a{min-height:40px; padding:8px 10px}
   }`;
   document.head.appendChild(s);
 }
@@ -187,7 +264,9 @@ function shellCurrent(){
                  "/flux.html": "/flux", "/horizon.html": "/horizon",
                  "/profile.html": "/profile", "/privacy.html": "/privacy"};
   p = ALIAS[p] || p;
-  const hit = SHELL_DESTS.find((d) => d.href === p);
+  // Cherche dans les deux listes : Doc doit s'allumer dans le cluster
+  // communauté même s'il ne fait plus partie du sélecteur segmenté.
+  const hit = SHELL_DESTS.concat(SHELL_COMMUNITY).find((d) => d.href === p);
   return hit ? hit.id : null;
 }
 
@@ -201,9 +280,48 @@ function shellRender(el, current){
   el.innerHTML = `<div class="appnav-seg">${shellVisible().map(link).join("")}</div>`;
 }
 
+function shellCommunityRender(el, current){
+  const lang = SHELL_LANG === "en" ? "en" : "fr";
+  const parts = SHELL_COMMUNITY.map((d) => {
+    if (d.external){
+      return `<a class="${d.cls}" target="_blank" rel="noopener" href="${d.href}" data-shell="${d.id}">` +
+             `<span class="dot" aria-hidden="true"></span>${d[lang]}</a>`;
+    }
+    // Doc : seul lien interne du cluster, seul à porter l'état actif.
+    const on = d.id === current ? ' aria-current="page"' : "";
+    return `<span class="cdiv" aria-hidden="true"></span>` +
+           `<a class="doc"${on} href="${d.href}" data-shell="${d.id}">${d[lang]}</a>`;
+  });
+  el.className = "appcommunity";
+  el.innerHTML = parts.join("");
+}
+
+/* /api/links est public, léger et mis en cache 60s côté edge (cf.
+   api/gex.py) : un fetch partagé entre toutes les pages qui montent le
+   cluster ne coûte donc rien de plus qu'un seul appel index.html en
+   faisait déjà. La promesse est mémoïsée pour ne jamais tirer deux fois. */
+let SHELL_LINKS_PROMISE = null;
+function shellApplyLinkOverrides(){
+  if (!SHELL_LINKS_PROMISE){
+    SHELL_LINKS_PROMISE = fetch("/api/links")
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}));
+  }
+  SHELL_LINKS_PROMISE.then((d) => {
+    if (!d) return;
+    SHELL_COMM_EL.forEach((el) => {
+      if (d.discord){ const a = el.querySelector("a.dc"); if (a) a.href = d.discord; }
+      if (d.tradingview){ const a = el.querySelector("a.tv"); if (a) a.href = d.tradingview; }
+    });
+  });
+}
+
 /* Bascules de langue montées, et rappels enregistrés par les pages. */
 const SHELL_LANG_EL = [];
 const SHELL_LANG_CB = [];
+/* Clusters communauté montés (redessinés au changement de langue, pour
+   que le libellé de Doc suive Doc/Docs comme dans le sélecteur). */
+const SHELL_COMM_EL = [];
 
 function shellLangRender(el){
   const on = (l) => (l === SHELL_LANG ? ' class="on"' : "");
@@ -224,6 +342,29 @@ const Shell = {
     el._shellCurrent = current || shellCurrent();
     shellRender(el, el._shellCurrent);
     if (!Shell._mounted.includes(el)) Shell._mounted.push(el);
+    return el;
+  },
+  /* Monte le cluster Discord / TradingView / Doc. Sur les 8 pages qui ne
+     rendaient jusqu'ici que nav + langue, l'ajouter donne à chacune le
+     même accès aux mêmes ressources que le terminal — c'est ce qui
+     manquait pour que Doc ait un endroit cohérent où vivre partout,
+     plutôt qu'une exception propre à une seule page.
+
+     Applique aussi les surcharges d'URL éventuelles (/api/links,
+     configurables depuis l'admin) : avant, seul index.html les lisait
+     via sa propre loadLinks() qui écrivait sur des ids fixes
+     #dcLink/#tvLink. Ces ids ont disparu avec le markup codé en dur —
+     shell.js reprend cette responsabilité pour TOUTES les pages qui
+     montent le cluster, pas seulement le terminal, avec un seul fetch
+     partagé (mise en cache de la promesse) plutôt qu'un par page. */
+  mountCommunity(el, current){
+    if (typeof el === "string") el = document.getElementById(el);
+    if (!el) return null;
+    shellCss();
+    el._shellCurrent = current || shellCurrent();
+    shellCommunityRender(el, el._shellCurrent);
+    if (!SHELL_COMM_EL.includes(el)) SHELL_COMM_EL.push(el);
+    shellApplyLinkOverrides();
     return el;
   },
   /* Réécrit les libellés de toutes les navs montées. À appeler depuis
@@ -269,6 +410,12 @@ const Shell = {
   _redraw(){
     Shell._mounted.forEach((el) => shellRender(el, el._shellCurrent));
     SHELL_LANG_EL.forEach(shellLangRender);
+    SHELL_COMM_EL.forEach((el) => shellCommunityRender(el, el._shellCurrent));
+    // shellCommunityRender vient de repartir des URL par défaut : la
+    // promesse est déjà résolue à ce stade (sauf tout premier appel),
+    // donc réappliquer les surcharges ici ne coûte rien et évite qu'un
+    // changement de langue efface une URL personnalisée.
+    if (SHELL_COMM_EL.length) shellApplyLinkOverrides();
   },
   _mounted: [],
 };

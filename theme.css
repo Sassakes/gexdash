@@ -191,6 +191,21 @@
   --sp-1:4px;  --sp-2:8px;  --sp-3:12px; --sp-4:16px;
   --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px;
 
+  /* Largeur d'ancrage de la barre d'en-tête, IDENTIQUE sur les 9 pages.
+     Avant ce token, index.html centrait son <header> dans son <main>
+     (880px), tandis que les 8 autres pages rendaient .appheader en
+     pleine largeur, collé au bord gauche (aucun max-width). Le résultat
+     : sur un écran large, l'en-tête sautait visiblement vers la gauche
+     en passant du terminal à n'importe quelle autre page — l'ancre
+     horizontale n'était pas la même d'une page à l'autre. Toute page
+     qui affiche un en-tête doit centrer son contenu sur --shell-w,
+     découplé de la largeur de SA PROPRE colonne de contenu (880px sur
+     le terminal, aucune limite sur le dashboard, etc.) : c'est ce
+     découplage qui rend l'ancre stable quel que soit ce qu'affiche la
+     page en dessous. Valeur reprise de dev/gallery.html, qui posait
+     déjà ce même palier pour un atelier de composants. */
+  --shell-w:1180px;
+
   /* ══════════ PROFONDEUR ══════════
      Le halo doré (box-shadow:0 0 8px or) posé partout est ce qui date
      le plus le rendu — un tic de 2018. Mais le remplacer par des

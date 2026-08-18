@@ -75,6 +75,7 @@
 <header class="appheader">
   <h1><b>Gex</b>Dash · <span id="hTitle">Confidentialité</span></h1>
   <nav class="topnav" id="appnav"></nav>
+  <div id="community"></div>
   <span id="langSel"></span>
 </header>
 
@@ -200,7 +201,7 @@ function render(){
   const L = T[LANG];
   document.documentElement.lang = LANG;
   $("hTitle").textContent = L.title;
-  Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
     $("eyebrow").textContent = L.eyebrow;
   $("heroT").textContent = L.heroT;
   $("heroP").textContent = L.heroP;
