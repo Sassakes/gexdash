@@ -40,7 +40,14 @@
     content:""; position:fixed; inset:0 0 auto 0; height:1px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--gold-glow), transparent);
   }
-  main{max-width:880px; margin:0 auto; padding:26px 20px 56px}
+  /* Meme largeur que l'en-tete (--shell-w, theme.css) : sur un ecran
+     large, un main plus etroit que le header cree deux boites centrees
+     independamment avec des bords gauche differents -- la nav paraissait
+     "decalee" alors qu'elle etait juste alignee sur une largeur qui
+     n'etait pas celle du contenu en dessous. Meme boite partout, header
+     compris : c'est ce qui rend l'alignement stable, pas un ajustement
+     au pixel pres. */
+  main{max-width:var(--shell-w); margin:0 auto; padding:26px 20px 56px}
   ::selection{background:var(--gold-soft); color:var(--gold)}
   a{color:var(--gold)}
   button, input{font-family:var(--mono)}
@@ -112,10 +119,16 @@
   .hdr-id #statusPill{margin-left:auto}
   /* Discord/TradingView/Doc : composant partagé (#community, cf.
      shell.js .appcommunity), plus la même famille de liens que sur les
-     8 autres pages désormais — plus de CSS bespoke ici. */
-  #community{margin-left:var(--sp-2)}
+     8 autres pages désormais — plus de CSS bespoke ici. Collé à DROITE,
+     pas à la nav : c'est #community qui porte le margin-left:auto (donc
+     tout l'espace flexible se prend entre nav et communauté), pas
+     .hdrtools -- avant, la communauté restait accolée à la nav et seuls
+     fuseau+langue partaient à droite, ce qui séparait deux éléments
+     (communauté, réglages) qui devraient former un seul groupe ancré à
+     droite. */
+  #community{margin-left:auto}
   .hdrtools{
-    margin-left:auto; display:flex; align-items:center; gap:var(--sp-2);
+    display:flex; align-items:center; gap:var(--sp-2);
     flex-wrap:wrap;
   }
   /* L'en-tête s'ancre désormais sur --shell-w (1180px) et non plus sur

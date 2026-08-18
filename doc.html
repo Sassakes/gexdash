@@ -29,7 +29,7 @@
   /* ── barre du haut ── */
 
   /* ── hero + compteurs ── */
-  .hero{padding:30px 20px 4px; max-width:1180px; margin:0 auto}
+  .hero{padding:30px 20px 4px; max-width:var(--shell-w); margin:0 auto}
   .hero h2{font-size:23px; font-weight:600; letter-spacing:-.01em}
   .hero p{color:var(--muted); font-size:14px; margin-top:7px; max-width:620px}
   .cds{display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
@@ -47,7 +47,7 @@
 
   /* ── mise en page sommaire + contenu ── */
   .wrap{display:grid; grid-template-columns:216px 1fr; gap:34px;
-        max-width:1180px; margin:0 auto; padding:26px 20px 90px; align-items:start}
+        max-width:var(--shell-w); margin:0 auto; padding:26px 20px 90px; align-items:start}
   .toc{position:sticky; top:70px; max-height:calc(100vh - 92px); overflow-y:auto}
   .toc .lbl{font-size:9px; letter-spacing:.16em; text-transform:uppercase;
             color:var(--faint); padding:0 10px 8px}

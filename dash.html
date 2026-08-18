@@ -62,7 +62,14 @@
     content:""; position:fixed; inset:0 0 auto 0; height:1px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--gold-glow), transparent);
   }
-  main{max-width:none; margin:0; padding:26px 24px 56px}  /* plan de travail pleine largeur */
+  /* Meme largeur que l'en-tete (--shell-w, theme.css), pas plein bord :
+     un main pleine largeur pendant que le header au-dessus est centre
+     et inset cree un decalage tres visible entre les deux -- l'en-tete
+     paraissait etroit, presque flottant, au-dessus d'un plan de travail
+     qui s'etend jusqu'aux bords. La grille de cartes reste fluide :
+     cellW() (plus bas) lit board.clientWidth a l'execution, aucune
+     hypothese de largeur fixe a ajuster. */
+  main{max-width:var(--shell-w); margin:0 auto; padding:26px 24px 56px}
   a{color:var(--gold)}
   button, select{font-family:var(--mono)}
   .mark{width:26px; height:26px; flex:none}
@@ -397,7 +404,12 @@
 <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
-<main>
+<!-- <header> sorti de <main> a dessein : niche a l'interieur, le padding
+     de main (24px de chaque cote) s'appliquait AUSSI au header, reduisant
+     sa largeur reelle en dessous de --shell-w -- invisible tant que main
+     etait en pleine largeur (max-width:none), redevenu visible des que
+     main a ete aligne sur --shell-w. Meme piege deja rencontre et corrige
+     sur index.html. -->
 <header class="appheader">
   <div class="appheader-id">
     <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
@@ -417,6 +429,7 @@
   </div>
 </header>
 
+<main>
 <div class="addbar">
   <div class="addwrap">
     <button id="addBtn" class="addmain">+ <span id="addLbl">Ajouter</span></button>
