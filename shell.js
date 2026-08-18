@@ -14,13 +14,12 @@
    demandait neuf éditions cohérentes. DESTS ci-dessous est désormais la
    seule liste. Ajouter un module = une ligne, et il apparaît partout.
 
-   Regroupement : les surfaces d'analyse (Terminal, Dashboard, Heatmap,
-   Flux) sont des vues des mêmes données — présentées en sélecteur
-   segmenté, elles se lisent comme UN commutateur d'app et non comme
-   des liens en vrac. C'est ce qui désencombre la zone : le nombre
-   d'éléments ne change pas, leur poids visuel oui. Doc et News sont du
-   contexte, pas des vues de marché : ils reculent à droite en liens
-   simples.
+   Regroupement : les surfaces d'analyse (Terminal, Dashboard, Heatmap)
+   sont des vues des mêmes données — présentées en sélecteur segmenté,
+   elles se lisent comme UN commutateur d'app et non comme des liens en
+   vrac. C'est ce qui désencombre la zone : le nombre d'éléments ne
+   change pas, leur poids visuel oui. Doc et News sont du contexte, pas
+   des vues de marché : ils reculent à droite en liens simples.
 
    Le module unique ne DÉCIDE PAS de ce qui est public. Les règles de
    visibilité en place sont reprises telles quelles : News reste réservé
@@ -58,7 +57,13 @@ const SHELL_DESTS = [
   {id: "terminal", href: "/",        fr: "Terminal",  en: "Terminal",  group: "app"},
   {id: "dash",     href: "/dash",    fr: "Dashboard", en: "Dashboard", group: "app"},
   {id: "heatmap",  href: "/heatmap", fr: "Heatmap",   en: "Heatmap",   group: "app"},
-  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",      group: "app"},
+  /* /flux est la PAGE D'EXPLICATION du module Flux, pas une vue de
+     marché : elle appartient à la documentation et s'atteint depuis le
+     contenu de /doc (bloc "fluxcta"). À ne pas confondre avec le bouton
+     FLUX du terminal, qui bascule le panneau central entre chart de prix
+     et gamma projeté — celui-là vit dans la barre de contexte, pas ici. */
+  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",      group: "ctx",
+   enabled: false},
   /* Horizon : pas encore ouvert. Ne pas rendre. */
   {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",   group: "app",
    auth: true, enabled: false},
