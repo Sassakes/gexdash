@@ -62,14 +62,18 @@
     content:""; position:fixed; inset:0 0 auto 0; height:1px; z-index:10;
     background:linear-gradient(90deg, transparent, var(--gold-glow), transparent);
   }
-  /* Meme largeur que l'en-tete (--shell-w, theme.css), pas plein bord :
-     un main pleine largeur pendant que le header au-dessus est centre
-     et inset cree un decalage tres visible entre les deux -- l'en-tete
-     paraissait etroit, presque flottant, au-dessus d'un plan de travail
-     qui s'etend jusqu'aux bords. La grille de cartes reste fluide :
-     cellW() (plus bas) lit board.clientWidth a l'execution, aucune
-     hypothese de largeur fixe a ajuster. */
-  main{max-width:var(--shell-w); margin:0 auto; padding:26px 24px 56px}
+  /* Plan de travail PLEINE LARGEUR, a dessein : demande explicite --
+     l'en-tete au-dessus reste fixe et centre sur --shell-w (structure
+     inchangee, header desormais hors de main, cf. commit precedent),
+     mais le canevas de cartes doit profiter de tout l'ecran plutot que
+     d'etre plafonne a la largeur de l'en-tete. Les deux boites n'ont
+     PAS a partager le meme bord gauche : c'est une bande de nav centree
+     qui flotte au-dessus d'un plan de travail plein ecran, un motif
+     courant (Notion, Figma) et distinct du terminal, ou header et
+     contenu partagent la meme colonne. La grille de cartes reste
+     fluide : cellW() (plus bas) lit board.clientWidth a l'execution,
+     aucune hypothese de largeur fixe a ajuster. */
+  main{max-width:none; margin:0; padding:26px 24px 56px}
   a{color:var(--gold)}
   button, select{font-family:var(--mono)}
   .mark{width:26px; height:26px; flex:none}
