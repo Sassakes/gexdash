@@ -409,6 +409,7 @@
   </svg>
   <h1><b>Gex</b>Dash · <span id="hTitle">Mon dashboard</span></h1>
   <nav class="topnav" id="appnav"></nav>
+  <div id="community"></div>
   <span id="langSel"></span>
 </header>
 
@@ -1541,7 +1542,7 @@ function firstFreeSpot(w, h){
 }
 
 $("hTitle").textContent = tx("title");
-Shell.mount("appnav"); Shell.setLang(LANG);
+Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
 Shell.mountLang("langSel");
 /* dash pose ses libelles une seule fois au chargement (aucune fonction de
    repeinture, contrairement aux autres pages) : le changement de langue

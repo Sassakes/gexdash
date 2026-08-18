@@ -164,6 +164,7 @@
 <header class="appheader">
   <h1><b>Gex</b>Dash · <span>Heatmap</span></h1>
   <nav class="topnav" id="appnav"></nav>
+  <div id="community"></div>
   <div id="langSel"></div>
 </header>
 
@@ -452,7 +453,7 @@ function paintLevelDate(){
 }
 
 function applyLang(){
-  Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
     const setTxt = (sel, v) => { const e = $(sel); if (e) e.textContent = v; };
   setTxt("#lblScale", t("scale")); setTxt("#lblNoise", t("noise"));
   paintLevelDate();
