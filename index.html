@@ -127,6 +127,31 @@
     flex:0 0 auto; margin:0 var(--sp-1);
   }
 
+  /* Palier intermédiaire (tablette / fenêtre réduite) : entre le plein
+     desktop et le seuil mobile (640px plus bas), rien ne gouvernait la
+     largeur explicitement -- le flex-wrap organique décidait seul quel
+     élément basculait, sans marge ni séparateur. Mesuré sans ce palier :
+     .hdrtools (fuseau + langue) se détache tout seul dès ~805px, collé
+     sous la ligne du dessus comme un accident, pendant que nav +
+     communauté restent en place -- c'est ce qui produisait le décalage
+     remonté par l'utilisateur sur une fenêtre intermédiaire. Palier à
+     900px, confortablement avant cette rupture organique : .hdrtools
+     bascule sur SA PROPRE ligne, filet supérieur qui la présente comme
+     un second rang voulu. Contrairement aux 8 autres pages (cf. shell.js
+     .appheader-id/.appheader-bar), le titre d'index.html est déjà séparé
+     de cette rangée depuis l'origine -- .hdrtools n'entre en concurrence
+     qu'avec nav+communauté, pas avec le titre, d'où un seul palier ici
+     plutôt qu'une restructuration en deux rangées. */
+  @media (max-width:900px){
+    .hdr-bar{row-gap:var(--sp-2)}
+    .hdrtools{
+      width:100%; margin-left:0; justify-content:flex-start;
+      margin-top:var(--sp-1); padding-top:var(--sp-2);
+      border-top:1px solid var(--hair);
+    }
+    .hdrdiv{display:none}
+  }
+
   /* — reglages — */
   #tzTop{
     background:none; border:1px solid transparent; color:var(--muted);
@@ -569,13 +594,11 @@
     .fluxToggle{width:100%; margin:2px 0 16px; justify-content:center}
     .fluxToggle::before{display:none}
     input, select, textarea{font-size:16px}
-    /* le sélecteur de fuseau et la langue passent à la ligne proprement */
-    .hdrtools{flex-wrap:wrap; row-gap:6px}
-    .hdrdiv{display:none}
+    /* .hdrtools passe déjà sur sa propre ligne dès 900px (cf. plus haut) ;
+       ici, uniquement ce qui est spécifique au tout petit écran. */
     header{gap:10px; padding:12px 14px 14px}
     .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
-    .hdrtools{width:100%; margin-left:0; justify-content:flex-start}
     /* L'appel au don ferme la rangee et reste pleine cible tactile. */
     .cta-support{margin-left:auto; min-height:40px}
     .hdr-id #statusPill{margin-left:0}
