@@ -208,6 +208,21 @@ function shellCss(){
      droite plutôt que deux éléments séparés par un vide inégal. */
   .appheader-bar #community{margin-left:auto}
 
+  /* ══════════ TIROIR MOBILE "PLUS D'OPTIONS" ══════════
+     Sur telephone, la nav passe a width:100% (regle 720px plus bas),
+     ce qui pousse communaute (Discord/TradingView/Doc) et langue
+     chacune sur sa propre rangee pleine largeur -- constat identique a
+     celui fait sur le terminal (cf. index.html), mais ici il touche les
+     8 autres pages a la fois puisqu'elles partagent cette meme rangee.
+     Neutre par defaut (display:contents) : #community et #langSel
+     restent des enfants directs de .appheader-bar, comportement
+     identique a avant ce bloc. shellEnsureMoreDrawer() (plus bas) monte
+     la case a cocher + le bouton "..." au premier Shell.mount() de
+     chaque page -- rien a editer dans les 8 fichiers HTML. */
+  .appheader-more-chk{position:absolute; opacity:0; pointer-events:none}
+  .appheader-more-btn{display:none}
+  .appheader-more{display:contents}
+
   /* ══════════ CLUSTER COMMUNAUTÉ (Discord / TradingView / Doc) ══════════
      Discord et TradingView n'existaient que dans le header bespoke du
      terminal ; les huit autres pages n'avaient aucun accès à ces liens.
@@ -265,6 +280,28 @@ function shellCss(){
     .appheader h1{font-size:var(--fs-md,15px)}
     .appLang button{min-height:40px; padding:8px 12px}
     .appcommunity a{min-height:40px; padding:8px 10px}
+    /* Active le tiroir : la nav prend deja toute la largeur (regle
+       ci-dessus), donc communaute+langue repassent forcement a la ligne
+       -- autant les regrouper derriere un seul bouton compact plutot
+       que deux rangees pleine largeur. */
+    .appheader-bar{position:relative}
+    .appheader-more-btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      width:40px; height:40px; flex:none; margin-left:auto;
+      background:var(--surface2,#16161A); border:1px solid var(--hair-strong,rgba(255,255,255,.10));
+      color:var(--muted,#8A8A94); font-size:18px; line-height:1; cursor:pointer;
+      border-radius:var(--r-xs,3px);
+    }
+    .appheader-more-btn:hover{color:var(--gold,#F0B90B); border-color:rgba(var(--gold-rgb,240,185,11),.5)}
+    .appheader-more-chk:checked ~ .appheader-more-btn{color:var(--gold,#F0B90B); border-color:rgba(var(--gold-rgb,240,185,11),.5)}
+    .appheader-more-chk:focus-visible ~ .appheader-more-btn{outline:2px solid var(--gold,#F0B90B); outline-offset:2px}
+    .appheader-more{
+      display:none; flex-direction:column; align-items:flex-start; gap:var(--sp-2,8px);
+      width:100%; margin-top:var(--sp-1,4px); padding-top:var(--sp-2,8px);
+      border-top:1px solid var(--hair,rgba(255,255,255,.06));
+    }
+    .appheader-more-chk:checked ~ .appheader-more{display:flex}
+    .appheader-more #community{margin-left:0}
   }`;
   document.head.appendChild(s);
 }
@@ -312,6 +349,37 @@ function shellCommunityRender(el, current){
   el.innerHTML = parts.join("");
 }
 
+/* Restructure .appheader-bar en tiroir mobile : deplace tout ce qui suit
+   la nav (communaute, langue) dans un wrapper .appheader-more precede
+   d'une case a cocher + un bouton "...", cf. bloc CSS ci-dessus. Sans
+   effet sur le terminal (index.html), dont le <nav> vit dans .hdr-bar,
+   pas .appheader-bar -- closest() n'y trouve rien et sort aussitot.
+   navEl est deja monte (id stable) quand cette fonction s'execute : le
+   deplacer dans le DOM ne casse aucun getElementById ulterieur. */
+let shellMoreSeq = 0;
+function shellEnsureMoreDrawer(navEl){
+  const bar = navEl.closest(".appheader-bar");
+  if (!bar || bar._shellMoreDone) return;
+  bar._shellMoreDone = true;
+  const rest = Array.from(bar.children).filter((c) => c !== navEl);
+  if (!rest.length) return;
+  const chk = document.createElement("input");
+  chk.type = "checkbox";
+  chk.className = "appheader-more-chk";
+  chk.id = "apMoreChk" + (shellMoreSeq++);
+  const label = document.createElement("label");
+  label.setAttribute("for", chk.id);
+  label.className = "appheader-more-btn";
+  label.setAttribute("aria-label", "Plus d'options");
+  label.textContent = "⋯";
+  const wrap = document.createElement("div");
+  wrap.className = "appheader-more";
+  rest.forEach((el) => wrap.appendChild(el));
+  bar.appendChild(chk);
+  bar.appendChild(label);
+  bar.appendChild(wrap);
+}
+
 /* /api/links est public, léger et mis en cache 60s côté edge (cf.
    api/gex.py) : un fetch partagé entre toutes les pages qui montent le
    cluster ne coûte donc rien de plus qu'un seul appel index.html en
@@ -357,6 +425,7 @@ const Shell = {
     shellCss();
     el._shellCurrent = current || shellCurrent();
     shellRender(el, el._shellCurrent);
+    shellEnsureMoreDrawer(el);
     if (!Shell._mounted.includes(el)) Shell._mounted.push(el);
     return el;
   },
