@@ -2670,7 +2670,18 @@ class handler(BaseHTTPRequestHandler):
                 # le daily vient TOUJOURS du nocturne, même sur le chemin 15h25
                 if latest:
                     self._preserve_daily(payload, latest)
-                if (not canonical) and self._gex_locked() and latest:
+                # gex:lock est une bascule pensee pour /api/gex (refresh manuel
+                # admin) : quand elle est a "0", un tir intrajournalier tombant
+                # ICI (branche "not fresh" plus haut -- ex. GitHub Actions a
+                # publie les niveaux du jour AVANT le seuil 11:30 UTC de la
+                # garde de fraicheur, donc `fresh` reste faux jusqu'au publish
+                # canonique ~13h25 UTC) recalculait et republiait des niveaux
+                # differents a chaque tir de 5-10 min -- exactement ce que le
+                # commentaire ci-dessus dit vouloir eviter. Un tir intraday ne
+                # doit donc JAMAIS deverrouiller les niveaux, meme gex:lock=0
+                # (regression constatee le 2026-08-18).
+                if (not canonical) and latest and (
+                        self._gex_locked() or "intraday" in qs):
                     self._freeze_levels(payload, latest)
                 self._stamp_iv_ref(payload, latest, canonical)
                 if flow_capture:
