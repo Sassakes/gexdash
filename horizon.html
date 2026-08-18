@@ -228,6 +228,7 @@ const nf = n => n.toLocaleString(LANG === "fr" ? "fr-FR" : "en-US");
 
 function applyLang(){
   Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.setAuth(true);   // page gardee par session : si elle s'affiche, on est connecte
   document.documentElement.lang = LANG;
   $("hTitle").textContent = t("title");
   $("hHorizon").textContent = t("hHorizon");

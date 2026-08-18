@@ -14,61 +14,69 @@
    demandait neuf éditions cohérentes. DESTS ci-dessous est désormais la
    seule liste. Ajouter un module = une ligne, et il apparaît partout.
 
-   Regroupement : les cinq surfaces d'analyse (Terminal, Dashboard,
-   Heatmap, Flux, Horizon) sont des vues des mêmes données — présentées
-   en sélecteur segmenté, elles se lisent comme UN commutateur d'app et
-   non comme cinq liens en vrac. C'est ce qui désencombre la zone : le
-   nombre d'éléments ne change pas, leur poids visuel oui. Doc et News
-   sont du contexte, pas des vues de marché : ils reculent à droite en
-   liens simples.
+   Regroupement : les surfaces d'analyse (Terminal, Dashboard, Heatmap,
+   Flux) sont des vues des mêmes données — présentées en sélecteur
+   segmenté, elles se lisent comme UN commutateur d'app et non comme
+   des liens en vrac. C'est ce qui désencombre la zone : le nombre
+   d'éléments ne change pas, leur poids visuel oui. Doc et News sont du
+   contexte, pas des vues de marché : ils reculent à droite en liens
+   simples.
+
+   Le module unique ne DÉCIDE PAS de ce qui est public. Les règles de
+   visibilité en place sont reprises telles quelles : News reste réservé
+   aux membres connectés, Horizon n'est pas encore ouvert. Ce fichier
+   les rend explicites (drapeaux auth / enabled) au lieu de les laisser
+   éparpillées dans neuf pages — c'est là qu'était le vrai défaut, pas
+   dans les règles elles-mêmes.
 
    API :
      Shell.mount(el, "dash")   → rend la nav dans el, marque l'actif
      Shell.setLang("en")       → réécrit les libellés (à appeler depuis
                                  l'applyLang() de la page)
+     Shell.setAuth(true)       → révèle les destinations réservées aux
+                                 membres (à appeler dès que l'état de
+                                 session est connu)
 
    Le CSS est injecté une fois par ce module, pas recopié dans chaque
    page — sinon on recrée le problème qu'on vient de résoudre, un cran
    plus bas. */
 "use strict";
 
-/* auth:true = route gardée par session côté serveur, qui redirige vers
-   /?login=1&next=... Le lien reste affiché : la redirection revient sur
-   la destination après connexion, donc l'exposer est le bon comportement.
-   Le drapeau sert à l'infobulle, pas à masquer. */
+/* Deux drapeaux gouvernent l'affichage d'une destination :
+
+   auth:true    — réservée aux membres connectés. Le lien reste MASQUÉ
+                  tant que Shell.setAuth(true) n'a pas été appelé. C'est
+                  le comportement que portaient les pages avant ce module
+                  (lien News en `hidden` dans le markup, révélé par JS) :
+                  le reproduire à l'identique est le contrat, pas une
+                  décision à reprendre ici.
+
+   enabled:false — module non encore ouvert au public. Il reste décrit
+                  ici pour que la connaissance ne se perde pas, mais
+                  n'est jamais rendu. Le rouvrir = retirer le drapeau. */
 const SHELL_DESTS = [
-  {id: "terminal", href: "/",        fr: "Terminal",  en: "Terminal", group: "app"},
+  {id: "terminal", href: "/",        fr: "Terminal",  en: "Terminal",  group: "app"},
   {id: "dash",     href: "/dash",    fr: "Dashboard", en: "Dashboard", group: "app"},
-  {id: "heatmap",  href: "/heatmap", fr: "Heatmap",   en: "Heatmap",  group: "app"},
-  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",     group: "app"},
-  {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",  group: "app", auth: true},
-  {id: "news",     href: "/news",    fr: "News",      en: "News",     group: "ctx", auth: true},
-  {id: "doc",      href: "/doc",     fr: "Doc",       en: "Docs",     group: "ctx"},
+  {id: "heatmap",  href: "/heatmap", fr: "Heatmap",   en: "Heatmap",   group: "app"},
+  {id: "flux",     href: "/flux",    fr: "Flux",      en: "Flow",      group: "app"},
+  /* Horizon : pas encore ouvert. Ne pas rendre. */
+  {id: "horizon",  href: "/horizon", fr: "Horizon",   en: "Horizon",   group: "app",
+   auth: true, enabled: false},
+  {id: "news",     href: "/news",    fr: "News",      en: "News",      group: "ctx", auth: true},
+  {id: "doc",      href: "/doc",     fr: "Doc",       en: "Docs",      group: "ctx"},
 ];
 
-const SHELL_TXT = {
-  fr: {locked: "Connexion requise"},
-  en: {locked: "Sign-in required"},
-};
+/* Destinations réellement affichables dans l'état courant. */
+function shellVisible(){
+  return SHELL_DESTS.filter((d) => d.enabled !== false && (!d.auth || SHELL_AUTH));
+}
 
 let SHELL_LANG = "fr";
 try{ SHELL_LANG = localStorage.getItem("gexLang") || "fr"; }catch(_){}
 
-/* Les pages masquaient le lien News tant que l'utilisateur n'était pas
-   connecté (hidden par défaut, révélé par JS). Choix différent ici : les
-   destinations gardées restent VISIBLES, marquées d'un cadenas discret
-   qui disparaît une fois connecté.
-
-   Raison : la garde serveur redirige vers /?login=1&next=... donc le clic
-   ramène sur la destination après connexion — le parcours fonctionne. Et
-   masquer n'apporte aucune sécurité, la page est gardée côté serveur de
-   toute façon. Or c'est précisément le masquage qui rendait Horizon
-   invisible : un module qu'on cache aux visiteurs non connectés ne se
-   découvre jamais. Un cadenas informe, une absence n'informe pas.
-
-   Repasser au masquage, si tu préfères ne rien montrer aux non-membres,
-   ne demande que de remettre `el.hidden = d.auth && !SHELL_AUTH` dans
-   shellRender au lieu de la classe .locked. */
+/* Faux jusqu'à preuve du contraire : une destination réservée aux membres
+   ne doit JAMAIS apparaître le temps que l'état de session soit connu.
+   Partir de true la ferait clignoter à l'écran avant d'être retirée. */
 let SHELL_AUTH = false;
 
 function shellCss(){
@@ -102,12 +110,6 @@ function shellCss(){
     display:inline-flex; align-items:center; transition:color var(--t-fast,.12s ease)}
   .appnav-ctx a:hover{color:var(--text,#ECEAE4)}
   .appnav-ctx a[aria-current="page"]{color:var(--gold,#F0B90B)}
-  /* Destination gardée : le libellé recule et un point doré signale la
-     connexion requise. Assez visible pour informer, assez discret pour
-     ne pas concurrencer la destination active. */
-  .appnav a.locked{opacity:.72}
-  .appnav a.locked .lk{font-style:normal; margin-left:5px; color:var(--gold,#F0B90B);
-    font-size:15px; line-height:0; opacity:.8}
   /* Cibles tactiles >= 40px et nav défilable sur mobile (cf. CLAUDE.md) */
   @media (max-width:720px){
     .appnav{gap:var(--sp-2,8px); width:100%; overflow-x:auto; scrollbar-width:none}
@@ -136,14 +138,11 @@ function shellRender(el, current){
   const lang = SHELL_LANG === "en" ? "en" : "fr";
   const link = (d) => {
     const on = d.id === current ? ' aria-current="page"' : "";
-    const gated = d.auth && !SHELL_AUTH;
-    const tip = gated ? ` title="${SHELL_TXT[lang].locked}"` : "";
-    const cls = gated ? ' class="locked"' : "";
-    const lock = gated ? '<i class="lk" aria-hidden="true">·</i>' : "";
-    return `<a href="${d.href}"${on}${tip}${cls} data-shell="${d.id}">${d[lang]}${lock}</a>`;
+    return `<a href="${d.href}"${on} data-shell="${d.id}">${d[lang]}</a>`;
   };
-  const app = SHELL_DESTS.filter((d) => d.group === "app").map(link).join("");
-  const ctx = SHELL_DESTS.filter((d) => d.group === "ctx").map(link).join("");
+  const vis = shellVisible();
+  const app = vis.filter((d) => d.group === "app").map(link).join("");
+  const ctx = vis.filter((d) => d.group === "ctx").map(link).join("");
   el.className = "appnav";
   el.innerHTML = `<div class="appnav-seg">${app}</div><div class="appnav-ctx">${ctx}</div>`;
 }
@@ -167,9 +166,11 @@ const Shell = {
     SHELL_LANG = lang === "en" ? "en" : "fr";
     Shell._redraw();
   },
-  /* À appeler quand l'état de session est connu : retire le cadenas des
-     destinations gardées. Remplace le `nl.hidden = !ok` que chaque page
-     portait sur son lien News. */
+  /* À appeler dès que l'état de session est connu : révèle les
+     destinations réservées aux membres. Remplace exactement le
+     `nl.hidden = !ok` que chaque page portait sur son lien News.
+     Une page elle-même gardée par session peut appeler setAuth(true)
+     sans condition : si elle s'affiche, l'utilisateur est connecté. */
   setAuth(ok){
     SHELL_AUTH = !!ok;
     Shell._redraw();

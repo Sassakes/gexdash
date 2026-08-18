@@ -752,6 +752,7 @@ async function loadMacro(){ const d = await jget("/macro.json?t=" + Date.now());
 function applyLang(){
   $$("#langSel button").forEach(b => b.classList.toggle("on", b.dataset.l === LANG));
   Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.setAuth(true);   // page gardee par session : si elle s'affiche, on est connecte
     $("#macroTitle").textContent = t("macroTitle");
   $("#colNews").textContent = t("colNews");
   $("#colFeed").textContent = t("colFeed");

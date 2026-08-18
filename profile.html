@@ -167,6 +167,7 @@ const t = k => T[LANG][k];
 
 function applyLang(){
   Shell.mount("appnav"); Shell.setLang(LANG);
+  Shell.setAuth(true);   // page gardee par session : si elle s'affiche, on est connecte
   document.documentElement.lang = LANG;
   $("hTitle").textContent = t("title");
   $("hAccount").textContent = t("account");
