@@ -90,20 +90,6 @@
   .brand h1 b{color:var(--gold)}
   .brand h1 .pg{color:var(--muted); font-weight:var(--fw-medium)}
   .brand .sub{font-size:10.5px; color:var(--faint); letter-spacing:.08em}
-  #statusPill{
-    display:inline-flex; align-items:center; gap:7px;
-    border:1px solid var(--line-strong); background:var(--surface);
-    padding:5px 12px; font-size:11px; letter-spacing:.06em; color:var(--muted);
-    white-space:nowrap;
-  }
-  #statusPill .dot{width:6px; height:6px; border-radius:50%; background:var(--faint); flex:none}
-  #statusPill.live{border-color:rgba(var(--gold-rgb),.45); color:var(--gold)}
-  #statusPill.live .dot{background:var(--gold); box-shadow:0 0 8px var(--gold-glow)}
-  @media(prefers-reduced-motion:no-preference){
-    #statusPill.live .dot{animation:pulse 2.2s ease-in-out infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  }
-
   /* ============ ligne d'outils du header ============
      Trois familles, separees par un filet, dans l'ordre de leur poids :
      communaute (le plus discret) -> reglages -> compte, puis l'appel au
@@ -112,11 +98,6 @@
      alors que c'est le seul element qui demande une action. */
   .hdr-id{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
   .hdr-bar{display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap}
-  /* Etat de la donnee : remonte de la barre de contexte vers la ligne
-     d'identite. Il decrit la fraicheur du payload, pas le marche choisi
-     -- il appartient donc a "qui je suis", pas a "quel marche". Ca libere
-     aussi la place a droite, que la ligne d'identite laissait vide. */
-  .hdr-id #statusPill{margin-left:auto}
   /* Discord/TradingView/Doc : composant partagé (#community, cf.
      shell.js .appcommunity), plus la même famille de liens que sur les
      8 autres pages désormais — plus de CSS bespoke ici. Collé à DROITE,
@@ -212,8 +193,6 @@
   .ctxbar{
     display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;
   }
-  /* statusPill est remonte dans le header : c'est String Pine qui ferme
-     desormais la barre de contexte. */
   .ctxbar #pineTopBtn{margin-left:auto}
   #pineTopBtn{
     background:var(--gold-soft); color:var(--gold); border:1px solid var(--gold);
@@ -626,7 +605,6 @@
     .brand .sub{font-size:10px}
     /* L'appel au don ferme la rangee et reste pleine cible tactile. */
     .cta-support{margin-left:auto; min-height:40px}
-    .hdr-id #statusPill{margin-left:0}
     #pineTopBtn{flex:none; padding:9px 12px; margin-left:0}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
@@ -634,11 +612,19 @@
        reglages (fuseau/langue) replies derriere un bouton compact plutot
        que deux rangees pleine largeur supplementaires -- ce sont des
        controles secondaires sur telephone, pas la premiere chose a
-       montrer avant le chart. */
-    .hdr-bar{position:relative}
+       montrer avant le chart. Grille a deux colonnes (pas flex-wrap) :
+       la nav (4 onglets une fois connecte) dépassait de peu la largeur
+       disponible une fois le bouton pris en compte, assez pour que
+       flex-wrap le fasse basculer seul sur sa propre rangee -- cf.
+       shell.js .appheader-bar pour l'explication complete, meme
+       correctif ici puisque #appnav partage exactement le meme CSS. */
+    .hdr-bar{
+      display:grid; grid-template-columns:1fr 40px; align-items:center;
+      column-gap:var(--sp-2); row-gap:var(--sp-1); position:relative;
+    }
     .hdr-more-btn{
       display:inline-flex; align-items:center; justify-content:center;
-      width:40px; height:40px; flex:none; margin-left:auto;
+      grid-column:2; width:40px; height:40px;
       background:var(--surface2); border:1px solid var(--hair-strong);
       color:var(--muted); font-size:18px; line-height:1; cursor:pointer;
       border-radius:var(--r-xs);
@@ -647,8 +633,8 @@
     .hdr-more-chk:checked ~ .hdr-more-btn{color:var(--gold); border-color:rgba(var(--gold-rgb),.5)}
     .hdr-more-chk:focus-visible ~ .hdr-more-btn{outline:2px solid var(--gold); outline-offset:2px}
     .hdr-more{
-      display:none; flex-direction:column; align-items:stretch; gap:var(--sp-2);
-      width:100%; margin-top:var(--sp-1); padding-top:var(--sp-2);
+      display:none; grid-column:1/-1; flex-direction:column; align-items:flex-start; gap:var(--sp-2);
+      margin-top:var(--sp-1); padding-top:var(--sp-2);
       border-top:1px solid var(--hair);
     }
     .hdr-more-chk:checked ~ .hdr-more{display:flex}
@@ -705,7 +691,6 @@
   .brand .sub{font-variant-numeric:tabular-nums}
 
 
-  #statusPill{min-height:32px; font-variant-numeric:tabular-nums}
   #pineTopBtn{min-height:32px}
 
   .stats{
@@ -812,20 +797,6 @@
 
 
 
-  /* — LIVE : liseré conique rotatif — */
-  #statusPill{position:relative; background:var(--surface); border:1px solid transparent; overflow:visible}
-  #statusPill::before{
-    content:""; position:absolute; inset:-1px; z-index:-1; padding:1px;
-    background:conic-gradient(from var(--pa, 0deg),
-      rgba(var(--gold-rgb),.0), rgba(var(--gold-rgb),.7), rgba(var(--gold-rgb),.0) 32%);
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor; mask-composite:exclude;
-    opacity:0; transition:opacity .3s ease;
-  }
-  @property --pa{syntax:"<angle>"; initial-value:0deg; inherits:false}
-  #statusPill.live::before{opacity:1; animation:ring 3.2s linear infinite}
-  @keyframes ring{to{--pa:360deg}}
-
   /* — wordmark : reflet dore balayant. Seule animation decorative que je
      garde sur la marque : elle se declenche toutes les 7s, sur le seul
      logotype, et s'arrete sous prefers-reduced-motion. — */
@@ -852,7 +823,6 @@
   @media(prefers-reduced-motion:reduce){
     html::before, html::after{animation:none}
     .brand h1 b{animation:none; color:var(--gold); background:none}
-    #statusPill.live::before{animation:none}
   }
   /* Bouton de soutien : même gabarit que les autres liens de la barre,
      juste souligné d'un liseré doré et d'un halo qui respire lentement.
@@ -1017,8 +987,6 @@
 
     <a id="donateLink" class="cta-support" target="_blank" rel="noopener" hidden
        href="#"><span class="hrt" aria-hidden="true">♥</span><span id="donLbl">Soutenir</span></a>
-
-    <span id="statusPill"><span class="dot"></span><span id="statusTxt">SNAPSHOT</span></span>
   </div>
 
   <!-- Bande 2 : navigation a gauche, outils a droite. Les regler sur la
@@ -1221,7 +1189,7 @@ const fmt = (v, d=1) => v==null ? "—" : Number(v).toLocaleString(LANG === "fr"
 const T = {
   fr: {
     loading:"Chargement", noSnap:t0=>"Aucun snapshot "+t0+" pour l'instant — lance le workflow GitHub Actions ou clique « ⟳ Refresh ».",
-    notPub:" · NON PUBLIÉ", levels:t0=>"Niveaux du jour · échelle "+t0,
+    levels:t0=>"Niveaux du jour · échelle "+t0,
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Régime", stPC:"P/C OI", stIV:"IV ATM",
     bMarket:"marché", bManual:"manuelle", bIndex:"indice", bLast:"mémorisée",
     chart:"Chart · niveaux GEX superposés", chartFail:m=>"flux indisponible ("+m+")", candles:"bougies",
@@ -1288,7 +1256,7 @@ const T = {
   },
   en: {
     loading:"Loading", noSnap:t0=>"No "+t0+" snapshot yet — run the GitHub Action or hit “⟳ Refresh”.",
-    notPub:" · NOT PUBLISHED", levels:t0=>"Today's levels · "+t0+" scale",
+    levels:t0=>"Today's levels · "+t0+" scale",
     stBasis:"Basis", stNet:"Net GEX $Bn/1%", stReg:"Regime", stPC:"P/C OI", stIV:"ATM IV",
     bMarket:"market", bManual:"manual", bIndex:"index", bLast:"last known",
     chart:"Chart · GEX levels overlay", chartFail:m=>"feed unavailable ("+m+")", candles:"candles",
@@ -2377,12 +2345,6 @@ function applyLevelLines(){
 // des niveaux"), le bandeau n'a pas vocation à les redessiner.
 function renderBadges(d){
   const tgt = d.target || "NQ";
-  const live = d.mode === "live";
-  const pill = $("statusPill");
-  pill.classList.toggle("live", live);
-  $("statusTxt").textContent = (live ? "LIVE " : "SNAPSHOT ") + fmtTzHM(d.generated_utc)
-    + " " + (TZ_CITY[PREFS.tz] || PREFS.tz)
-    + (d.published === false ? t("notPub") : "");
 
   const stats = [
     [tgt, fmt(d.nq_price), "price"],

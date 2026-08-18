@@ -273,21 +273,30 @@ function shellCss(){
 
   /* Cibles tactiles >= 40px et nav défilable sur mobile (cf. CLAUDE.md) */
   @media (max-width:720px){
-    .appnav{gap:var(--sp-2,8px); width:100%; overflow-x:auto; scrollbar-width:none}
+    .appnav{gap:var(--sp-2,8px); min-width:0; overflow-x:auto; scrollbar-width:none}
     .appnav::-webkit-scrollbar{display:none}
     .appnav-seg a{min-height:40px; padding:8px 12px}
     .appheader{padding:var(--sp-2,8px) var(--sp-4,16px)}
     .appheader h1{font-size:var(--fs-md,15px)}
     .appLang button{min-height:40px; padding:8px 12px}
     .appcommunity a{min-height:40px; padding:8px 10px}
-    /* Active le tiroir : la nav prend deja toute la largeur (regle
-       ci-dessus), donc communaute+langue repassent forcement a la ligne
-       -- autant les regrouper derriere un seul bouton compact plutot
-       que deux rangees pleine largeur. */
-    .appheader-bar{position:relative}
+    /* Grille plutot que flex-wrap : la nav (4 onglets une fois connecte,
+       ex. News visible) mesure ~308px de contenu naturel, le bouton "..."
+       40px + le gap du conteneur (12px) dépassaient de peu la largeur
+       disponible sur un 390px -- assez pour que le calcul de retour a la
+       ligne de flex-wrap (base sur la taille hypothetique, PAS sur ce que
+       min-width:0 autorise a retrecir) fasse basculer le bouton seul sur
+       sa propre rangee, exactement le defaut signale. Une grille a deux
+       colonnes fixe le budget une fois pour toutes : la nav occupe 1fr
+       (retrecit et defile en interne au besoin), le bouton une colonne
+       fixe de 40px -- aucune ambiguite de calcul possible. */
+    .appheader-bar{
+      display:grid; grid-template-columns:1fr 40px; align-items:center;
+      column-gap:var(--sp-2,8px); row-gap:var(--sp-1,4px); position:relative;
+    }
     .appheader-more-btn{
       display:inline-flex; align-items:center; justify-content:center;
-      width:40px; height:40px; flex:none; margin-left:auto;
+      grid-column:2; width:40px; height:40px;
       background:var(--surface2,#16161A); border:1px solid var(--hair-strong,rgba(255,255,255,.10));
       color:var(--muted,#8A8A94); font-size:18px; line-height:1; cursor:pointer;
       border-radius:var(--r-xs,3px);
@@ -296,8 +305,8 @@ function shellCss(){
     .appheader-more-chk:checked ~ .appheader-more-btn{color:var(--gold,#F0B90B); border-color:rgba(var(--gold-rgb,240,185,11),.5)}
     .appheader-more-chk:focus-visible ~ .appheader-more-btn{outline:2px solid var(--gold,#F0B90B); outline-offset:2px}
     .appheader-more{
-      display:none; flex-direction:column; align-items:flex-start; gap:var(--sp-2,8px);
-      width:100%; margin-top:var(--sp-1,4px); padding-top:var(--sp-2,8px);
+      display:none; grid-column:1/-1; flex-direction:column; align-items:flex-start; gap:var(--sp-2,8px);
+      margin-top:var(--sp-1,4px); padding-top:var(--sp-2,8px);
       border-top:1px solid var(--hair,rgba(255,255,255,.06));
     }
     .appheader-more-chk:checked ~ .appheader-more{display:flex}
