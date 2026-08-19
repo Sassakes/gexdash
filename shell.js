@@ -389,6 +389,46 @@ function shellEnsureMoreDrawer(navEl){
   bar.appendChild(wrap);
 }
 
+/* Prefetch au survol/premier contact tactile des liens internes de
+   navigation. Répond à une demande de switch de page "aussi fluide
+   qu'un changement de marché NQ/ES/SPX" (qui ne recharge jamais rien,
+   c'est la MÊME page) : un vrai routeur client aurait exigé de
+   réécrire l'amorçage de chacune des 9 pages (timers de poll, canevas
+   de chart, ResizeObservers) pour tout arrêter proprement avant d'en
+   initialiser une autre, sous peine de fuites et de doublons — jugé
+   disproportionné pour le gain. Le prefetch capture l'essentiel du
+   gain perçu (le réseau, pas le parsing/l'exécution du script de la
+   page cible) sans toucher à l'architecture : le navigateur télécharge
+   la page cible dès le survol, la navigation réelle sert alors depuis
+   son cache HTTP. Suppose que les pages STATIC (cf. api/gex.py) soient
+   réellement cacheables — sans ça le navigateur télécharge quand même
+   au survol mais refuse de réutiliser la réponse au clic (no-store
+   l'interdit explicitement), prefetch pour rien.
+
+   Seuls les liens SAME-ORIGIN sont ciblés (.appnav-seg + Doc, jamais
+   Discord/TradingView) : on ne contrôle pas la politique de cache d'un
+   tiers, et prefetch-er un domaine externe au survol serait du trafic
+   gratuit pour rien. Un Set mémoïse les hrefs déjà demandés pour ne
+   jamais poser deux fois le même <link>. */
+const SHELL_PREFETCHED = new Set();
+function shellPrefetch(href){
+  if (!href || SHELL_PREFETCHED.has(href) || href === location.href) return;
+  SHELL_PREFETCHED.add(href);
+  const link = document.createElement("link");
+  link.rel = "prefetch";
+  link.href = href;
+  document.head.appendChild(link);
+}
+const SHELL_PREFETCH_SEL = ".appnav-seg a, .appcommunity a.doc";
+document.addEventListener("mouseover", (e) => {
+  const a = e.target.closest(SHELL_PREFETCH_SEL);
+  if (a) shellPrefetch(a.href);
+}, { passive: true });
+document.addEventListener("touchstart", (e) => {
+  const a = e.target.closest(SHELL_PREFETCH_SEL);
+  if (a) shellPrefetch(a.href);
+}, { passive: true });
+
 /* /api/links est public, léger et mis en cache 60s côté edge (cf.
    api/gex.py) : un fetch partagé entre toutes les pages qui montent le
    cluster ne coûte donc rien de plus qu'un seul appel index.html en

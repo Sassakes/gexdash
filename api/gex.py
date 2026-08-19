@@ -2338,10 +2338,10 @@ class handler(BaseHTTPRequestHandler):
 
         self._send(404, json.dumps({"error": "not found"}).encode(), "application/json")
 
-    def _send(self, code, body, ctype):
+    def _send(self, code, body, ctype, cache="no-store"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -3407,7 +3407,16 @@ class handler(BaseHTTPRequestHandler):
                     "application/json",
                 )
                 return
-            self._send(200, fpath.read_bytes(), ctype)
+            # Aucune de ces pages n'est gardee par session (news/profile/
+            # horizon vivent dans des branches a part, cf. plus bas, et
+            # gardent no-store) : le HTML est un gabarit statique, tout
+            # contenu dynamique/par-utilisateur arrive apres coup via JS
+            # (/api/auth, /api/quote, ...). Un court max-age rend le
+            # prefetch au survol (shell.js, shellPrefetch) utile -- sans
+            # ca le navigateur telecharge quand meme au survol mais
+            # refuse de reutiliser la reponse au clic (no-store l'interdit
+            # explicitement), prefetch pour rien.
+            self._send(200, fpath.read_bytes(), ctype, cache="public, max-age=30, must-revalidate")
             return
 
         # ---- chart data: candles + last price, proxied (Yahoo blocks browser CORS) ----
