@@ -210,6 +210,37 @@
   </section>
   <button id="saveLinksBtn">Enregistrer les liens</button>
 
+  <section class="panel" style="margin-top:22px">
+    <h2>Auto-level <span class="note" style="padding:0">indicateurs prêts à poser, téléchargeables depuis /profile</span></h2>
+    <div class="row" style="grid-template-columns:80px 1fr auto; align-items:center">
+      <span class="t" style="font-size:11px">TradingView</span>
+      <input type="url" id="alTvUrl" placeholder="https://chromewebstore.google.com/detail/… (extension Chrome)">
+      <button id="alTvSave">Enregistrer</button>
+    </div>
+    <div class="status" id="alTvStatus" style="padding:0 14px 10px">—</div>
+
+    <div class="row" style="grid-template-columns:80px 1fr auto auto; align-items:center">
+      <span class="t" style="font-size:11px">Quantower</span>
+      <input type="file" id="alQtFile">
+      <button id="alQtUpload">Envoyer</button>
+      <button class="ghost" id="alQtDelete" title="Retirer le fichier">✕</button>
+    </div>
+    <div class="status" id="alQtStatus" style="padding:0 14px 10px">—</div>
+
+    <div class="row" style="grid-template-columns:80px 1fr auto auto; align-items:center">
+      <span class="t" style="font-size:11px">MotiveWave</span>
+      <input type="file" id="alMwFile">
+      <button id="alMwUpload">Envoyer</button>
+      <button class="ghost" id="alMwDelete" title="Retirer le fichier">✕</button>
+    </div>
+    <div class="status" id="alMwStatus" style="padding:0 14px 10px">—</div>
+
+    <div class="note">Fichier compilé uniquement (.dll Quantower, .jar MotiveWave…), 2 Mo max. Une fois envoyé, les
+      membres connectés le téléchargent depuis leur page /profile — aucune autre action nécessaire.
+      TradingView n'est pas un fichier : c'est le lien de l'extension Chrome (distinct du lien « TradingView »
+      ci-dessus, qui pointe vers la page du script Pine).</div>
+  </section>
+
   <section>
     <h2>Or comptant <span class="note">XAUUSD — écart avec le future GC</span></h2>
     <div class="note" style="margin-bottom:8px">
@@ -715,6 +746,84 @@ refreshLock(); }
     }catch(e){ msg(e.message, false); }
     finally{ $("saveLinksBtn").disabled = false; }
   };
+
+  /* Auto-level : meme forme d'admin que Liens publics ci-dessus (un blob
+     JSON via /api/autolevel), sauf que Quantower/MotiveWave portent un
+     FICHIER, pas une URL -- FileReader.readAsDataURL() donne un base64
+     pret a poster sans dependance externe (pas de multipart a la main
+     cote serveur, cf. api/gex.py). */
+  function fmtBytes(n){
+    if (n == null) return "";
+    if (n < 1024) return n + " o";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " Ko";
+    return (n / 1024 / 1024).toFixed(2) + " Mo";
+  }
+  function readFileAsBase64(file){
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve((r.result || "").split(",")[1] || "");
+      r.onerror = () => reject(new Error("lecture du fichier impossible"));
+      r.readAsDataURL(file);
+    });
+  }
+  async function loadAutolevel(){
+    try{
+      const d = await api("/api/autolevel");
+      const al = d.autolevel || {};
+      const tv = al.tradingview || {};
+      $("alTvStatus").innerHTML = tv.url
+        ? `<b class="on">actif</b> · <span style="word-break:break-all">${tv.url}</span>` : "—";
+      for (const [p, id] of [["quantower", "alQt"], ["motivewave", "alMw"]]){
+        const f = al[p];
+        $(id + "Status").innerHTML = f
+          ? `<b class="on">${f.filename}</b> · ${fmtBytes(f.size)} · envoyé le ${(f.uploaded_at || "").slice(0, 10)}`
+          : `aucun fichier`;
+      }
+    }catch(e){ msg("Auto-level indisponible : " + e.message, false); }
+  }
+  $("alTvSave").onclick = async () => {
+    const url = $("alTvUrl").value.trim();
+    if (!url) return;
+    $("alTvSave").disabled = true;
+    try{
+      await api("/api/autolevel", {method: "POST",
+        body: JSON.stringify({platform: "tradingview", action: "set_url", url})});
+      $("alTvUrl").value = "";
+      msg("Lien TradingView enregistré.", true);
+      loadAutolevel();
+    }catch(e){ msg(e.message, false); }
+    finally{ $("alTvSave").disabled = false; }
+  };
+  function wireAutolevelFile(platform, fileId, uploadId, deleteId){
+    $(uploadId).onclick = async () => {
+      const inp = $(fileId);
+      const file = inp.files[0];
+      if (!file){ msg("Choisis un fichier d'abord.", false); return; }
+      if (file.size > 2 * 1024 * 1024){ msg("Fichier trop volumineux (max 2 Mo).", false); return; }
+      $(uploadId).disabled = true;
+      try{
+        const data_b64 = await readFileAsBase64(file);
+        await api("/api/autolevel", {method: "POST",
+          body: JSON.stringify({platform, action: "set_file", filename: file.name, data_b64})});
+        inp.value = "";
+        msg(platform + " mis à jour.", true);
+        loadAutolevel();
+      }catch(e){ msg(e.message, false); }
+      finally{ $(uploadId).disabled = false; }
+    };
+    $(deleteId).onclick = async () => {
+      if (!confirm("Retirer le fichier " + platform + " ?")) return;
+      try{
+        await api("/api/autolevel", {method: "POST",
+          body: JSON.stringify({platform, action: "delete"})});
+        msg("Fichier retiré.", true);
+        loadAutolevel();
+      }catch(e){ msg(e.message, false); }
+    };
+  }
+  wireAutolevelFile("quantower", "alQtFile", "alQtUpload", "alQtDelete");
+  wireAutolevelFile("motivewave", "alMwFile", "alMwUpload", "alMwDelete");
+  loadAutolevel();
 
   $("saveBtn").onclick = async () => {
     const body = {};

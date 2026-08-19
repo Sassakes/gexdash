@@ -47,6 +47,10 @@
   button.primary:hover{background:var(--gold-hi)}
   button.danger{color:var(--red); border-color:rgba(var(--red-rgb),.4)}
   button:disabled{opacity:.5; cursor:default}
+  /* Aucun focus-visible n'etait defini sur cette page (seul input:focus
+     existait) -- un utilisateur au clavier ne voyait ainsi jamais quel
+     bouton avait le focus. Meme traitement que index.html/admin.html. */
+  button:focus-visible, a.btnlike:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   .msg{font-size:12px; margin-top:10px; min-height:16px}
   .msg.err{color:var(--red)} .msg.ok{color:var(--teal)}
   .note{font-size:11.5px; color:var(--faint); margin-top:8px; line-height:1.5}
@@ -59,6 +63,33 @@
   .badge.active{color:var(--teal); background:var(--teal-soft)}
   .badge.blocked{color:var(--gold); background:var(--gold-soft)}
   .badge.revoked{color:var(--red); background:var(--red-soft)}
+  .badge.ready{color:var(--teal); background:var(--teal-soft)}
+  .badge.pending{color:var(--faint); background:var(--surface3)}
+
+  /* ============ auto-level : une carte par plateforme ============
+     Meme carte (section) que le reste de la page, mais avec 3 sous-blocs
+     empiles plutot que 3 sections separees -- les trois racontent la
+     meme histoire (installer -> connecter la cle API -> les niveaux
+     suivent), les regrouper visuellement le rend evident. */
+  .platform{padding:16px 0; border-top:1px solid var(--line)}
+  .platform:first-child{padding-top:2px; border-top:none}
+  .platform-head{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap}
+  .platform-name{font-size:14px; font-weight:600; color:var(--text)}
+  .steps{margin:0 0 12px; padding-left:20px; font-size:12.5px; color:var(--muted); line-height:1.7}
+  .steps li{margin-bottom:2px}
+  .steps li::marker{color:var(--gold); font-weight:600}
+  .platform .actions{justify-content:flex-start; margin-top:0}
+  a.btnlike{
+    display:inline-flex; align-items:center; gap:7px; text-decoration:none;
+    font-family:var(--sans); font-size:12.5px; font-weight:600; padding:9px 16px;
+    border-radius:6px; border:1px solid var(--gold); background:var(--gold); color:var(--bg);
+    cursor:pointer; min-height:38px; transition:background .12s ease, opacity .12s ease;
+  }
+  a.btnlike:hover{background:var(--gold-hi)}
+  a.btnlike[aria-disabled="true"]{
+    pointer-events:none; opacity:.45; background:var(--surface2); border-color:var(--line-strong); color:var(--muted);
+  }
+  .platform .note{margin-top:10px}
 
   #logoutBtn{display:block; margin:26px auto 0}
   #gate{padding:60px 20px; text-align:center; color:var(--muted)}
@@ -86,32 +117,32 @@
     <div class="row"><label id="lUser">Identifiant</label>
       <div class="keybox"><code id="curUser">—</code></div>
     </div>
-    <div class="row"><label id="lNewUser">Nouveau pseudo</label>
+    <div class="row"><label id="lNewUser" for="inUser">Nouveau pseudo</label>
       <input id="inUser" spellcheck="false" autocomplete="off">
     </div>
     <div class="actions"><button id="userSave">Enregistrer</button></div>
-    <div class="msg" id="userMsg"></div>
+    <div class="msg" id="userMsg" role="status" aria-live="polite"></div>
   </section>
 
   <h2 id="hEmail">E-mail</h2>
   <section>
-    <div class="row"><label id="lEmail">Adresse</label>
+    <div class="row"><label id="lEmail" for="inEmail">Adresse</label>
       <input id="inEmail" type="email" autocomplete="email" spellcheck="false">
     </div>
     <div class="actions"><button id="emailSave">Enregistrer</button></div>
-    <div class="msg" id="emailMsg"></div>
+    <div class="msg" id="emailMsg" role="status" aria-live="polite"></div>
   </section>
 
   <h2 id="hPwd">Mot de passe</h2>
   <section>
-    <div class="row"><label id="lCur">Actuel</label>
+    <div class="row"><label id="lCur" for="inCur">Actuel</label>
       <input id="inCur" type="password" autocomplete="current-password">
     </div>
-    <div class="row"><label id="lNew">Nouveau</label>
+    <div class="row"><label id="lNew" for="inNew">Nouveau</label>
       <input id="inNew" type="password" autocomplete="new-password">
     </div>
     <div class="actions"><button id="pwdSave">Enregistrer</button></div>
-    <div class="msg" id="pwdMsg"></div>
+    <div class="msg" id="pwdMsg" role="status" aria-live="polite"></div>
   </section>
 
   <h2 id="hApi">Clé API personnelle <span class="badge" id="apiBadge" hidden></span></h2>
@@ -122,7 +153,60 @@
     </div>
     <div class="note" id="apiNote">Utilisée par l'extension Chrome pour remplir automatiquement l'indicateur Pine. Régénérer invalide immédiatement l'ancienne clé.</div>
     <div class="actions"><button id="apiRegen" class="danger">Régénérer</button></div>
-    <div class="msg" id="apiMsg"></div>
+    <div class="msg" id="apiMsg" role="status" aria-live="polite"></div>
+  </section>
+
+  <h2 id="hAutolevel">API &amp; indicateurs auto-level</h2>
+  <section>
+    <div class="note" id="autolevelIntro">Ces outils utilisent votre clé API personnelle (ci-dessus) pour afficher les niveaux du jour directement sur votre plateforme, sans copier-coller.</div>
+
+    <div class="platform">
+      <div class="platform-head">
+        <span class="platform-name">TradingView</span>
+        <span class="badge ready" id="tvBadge">Extension Chrome</span>
+      </div>
+      <ol class="steps" id="tvSteps">
+        <li id="tvStep1">Installer l'extension « The Hub — GEX Levels » depuis le Chrome Web Store.</li>
+        <li id="tvStep2">Ouvrir un chart sur TradingView (NQ, ES, SPX ou GOLD).</li>
+        <li id="tvStep3">Cliquer sur l'icône de l'extension et coller votre clé API personnelle ci-dessus.</li>
+        <li id="tvStep4">Les niveaux GEX du jour s'affichent et se mettent à jour automatiquement.</li>
+      </ol>
+      <div class="actions">
+        <a id="tvInstall" class="btnlike" target="_blank" rel="noopener" href="#">Installer l'extension</a>
+      </div>
+    </div>
+
+    <div class="platform">
+      <div class="platform-head">
+        <span class="platform-name">Quantower</span>
+        <span class="badge pending" id="qtBadge">—</span>
+      </div>
+      <ol class="steps" id="qtSteps">
+        <li id="qtStep1">Télécharger l'indicateur ci-dessous et le placer dans le dossier des scripts Quantower (Paramètres → Scripts → Indicateurs).</li>
+        <li id="qtStep2">Redémarrer Quantower ou rafraîchir la liste des algos.</li>
+        <li id="qtStep3">Ajouter l'indicateur « GexDash Levels » sur votre chart.</li>
+        <li id="qtStep4">Renseigner votre clé API personnelle dans les paramètres de l'indicateur.</li>
+      </ol>
+      <div class="actions">
+        <a id="qtDownload" class="btnlike" aria-disabled="true" href="#">Télécharger</a>
+      </div>
+    </div>
+
+    <div class="platform">
+      <div class="platform-head">
+        <span class="platform-name">MotiveWave</span>
+        <span class="badge pending" id="mwBadge">—</span>
+      </div>
+      <ol class="steps" id="mwSteps">
+        <li id="mwStep1">Télécharger l'étude ci-dessous et l'importer via Étude → Gérer les études → Importer.</li>
+        <li id="mwStep2">Redémarrer MotiveWave si nécessaire.</li>
+        <li id="mwStep3">Ajouter l'étude « GexDash Levels » sur votre chart.</li>
+        <li id="mwStep4">Renseigner votre clé API personnelle dans les paramètres de l'étude.</li>
+      </ol>
+      <div class="actions">
+        <a id="mwDownload" class="btnlike" aria-disabled="true" href="#">Télécharger</a>
+      </div>
+    </div>
   </section>
 
   <button id="logoutBtn">Se déconnecter</button>
@@ -147,6 +231,22 @@ const T = {
     regenDone:"Nouvelle clé générée ✓ — copie-la maintenant, la page ne la réaffichera pas différemment.",
     none:"aucune clé pour l'instant",
     active:"active", blocked:"bloquée", revoked:"révoquée",
+    autolevel:"API & indicateurs auto-level",
+    autolevelIntro:"Ces outils utilisent votre clé API personnelle (ci-dessus) pour afficher les niveaux du jour directement sur votre plateforme, sans copier-coller.",
+    tvReady:"Extension Chrome", download:"Télécharger", noFile:"bientôt disponible",
+    fileReady:t0=>`Disponible · ${t0}`, install:"Installer l'extension",
+    tvStep1:"Installer l'extension « The Hub — GEX Levels » depuis le Chrome Web Store.",
+    tvStep2:"Ouvrir un chart sur TradingView (NQ, ES, SPX ou GOLD).",
+    tvStep3:"Cliquer sur l'icône de l'extension et coller votre clé API personnelle ci-dessus.",
+    tvStep4:"Les niveaux GEX du jour s'affichent et se mettent à jour automatiquement.",
+    qtStep1:"Télécharger l'indicateur ci-dessous et le placer dans le dossier des scripts Quantower (Paramètres → Scripts → Indicateurs).",
+    qtStep2:"Redémarrer Quantower ou rafraîchir la liste des algos.",
+    qtStep3:"Ajouter l'indicateur « GexDash Levels » sur votre chart.",
+    qtStep4:"Renseigner votre clé API personnelle dans les paramètres de l'indicateur.",
+    mwStep1:"Télécharger l'étude ci-dessous et l'importer via Étude → Gérer les études → Importer.",
+    mwStep2:"Redémarrer MotiveWave si nécessaire.",
+    mwStep3:"Ajouter l'étude « GexDash Levels » sur votre chart.",
+    mwStep4:"Renseigner votre clé API personnelle dans les paramètres de l'étude.",
   },
   en: {
     title:"Profile", account:"Account", user:"Username", newUser:"New username", save:"Save",
@@ -160,6 +260,22 @@ const T = {
     regenDone:"New key generated ✓ — copy it now, this page won't show it differently later.",
     none:"no key yet",
     active:"active", blocked:"blocked", revoked:"revoked",
+    autolevel:"API & auto-level indicators",
+    autolevelIntro:"These tools use your personal API key (above) to display today's levels directly on your platform, no copy-pasting.",
+    tvReady:"Chrome extension", download:"Download", noFile:"coming soon",
+    fileReady:t0=>`Available · ${t0}`, install:"Install the extension",
+    tvStep1:"Install the “The Hub — GEX Levels” extension from the Chrome Web Store.",
+    tvStep2:"Open a chart on TradingView (NQ, ES, SPX or GOLD).",
+    tvStep3:"Click the extension icon and paste your personal API key above.",
+    tvStep4:"Today's GEX levels appear and update automatically.",
+    qtStep1:"Download the indicator below and drop it in Quantower's scripts folder (Settings → Scripts → Indicators).",
+    qtStep2:"Restart Quantower or refresh the algo list.",
+    qtStep3:"Add the “GexDash Levels” indicator to your chart.",
+    qtStep4:"Enter your personal API key in the indicator's settings.",
+    mwStep1:"Download the study below and import it via Study → Manage Studies → Import.",
+    mwStep2:"Restart MotiveWave if needed.",
+    mwStep3:"Add the “GexDash Levels” study to your chart.",
+    mwStep4:"Enter your personal API key in the study's settings.",
   },
 };
 let LANG = "fr";
@@ -187,6 +303,13 @@ function applyLang(){
   $("apiCopy").textContent = t("copy");
   $("apiNote").textContent = t("apiNote");
   $("apiRegen").textContent = t("regen");
+  $("hAutolevel").textContent = t("autolevel");
+  $("autolevelIntro").textContent = t("autolevelIntro");
+  for (const p of ["tv", "qt", "mw"]){
+    for (let i = 1; i <= 4; i++) $(p + "Step" + i).textContent = t(p + "Step" + i);
+  }
+  $("tvInstall").textContent = t("install");
+  paintAutolevel();
   $("logoutBtn").textContent = t("logout");
 }
 Shell.mountLang("langSel");
@@ -222,6 +345,50 @@ function paintApiKey(d){
   } else {
     badge.hidden = true;
   }
+}
+
+/* Auto-level : memes 3 outils que le badge apikey_state ci-dessus, mais
+   pour Quantower/MotiveWave -- disponibilite pilotee par ce que l'admin a
+   uploade (/api/autolevel, cf. api/gex.py). AUTOLEVEL est mis en cache en
+   memoire (pas de re-fetch a chaque changement de langue) ; paintAutolevel()
+   est appelee a la fois par loadAutolevel() (donnees fraiches) et par
+   applyLang() (juste retraduire les libelles sur les donnees deja en main). */
+let AUTOLEVEL = null;
+
+function paintAutolevel(){
+  if (!AUTOLEVEL) return;
+  const tv = AUTOLEVEL.tradingview || {};
+  $("tvInstall").href = tv.url || "#";
+  $("tvBadge").textContent = t("tvReady");
+
+  for (const [p, id] of [["quantower", "qt"], ["motivewave", "mw"]]){
+    const f = AUTOLEVEL[p];
+    const badge = $(id + "Badge"), dl = $(id + "Download");
+    dl.textContent = t("download");
+    if (f && f.filename){
+      badge.textContent = t("fileReady")((f.uploaded_at || "").slice(0, 10));
+      badge.className = "badge ready";
+      dl.href = "/api/autolevel/download?platform=" + p;
+      dl.removeAttribute("aria-disabled");
+      dl.setAttribute("download", f.filename);
+    } else {
+      badge.textContent = t("noFile");
+      badge.className = "badge pending";
+      dl.href = "#";
+      dl.setAttribute("aria-disabled", "true");
+      dl.removeAttribute("download");
+    }
+  }
+}
+
+async function loadAutolevel(){
+  try{
+    const d = await api("/api/autolevel");
+    AUTOLEVEL = d.autolevel || {tradingview: {}, quantower: null, motivewave: null};
+  }catch(e){
+    AUTOLEVEL = {tradingview: {}, quantower: null, motivewave: null};
+  }
+  paintAutolevel();
 }
 
 let ME = null;
@@ -304,6 +471,7 @@ $("logoutBtn").onclick = async () => {
 
 applyLang();
 load();
+loadAutolevel();
 </script>
 </body>
 </html>
