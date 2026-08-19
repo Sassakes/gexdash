@@ -1406,6 +1406,18 @@ if (!T[LANG]) LANG = "fr";
 const t = k => T[LANG][k];
 let LAST_D = null;
 let LAST_DARK = null;
+// Dernier prix vu par pollQuote() (/api/quote, ~3s en séance) -- le badge et
+// la colonne "distance" des niveaux l'utilisent de préférence à d.nq_price,
+// qui ne vient que du dernier tir cron (5-10 min) et peut donc décrocher du
+// prix réel de plusieurs dizaines/centaines de points pendant un mouvement
+// rapide (bug vu en prod le 2026-08-19 : ~160 pts d'écart entre le bandeau
+// et la dernière bougie du chart).
+let LIVE_PRICE = null, LIVE_PRICE_T = 0, LIVE_PRICE_TARGET = null;
+function currentPrice(d){
+  if (LIVE_PRICE != null && LIVE_PRICE_TARGET === (d.target || TARGET)
+      && Date.now() - LIVE_PRICE_T < 15000) return LIVE_PRICE;
+  return d.nq_price;
+}
 
 let TARGET = "NQ";
 try{ TARGET = localStorage.getItem("gexTarget") || "NQ"; }catch(_){}
@@ -2333,6 +2345,8 @@ async function pollQuote(){
     }
     liveBadge("live: " + d.source + " · " + d.price + " · tick "
       + new Date().toLocaleTimeString("fr-FR"), true);
+    LIVE_PRICE = d.price; LIVE_PRICE_T = Date.now(); LIVE_PRICE_TARGET = TARGET;
+    if (LAST_D){ renderBadges(LAST_D); renderLevels(LAST_D); }
     const sec = CHART.ivSec[CHART.iv], p = d.price;
     // bucket temporel de la bougie courante, basé sur l'HORLOGE (pas sur le
     // time Yahoo différé) : la bougie live suit l'heure réelle, plus de décalage
@@ -2424,7 +2438,7 @@ function renderBadges(d){
   const tgt = d.target || "NQ";
 
   const stats = [
-    [tgt, fmt(d.nq_price), "price"],
+    [tgt, fmt(currentPrice(d)), "price"],
     [t("stBasis"), (d.basis>=0?"+":"") + fmt(d.basis) + ' <span class="src">' + (
       {manual:t("bManual"), index:t("bIndex"), "last-known":t("bLast"), none:"—"}[d.basis_source] || t("bMarket")) + "</span>", ""],
     [t("stNet"), (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
@@ -2516,7 +2530,7 @@ async function show(d, barsFetch){
 }
 
 function renderLevels(d){
-  const nq = d.nq_price;
+  const nq = currentPrice(d);
   $("levelsBody").innerHTML = d.levels.map(L => {
     const dist = nq==null ? null : L.price_nq - nq;
     return `<tr>
