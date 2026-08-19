@@ -342,7 +342,15 @@
   .pad{padding:14px 16px}
 
   /* ============ chart ============ */
-  .chartbox{height:400px; position:relative}
+  /* Hauteur fixe (400px) pensee pour l'ancien main a 880px : depuis que
+     l'entete (et donc main, cf. --shell-w) s'ancre sur 1180px, la meme
+     hauteur sur une largeur bien plus grande etirait le graphique en
+     bandeau plat (ratio ~2.85:1 a pleine largeur) -- signale par
+     l'utilisateur ("tres large, pas assez haut"). Le ResizeObserver
+     existant (cf. script, applyOptions({width,height}) sur box.client*)
+     lit deja la taille REELLE du conteneur a chaque frame : passer a une
+     hauteur liee au viewport suffit, aucun changement JS necessaire. */
+  .chartbox{height:clamp(380px, 48vh, 560px); position:relative}
 
   /* ============ flux (gamma dealer, projection prix x temps) ============ */
   /* hauteur du conteneur = contenu (bar/synth/volctx + canevas) ; c'est le
@@ -363,7 +371,7 @@
   /* trois canevas empilés : cvBg (dégradé) et cvMain (grille/niveaux) ne
      reçoivent aucun événement, seul cvCursor (réticule/infobulle) est
      interactif -- le glisser tactile ne doit jamais scroller la page. */
-  .fluxCanvasWrap{position:relative; flex:none; width:100%; height:400px}
+  .fluxCanvasWrap{position:relative; flex:none; width:100%; height:clamp(380px, 48vh, 560px)}
   .fluxCanvasWrap canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
   #fluxCvBg, #fluxCvMain{pointer-events:none}
   /* défaut hors zone de tracé ; "crosshair" (survol) / "grabbing" (glisser)
