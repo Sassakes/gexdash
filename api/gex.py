@@ -1550,14 +1550,6 @@ YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
 YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
-# Fenêtre de mesure du recalage de basis (cf. /api/chart), en SECONDES (pas en
-# nombre de bougies : la fenêtre téléchargée dépend de l'intervalle ci-dessus,
-# la mesure de la basis ne doit pas). Volontairement PLUS COURTE en 1m : une
-# médiane sur 2h lisse trop pour un chart où l'utilisateur regarde le prix à
-# la minute près, et ce lissage introduit un retard sur la dérive réelle de
-# la basis. Un chart 5m/15m n'a pas ce besoin de réactivité et garde la
-# fenêtre large (plus stable face au bruit ponctuel d'une bougie).
-BASIS_ADJ_WINDOW_S = {"1m": 1200, "5m": 7200, "15m": 7200}   # 20 min / 2 h
 
 
 def _clean_bars(bars):
@@ -3852,69 +3844,60 @@ class handler(BaseHTTPRequestHandler):
                                       "close": round(b["close"] / scale + basis, 2)}
                                      for b in _pb(rese)]
                             if ebars:
-                                # BASIS DYNAMIQUE : le future différé est EXACT
-                                # pour son horodatage. Sur la fenêtre où future
-                                # et ETF se chevauchent, l'écart médian mesure
-                                # la dérive réelle de la basis -> on recale tout
-                                # le dérivé dessus (et on partage la correction
-                                # avec /api/quote via Redis).
-                                # La mesure est bornée à la SÉANCE EN COURS et à
-                                # ses bougies les plus RÉCENTES, et NON à toute
-                                # la fenêtre téléchargée. Deux raisons, les deux
-                                # reproduites avant correction :
-                                #  - la fenêtre dépend de l'intervalle
-                                #    (CHART_INTERVALS : 1 jour en M1, 5 jours en
-                                #    M5/M15). Une médiane « sur tout » faisait
-                                #    donc mesurer à M5 la basis MOYENNE de cinq
-                                #    jours là où M1 mesurait celle du jour : les
-                                #    deux intervalles affichaient des prix
-                                #    différents pour le même instant (9 pts
-                                #    d'écart mesurés sur NQ).
-                                #  - la basis du payload est recalculée à 15h25,
-                                #    cinq minutes avant l'ouverture US : à
-                                #    l'ouverture l'écart correct vaut ~0 et ne se
-                                #    creuse qu'au fil de la séance. Y mêler les
-                                #    jours précédents fabriquait une MARCHE au
-                                #    raccord future -> ETF, pile à l'ouverture
-                                #    (-9,3 pts mesurés sur un marché simulé
-                                #    parfaitement continu).
-                                # Échantillon insuffisant (tôt après l'ouverture)
-                                # -> adj = 0, qui est justement la bonne valeur à
-                                # ce moment-là. La clé Redis reste volontairement
-                                # sans intervalle : l'estimateur étant désormais
-                                # indépendant de l'intervalle, tous convergent
-                                # vers la même valeur et /api/quote peut en lire
-                                # une seule sans dépendre de qui a écrit en
-                                # dernier (ce qui faisait sauter le ticker).
+                                # BASIS DYNAMIQUE, PAR BOUGIE : le future différé
+                                # est EXACT pour son propre horodatage. Dès qu'il
+                                # est arrivé pour une minute donnée, son écart
+                                # avec la bougie ETF dérivée de cette même minute
+                                # EST la basis réelle à cet instant -- on
+                                # l'applique directement, minute par minute (et
+                                # on partage la plus récente avec /api/quote via
+                                # Redis), plutôt qu'une médiane glissante étalée
+                                # sur tout un segment.
+                                # Un scalaire unique recalculé à chaque requête
+                                # et appliqué à TOUT le segment RTH (parfois
+                                # plusieurs heures de bougies déjà affichées)
+                                # faisait sauter tout le bloc d'un coup à chaque
+                                # refetch -- surtout visible au passage
+                                # pré-marché -> RTH à 13h30 UTC, où la toute
+                                # première bougie ETF récupérait le même
+                                # ajustement "récent" que la bougie la plus
+                                # actuelle, sans lien avec l'écart réel à cet
+                                # instant (bug vu en prod le 2026-08-19, ~65-100
+                                # pts de saut pile à l'ouverture cash). Avec la
+                                # correction par bougie, celle de 13h30 utilise
+                                # l'écart mesuré à 13h30 : plus de saut au
+                                # raccord, et plus de re-décalage global d'un
+                                # refetch à l'autre.
+                                # Tant que le future n'est pas encore arrivé pour
+                                # une minute (délai ~10 min), on garde le dernier
+                                # écart connu (forward-fill) au lieu de 0 -- 0
+                                # supposerait une basis nulle, ce qui n'est vrai
+                                # qu'à l'ouverture, pas en cours de séance.
                                 fmap = {b["time"]: b["close"] for b in bars}
-                                pairs = sorted((e["time"], fmap[e["time"]] - e["close"])
-                                               for e in ebars if e["time"] in fmap)
-                                adj = 0.0
-                                if pairs:
-                                    t_last = pairs[-1][0]
-                                    # La séance cash US (13h30-20h00 UTC) ne
-                                    # traverse jamais minuit UTC : borner au jour
-                                    # UTC isole donc bien la séance en cours.
-                                    floor_t = max(t_last - BASIS_ADJ_WINDOW_S.get(interval, 7200),
-                                                  t_last - (t_last % 86400))
-                                    recent = sorted(d for t, d in pairs if t >= floor_t)
-                                    if len(recent) >= 5:
-                                        adj = recent[len(recent) // 2]
-                                        # Garde-fou resserré (0,2 % ~ 59 pts sur
-                                        # NQ) : le portage d'un future trimestriel
-                                        # dérive de ~2-3 pts/jour, donc une dérive
-                                        # légitime reste très en deçà. L'ancien
-                                        # seuil à 1 % (~297 pts) laissait passer
-                                        # n'importe quoi.
-                                        if abs(adj) > (ebars[-1]["close"] * 0.002):
-                                            adj = 0.0        # garde-fou aberration
-                                if adj:
-                                    ebars = [{"time": e["time"],
-                                              "open": round(e["open"] + adj, 2),
-                                              "high": round(e["high"] + adj, 2),
-                                              "low": round(e["low"] + adj, 2),
-                                              "close": round(e["close"] + adj, 2)}
-                                             for e in ebars]
+                                guard = ebars[-1]["close"] * 0.002 if ebars else 0
+                                last_diff = None
+                                new_ebars = []
+                                for e in ebars:
+                                    t = e["time"]
+                                    if t in fmap:
+                                        d = fmap[t] - e["close"]
+                                        # Garde-fou (0,2 % ~ 59 pts sur NQ) : un
+                                        # print aberrant ponctuel ne doit pas
+                                        # décaler cette bougie -- on garde le
+                                        # dernier écart valide plutôt que de
+                                        # l'ignorer purement (ce qui créerait un
+                                        # trou/notch local au lieu d'un saut).
+                                        if abs(d) <= guard:
+                                            last_diff = d
+                                    d_use = last_diff if last_diff is not None else 0.0
+                                    new_ebars.append({
+                                        "time": t,
+                                        "open": round(e["open"] + d_use, 2),
+                                        "high": round(e["high"] + d_use, 2),
+                                        "low": round(e["low"] + d_use, 2),
+                                        "close": round(e["close"] + d_use, 2)})
+                                ebars = new_ebars
+                                adj = last_diff or 0.0   # partagé avec /api/quote (dernier écart connu)
                                 try:
                                     kv_set(f"gex:basisadj:{target}",
                                            json.dumps({"adj": round(adj, 2)}),
