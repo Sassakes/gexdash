@@ -608,35 +608,40 @@
     header{gap:10px; padding:12px 14px 14px}
     .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
-    /* Un testeur exterieur n'a pas retrouve le lien Discord (range dans
-       le tiroir "..."), et le CTA Soutenir en pleine largeur ("gros
-       bouton") prenait toute une rangee a lui seul. Identite retravaillee
-       en DEUX rangees deliberees (.hdr-id-g1/-g2, cf. HTML) plutot qu'un
-       flex-wrap organique a 5 enfants : la largeur de l'avatar de compte
-       varie ("Connexion" vs une initiale), ce qui faisait basculer
-       Discord/TradingView tantot sur la 1ere ligne (grand vide a droite),
-       tantot seuls sur une 2e (repli disgracieux) selon l'etat de
-       connexion -- deux rangees fixes eliminent cette dependance :
+    /* Deuxieme retour terrain : les points de couleur seuls (sans texte)
+       ne se lisaient pas comme "Discord"/"TradingView" cliquables, et
+       Doc restait absent de cette rangee. Texte reaffiche (juste plus
+       compact) + Doc reintegre, tous les trois desormais sur LA MEME
+       rangee que Soutenir -- plus besoin d'un tiroir pour les atteindre,
+       donc #community en sort completement (cf. plus bas, .hdr-more ne
+       garde que fuseau+langue). Identite mobile en DEUX rangees
+       deliberees (.hdr-id-g1/-g2, cf. HTML) plutot qu'un flex-wrap
+       organique : la largeur de l'avatar de compte varie selon l'etat de
+       connexion, ce qui faisait basculer les liens tantot sur la 1ere
+       ligne, tantot seuls sur une 2e -- deux rangees fixes eliminent
+       cette dependance :
        - g1 (identite) : nom de page a cote de "GexDash" retire (deja
          lisible via l'onglet actif de la nav juste en dessous) ; libelle
          du compte retire, l'avatar seul suffit (initiale du pseudo deja
          en teal quand connecte, cf. authPaint()) ;
-       - g2 (actions) : Discord/TradingView en icones compactes a gauche
-         (texte conserve en accessibilite, juste visuellement masque),
-         Soutenir en puce compacte ancree a droite -- plus de banniere
-         pleine largeur. */
+       - g2 (actions) : Discord/TradingView/Doc avec leur texte, dans une
+         bande qui defile horizontalement au besoin (meme pattern que le
+         segment de nav, cf. .appnav-seg) plutot que de rivaliser a la
+         pixel pres avec Soutenir, qui garde sa taille fixe a droite. */
     .hdr-id-g1{display:flex; align-items:center; gap:10px; width:100%}
-    .hdr-id-g2{display:flex; align-items:center; gap:8px; width:100%; margin-top:6px}
+    .hdr-id-g2{display:flex; align-items:center; gap:6px; width:100%; margin-top:6px}
     .pgwrap{display:none}
     .authChip{margin-left:0}
     #authBtn{padding:6px 8px}
     #authLbl{display:none}
-    #communityMobile{display:flex; align-items:center; gap:2px}
-    #communityMobile a{font-size:0; padding:8px; min-height:40px; min-width:40px; justify-content:center}
-    #communityMobile a.doc{display:none}
-    #communityMobile .dot{width:9px; height:9px}
-    #communityMobile .cdiv{display:none}
-    .cta-support{margin-left:auto; min-height:40px}
+    #communityMobile{
+      display:flex; align-items:center; gap:1px; flex:1 1 auto; min-width:0;
+      overflow-x:auto; scrollbar-width:none;
+    }
+    #communityMobile::-webkit-scrollbar{display:none}
+    #communityMobile a{font-size:11px; padding:8px 7px; min-height:40px; white-space:nowrap}
+    #communityMobile .dot{width:7px; height:7px}
+    .cta-support{flex:none; margin-left:0; min-height:40px}
     #pineTopBtn{flex:none; padding:9px 12px; margin-left:0}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
@@ -670,7 +675,10 @@
       border-top:1px solid var(--hair);
     }
     .hdr-more-chk:checked ~ .hdr-more{display:flex}
-    .hdr-more #community{margin-left:0}
+    /* Discord/TradingView/Doc vivent desormais en clair sur .hdr-id-g2 :
+       les repeter ici serait redondant, #community reste dans le DOM
+       (necessaire au desktop, cf. commentaire HTML) mais masque. */
+    .hdr-more #community{display:none}
     .hdr-more .hdrtools{width:100%; margin-top:0; padding-top:0; border-top:none}
     .hdr-more .hdrdiv{display:none}
     .stats{grid-template-columns:repeat(2, 1fr)}
@@ -1053,17 +1061,22 @@
          par toutes les pages : c'est ce qui empeche une destination de
          redevenir introuvable, comme /horizon l'etait. -->
     <nav id="appnav"></nav>
-    <!-- Tiroir "plus d'options" : sur telephone uniquement (cf. media
-         640px), communaute+reglages passaient sur DEUX rangees pleine
-         largeur supplementaires (bascule forcee par la nav en width:100%
-         a 720px cote shell.js) -- 120px de chrome pour des controles
-         secondaires, avant meme d'atteindre le chart. Repli en case a
-         cocher pure CSS (aucun JS, aucun id existant deplace) : invisible
-         et neutre en desktop via display:contents, qui laisse #community
-         et .hdrtools participer au flex de .hdr-bar exactement comme
-         avant -- zero changement visuel au-dessus du seuil mobile. -->
+    <!-- Tiroir de reglages : sur telephone uniquement (cf. media 640px).
+         Contenait aussi Discord/TradingView/Doc a l'origine, mais un
+         testeur en conditions reelles n'a pas retrouve Discord derriere
+         un simple "..." -- pas assez intuitif pour un lien qui doit
+         etre immediat. Ces trois liens vivent desormais en clair sur la
+         rangee identite (cf. .hdr-id-g2 plus haut) ; ce tiroir ne garde
+         plus que fuseau+langue, d'ou l'icone engrenage (reglages, motif
+         universellement reconnu) plutot que l'ellipse ambigue. Repli en
+         case a cocher pure CSS (aucun JS) : invisible et neutre en
+         desktop via display:contents, qui laisse #community et
+         .hdrtools participer au flex de .hdr-bar exactement comme avant
+         -- zero changement visuel au-dessus du seuil mobile. #community
+         reste ici (necessaire au desktop) mais masque par CSS sous
+         640px : y afficher les memes liens qu'en g2 serait redondant. -->
     <input type="checkbox" id="hdrMoreChk" class="hdr-more-chk">
-    <label for="hdrMoreChk" class="hdr-more-btn" aria-label="Plus d'options">⋯</label>
+    <label for="hdrMoreChk" class="hdr-more-btn" aria-label="Réglages">⚙</label>
     <div class="hdr-more">
     <!-- Communaute (Discord/TradingView) + Doc : composant partage avec
          les 8 autres pages (cf. Shell.mountCommunity, shell.js). Doc
