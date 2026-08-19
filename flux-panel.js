@@ -1429,6 +1429,30 @@ function renderFluxNote(){
                   : t("loading");
 }
 
+/* Échelle d'affichage (future vs indice cash) — cf. index.html, scaleOn().
+   Le flux porte sa propre `basis`, capturée au moment du calcul de la
+   matrice : c'est elle qu'on retranche, pour que la projection et
+   l'historique restent sur LA MÊME échelle et se raccordent proprement.
+   `scaleOn` vit dans index.html ; l'appel est ici dans un corps de fonction,
+   donc résolu à l'exécution (cf. CLAUDE.md sur l'ordre de chargement). */
+function fluxToScale(d){
+  if (!d || !d.price_grid || typeof scaleOn !== "function" || !scaleOn(d.target)) return d;
+  const b = d.basis || 0;
+  if (!b) return d;
+  const o = Object.assign({}, d);
+  o.price_grid = d.price_grid.map(p => Math.round((p - b) * 100) / 100);
+  if (o.spot != null) o.spot = Math.round((o.spot - b) * 100) / 100;
+  return o;
+}
+function fluxHistToScale(entries, basis, tgt){
+  if (!entries || typeof scaleOn !== "function" || !scaleOn(tgt) || !basis) return entries;
+  return entries.map(e => Object.assign({}, e, {
+    spot: e.spot != null ? Math.round((e.spot - basis) * 100) / 100 : e.spot,
+    price_grid: Array.isArray(e.price_grid)
+      ? e.price_grid.map(p => Math.round((p - basis) * 100) / 100) : e.price_grid,
+  }));
+}
+
 async function loadFlux(){
   if (!FLUX_ON) return;
   const tgt = TARGET;
@@ -1440,7 +1464,8 @@ async function loadFlux(){
       fetch(`/api/flow?target=${tgt}`),
       wantHist ? fetch(`/api/flow?target=${tgt}&hist=1`) : Promise.resolve(null),
     ]);
-    const d = await r.json();
+    const dRaw = await r.json();
+    const d = fluxToScale(dRaw);
     if (tgt !== TARGET || !FLUX_ON) return;    // la cible/vue a changé pendant l'attente
     if (!d.ready){
       FLUX_DATA = null;
@@ -1458,7 +1483,8 @@ async function loadFlux(){
     if (rh){
       const dh = await rh.json();
       FLUX_HIST_DATA = (tgt === TARGET && FLUX_HIST_ON && dh && dh.ready)
-        ? {target: tgt, entries: dh.history} : null;
+        ? {target: tgt,
+           entries: fluxHistToScale(dh.history, dRaw && dRaw.basis, tgt)} : null;
     } else if (!wantHist){
       FLUX_HIST_DATA = null;
     }
