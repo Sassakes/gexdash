@@ -1550,10 +1550,14 @@ YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
 YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
-# Fenêtre de mesure du recalage de basis (cf. /api/chart). Volontairement
-# exprimée en SECONDES et non en nombre de bougies : la fenêtre téléchargée
-# dépend de l'intervalle (ci-dessus), la mesure de la basis ne doit pas.
-BASIS_ADJ_WINDOW_S = 7200        # 2 h de chevauchement future/ETF au plus
+# Fenêtre de mesure du recalage de basis (cf. /api/chart), en SECONDES (pas en
+# nombre de bougies : la fenêtre téléchargée dépend de l'intervalle ci-dessus,
+# la mesure de la basis ne doit pas). Volontairement PLUS COURTE en 1m : une
+# médiane sur 2h lisse trop pour un chart où l'utilisateur regarde le prix à
+# la minute près, et ce lissage introduit un retard sur la dérive réelle de
+# la basis. Un chart 5m/15m n'a pas ce besoin de réactivité et garde la
+# fenêtre large (plus stable face au bruit ponctuel d'une bougie).
+BASIS_ADJ_WINDOW_S = {"1m": 1200, "5m": 7200, "15m": 7200}   # 20 min / 2 h
 
 
 def _clean_bars(bars):
@@ -3891,7 +3895,7 @@ class handler(BaseHTTPRequestHandler):
                                     # La séance cash US (13h30-20h00 UTC) ne
                                     # traverse jamais minuit UTC : borner au jour
                                     # UTC isole donc bien la séance en cours.
-                                    floor_t = max(t_last - BASIS_ADJ_WINDOW_S,
+                                    floor_t = max(t_last - BASIS_ADJ_WINDOW_S.get(interval, 7200),
                                                   t_last - (t_last % 86400))
                                     recent = sorted(d for t, d in pairs if t >= floor_t)
                                     if len(recent) >= 5:
