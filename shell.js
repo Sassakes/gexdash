@@ -420,10 +420,24 @@ function shellPrefetch(href){
   document.head.appendChild(link);
 }
 const SHELL_PREFETCH_SEL = ".appnav-seg a, .appcommunity a.doc";
-document.addEventListener("mouseover", (e) => {
-  const a = e.target.closest(SHELL_PREFETCH_SEL);
-  if (a) shellPrefetch(a.href);
-}, { passive: true });
+/* mouseover UNIQUEMENT sur un appareil qui a une vraie souris. Bug constaté
+   en prod sur telephone : des qu'un listener mouseover/mouseenter/mousemove
+   est attache QUELQUE PART sur la page -- meme delegue sur document, meme
+   sans lien avec l'element tape -- Safari iOS (et certains Chrome mobile)
+   consomment le PREMIER tap pour simuler la sequence hover avant de
+   permettre la navigation, et n'activent le lien qu'au second tap. C'est
+   exactement le symptome remonte ("on clique sur dashboard, rien ne se
+   passe, il faut cliquer une deuxieme fois"). matchMedia(hover:hover) est
+   faux sur un ecran tactile pur, vrai des qu'un pointeur precis existe --
+   le prefetch tactile reste couvert par le listener touchstart ci-dessous,
+   qui lui n'a jamais cause ce probleme (aucune simulation de hover a
+   produire pour un touchstart). */
+if (window.matchMedia && window.matchMedia("(hover: hover)").matches){
+  document.addEventListener("mouseover", (e) => {
+    const a = e.target.closest(SHELL_PREFETCH_SEL);
+    if (a) shellPrefetch(a.href);
+  }, { passive: true });
+}
 document.addEventListener("touchstart", (e) => {
   const a = e.target.closest(SHELL_PREFETCH_SEL);
   if (a) shellPrefetch(a.href);
