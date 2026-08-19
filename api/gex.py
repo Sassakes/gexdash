@@ -1550,6 +1550,10 @@ YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
 YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
+# Fenêtre de mesure du recalage de basis (cf. /api/chart). Volontairement
+# exprimée en SECONDES et non en nombre de bougies : la fenêtre téléchargée
+# dépend de l'intervalle (ci-dessus), la mesure de la basis ne doit pas.
+BASIS_ADJ_WINDOW_S = 7200        # 2 h de chevauchement future/ETF au plus
 
 
 def _clean_bars(bars):
@@ -3850,15 +3854,56 @@ class handler(BaseHTTPRequestHandler):
                                 # la dérive réelle de la basis -> on recale tout
                                 # le dérivé dessus (et on partage la correction
                                 # avec /api/quote via Redis).
+                                # La mesure est bornée à la SÉANCE EN COURS et à
+                                # ses bougies les plus RÉCENTES, et NON à toute
+                                # la fenêtre téléchargée. Deux raisons, les deux
+                                # reproduites avant correction :
+                                #  - la fenêtre dépend de l'intervalle
+                                #    (CHART_INTERVALS : 1 jour en M1, 5 jours en
+                                #    M5/M15). Une médiane « sur tout » faisait
+                                #    donc mesurer à M5 la basis MOYENNE de cinq
+                                #    jours là où M1 mesurait celle du jour : les
+                                #    deux intervalles affichaient des prix
+                                #    différents pour le même instant (9 pts
+                                #    d'écart mesurés sur NQ).
+                                #  - la basis du payload est recalculée à 15h25,
+                                #    cinq minutes avant l'ouverture US : à
+                                #    l'ouverture l'écart correct vaut ~0 et ne se
+                                #    creuse qu'au fil de la séance. Y mêler les
+                                #    jours précédents fabriquait une MARCHE au
+                                #    raccord future -> ETF, pile à l'ouverture
+                                #    (-9,3 pts mesurés sur un marché simulé
+                                #    parfaitement continu).
+                                # Échantillon insuffisant (tôt après l'ouverture)
+                                # -> adj = 0, qui est justement la bonne valeur à
+                                # ce moment-là. La clé Redis reste volontairement
+                                # sans intervalle : l'estimateur étant désormais
+                                # indépendant de l'intervalle, tous convergent
+                                # vers la même valeur et /api/quote peut en lire
+                                # une seule sans dépendre de qui a écrit en
+                                # dernier (ce qui faisait sauter le ticker).
                                 fmap = {b["time"]: b["close"] for b in bars}
-                                diffs = sorted(fmap[e["time"]] - e["close"]
-                                               for e in ebars
-                                               if e["time"] in fmap)
+                                pairs = sorted((e["time"], fmap[e["time"]] - e["close"])
+                                               for e in ebars if e["time"] in fmap)
                                 adj = 0.0
-                                if len(diffs) >= 5:
-                                    adj = diffs[len(diffs) // 2]
-                                    if abs(adj) > (ebars[-1]["close"] * 0.01):
-                                        adj = 0.0        # garde-fou aberration
+                                if pairs:
+                                    t_last = pairs[-1][0]
+                                    # La séance cash US (13h30-20h00 UTC) ne
+                                    # traverse jamais minuit UTC : borner au jour
+                                    # UTC isole donc bien la séance en cours.
+                                    floor_t = max(t_last - BASIS_ADJ_WINDOW_S,
+                                                  t_last - (t_last % 86400))
+                                    recent = sorted(d for t, d in pairs if t >= floor_t)
+                                    if len(recent) >= 5:
+                                        adj = recent[len(recent) // 2]
+                                        # Garde-fou resserré (0,2 % ~ 59 pts sur
+                                        # NQ) : le portage d'un future trimestriel
+                                        # dérive de ~2-3 pts/jour, donc une dérive
+                                        # légitime reste très en deçà. L'ancien
+                                        # seuil à 1 % (~297 pts) laissait passer
+                                        # n'importe quoi.
+                                        if abs(adj) > (ebars[-1]["close"] * 0.002):
+                                            adj = 0.0        # garde-fou aberration
                                 if adj:
                                     ebars = [{"time": e["time"],
                                               "open": round(e["open"] + adj, 2),
