@@ -40,6 +40,14 @@
   label{font-size:12px; color:var(--muted)}
   input{background:var(--surface2); color:var(--text); border:1px solid var(--line-strong); border-radius:6px; padding:9px 10px; font-family:var(--sans); font-size:13px; min-height:38px}
   input:focus{outline:none; border-color:var(--gold)}
+  /* même gabarit que input : le sélecteur d'échelle doit se lire comme un
+     champ du formulaire, pas comme un contrôle étranger. color-scheme:dark
+     évite la liste déroulante native sur fond blanc. */
+  select{background:var(--surface2); color:var(--text); border:1px solid var(--line-strong);
+    border-radius:6px; padding:9px 10px; font-family:var(--sans); font-size:13px;
+    min-height:38px; color-scheme:dark; cursor:pointer}
+  select:focus{outline:none; border-color:var(--gold)}
+  select:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
   .actions{display:flex; gap:8px; justify-content:flex-end; margin-top:14px}
   button{font-family:var(--sans); font-size:12.5px; padding:9px 16px; border-radius:6px; border:1px solid var(--line-strong); background:var(--surface2); color:var(--text); cursor:pointer; min-height:38px; transition:background .12s ease, color .12s ease}
   button:hover{background:var(--surface3)}
@@ -145,6 +153,18 @@
     <div class="msg" id="pwdMsg" role="status" aria-live="polite"></div>
   </section>
 
+  <h2 id="hScale">Échelle des prix</h2>
+  <section>
+    <div class="row"><label id="lScale" for="inScale">Instrument</label>
+      <select id="inScale">
+        <option value="fut">NQ / ES — future</option>
+        <option value="idx">NAS100 / US500 — indice</option>
+      </select>
+    </div>
+    <div class="note" id="scaleNote">Choisissez l'instrument que vous tradez réellement. Le future et l'indice cotent avec un écart permanent (la « basis ») : sur le terminal, le chart, les niveaux GEX et la string Pine sont alors exprimés dans l'échelle choisie. Sans effet sur la heatmap ni le dashboard.</div>
+    <div class="msg" id="scaleMsg" role="status" aria-live="polite"></div>
+  </section>
+
   <h2 id="hApi">Clé API personnelle <span class="badge" id="apiBadge" hidden></span></h2>
   <section>
     <div class="keybox">
@@ -231,6 +251,10 @@ const T = {
     regenDone:"Nouvelle clé générée ✓ — copie-la maintenant, la page ne la réaffichera pas différemment.",
     none:"aucune clé pour l'instant",
     active:"active", blocked:"bloquée", revoked:"révoquée",
+    scale:"Échelle des prix", scaleLbl:"Instrument",
+    scaleFut:"NQ / ES — future", scaleIdx:"NAS100 / US500 — indice",
+    scaleNote:"Choisissez l'instrument que vous tradez réellement. Le future et l'indice cotent avec un écart permanent (la « basis ») : sur le terminal, le chart, les niveaux GEX et la string Pine sont alors exprimés dans l'échelle choisie. Sans effet sur la heatmap ni le dashboard.",
+    scaleSaved:"Échelle enregistrée ✓ — le terminal l'applique au prochain chargement.",
     autolevel:"API & indicateurs auto-level",
     autolevelIntro:"Ces outils utilisent votre clé API personnelle (ci-dessus) pour afficher les niveaux du jour directement sur votre plateforme, sans copier-coller.",
     tvReady:"Extension Chrome", download:"Télécharger", noFile:"bientôt disponible",
@@ -260,6 +284,10 @@ const T = {
     regenDone:"New key generated ✓ — copy it now, this page won't show it differently later.",
     none:"no key yet",
     active:"active", blocked:"blocked", revoked:"revoked",
+    scale:"Price scale", scaleLbl:"Instrument",
+    scaleFut:"NQ / ES — futures", scaleIdx:"NAS100 / US500 — index",
+    scaleNote:"Pick the instrument you actually trade. Futures and the cash index quote with a permanent gap (the “basis”): on the terminal, the chart, GEX levels and the Pine string are then expressed in the scale you choose. No effect on the heatmap or dashboard.",
+    scaleSaved:"Scale saved ✓ — the terminal applies it on next load.",
     autolevel:"API & auto-level indicators",
     autolevelIntro:"These tools use your personal API key (above) to display today's levels directly on your platform, no copy-pasting.",
     tvReady:"Chrome extension", download:"Download", noFile:"coming soon",
@@ -303,6 +331,11 @@ function applyLang(){
   $("apiCopy").textContent = t("copy");
   $("apiNote").textContent = t("apiNote");
   $("apiRegen").textContent = t("regen");
+  $("hScale").textContent = t("scale");
+  $("lScale").textContent = t("scaleLbl");
+  $("inScale").options[0].textContent = t("scaleFut");
+  $("inScale").options[1].textContent = t("scaleIdx");
+  $("scaleNote").textContent = t("scaleNote");
   $("hAutolevel").textContent = t("autolevel");
   $("autolevelIntro").textContent = t("autolevelIntro");
   for (const p of ["tv", "qt", "mw"]){
@@ -399,6 +432,11 @@ async function load(){
     ME = d;
     $("curUser").textContent = d.user;
     $("inEmail").value = d.email || "";
+    $("inScale").value = d.scale === "idx" ? "idx" : "fut";
+    // Miroir localStorage : c'est lui que le terminal lit à la première
+    // frame, pour ne pas afficher NQ puis basculer en NAS100 une fois
+    // /api/auth revenu. Le compte reste la source de vérité.
+    try{ localStorage.setItem("gexScale", $("inScale").value); }catch(_){}
     paintApiKey(d);
     $("gate").hidden = true;
     $("app").hidden = false;
@@ -441,6 +479,17 @@ $("pwdSave").onclick = async () => {
     $("inCur").value = ""; $("inNew").value = "";
   }catch(e){ msg("pwdMsg", e.message, false); }
   finally{ $("pwdSave").disabled = false; }
+};
+
+$("inScale").onchange = async () => {
+  const scale = $("inScale").value;
+  $("inScale").disabled = true;
+  try{
+    await api("/api/profile", {method: "POST", body: JSON.stringify({op: "scale", scale})});
+    try{ localStorage.setItem("gexScale", scale); }catch(_){}
+    msg("scaleMsg", t("scaleSaved"), true);
+  }catch(e){ msg("scaleMsg", e.message, false); }
+  finally{ $("inScale").disabled = false; }
 };
 
 $("apiCopy").onclick = async () => {

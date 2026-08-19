@@ -98,6 +98,54 @@ def _gold_offset():
 _MEM_FH = {}             # cache mémoire des cotes Finnhub : sym -> (prix, ts, at)
 _MEM_FH_ERR = {}         # dernier échec par symbole (anti-martèlement)
 _MEM_CTX = {}            # cache mémoire du contexte quote : target -> (ctx, at)
+# Préférences d'affichage par membre (échelle future/indice). Mises en cache
+# EN MÉMOIRE : /api/auth est appelé au chargement de CHAQUE page du terminal,
+# et CLAUDE.md interdit une lecture Redis par requête utilisateur. Un réglage
+# d'affichage supporte parfaitement 60 s de latence ; l'écriture (POST
+# /api/profile op=scale) invalide l'entrée pour un effet immédiat.
+_USER_PREF = {}          # user -> (prefs, at)
+_USER_PREF_TTL = 60.0
+
+
+def _calibrated_basis(target):
+    """Basis la PLUS à jour connue : celle du payload publié, plus le
+    correctif mesuré en continu sur le chevauchement future/ETF. C'est
+    exactement l'écart future -> indice, donc ce qu'il faut retrancher pour
+    afficher NAS100/US500 au lieu de NQ/ES. Lecture du correctif mise en
+    cache mémoire (déjà le cas pour /api/quote), jamais d'exception."""
+    try:
+        b = float((_quote_ctx(target) or {}).get("basis") or 0.0)
+    except Exception:
+        return 0.0
+    try:
+        now = time.time()
+        c = _BASIS_ADJ.get(target)
+        if not c or now - c[1] > 60:
+            a = kv_get(f"gex:basisadj:{target}")
+            v = (json.loads(a).get("adj") or 0.0) if a else 0.0
+            _BASIS_ADJ[target] = (v, now)
+            c = _BASIS_ADJ[target]
+        b += float(c[0] or 0.0)
+    except Exception:
+        pass
+    return b
+
+
+def _user_scale(handler_self, user):
+    """Échelle d'affichage du membre, "fut" par défaut. Jamais d'exception :
+    une préférence illisible ne doit pas casser l'authentification."""
+    if not user:
+        return "fut"
+    try:
+        now = time.time()
+        c = _USER_PREF.get(user)
+        if not c or now - c[1] > _USER_PREF_TTL:
+            u = handler_self._users().get(user) or {}
+            _USER_PREF[user] = ({"scale": u.get("scale") or "fut"}, now)
+            c = _USER_PREF[user]
+        return c[0].get("scale") or "fut"
+    except Exception:
+        return "fut"
 
 
 def _quote_ctx(target):
@@ -2057,6 +2105,25 @@ class handler(BaseHTTPRequestHandler):
             def fail(code, msg):
                 self._send(code, json.dumps({"error": msg}).encode(), "application/json")
 
+            # Échelle d'affichage du terminal : "fut" (NQ/ES, le future —
+            # défaut historique) ou "idx" (NAS100/US500, l'indice cash). Ce
+            # n'est PAS un marché de plus : c'est le même produit lu à
+            # l'autre bout de la basis, exactement comme GC vs XAUUSD. Le
+            # moteur calcule d'ailleurs déjà tout en échelle indice (les
+            # strikes CBOE SONT des strikes d'indice) et n'ajoute la basis
+            # qu'en dernière étape -- afficher l'indice, c'est retirer cette
+            # étape, pas recalculer quoi que ce soit.
+            if op == "scale":
+                sc = (body.get("scale") or "").strip().lower()
+                if sc not in ("fut", "idx"):
+                    return fail(400, "scale doit valoir fut ou idx")
+                u["scale"] = sc
+                kv_set("gex:users", json.dumps(users))
+                _USER_PREF.pop(me, None)      # invalide le cache mémoire
+                self._send(200, json.dumps({"ok": True, "scale": sc}).encode(),
+                           "application/json")
+                return
+
             if op == "email":
                 email = (body.get("email") or "").strip().lower()
                 if not self._valid_email(email):
@@ -3064,8 +3131,13 @@ class handler(BaseHTTPRequestHandler):
         # ── état de la session (consulté par le bouton de connexion) ──
         if path == "/api/auth":
             u = self._current_user()
+            # `scale` voyage ici plutôt que dans un appel dédié : le terminal
+            # appelle DÉJÀ /api/auth au chargement, donc zéro requête en plus.
+            # Lecture mise en cache mémoire (cf. _user_scale) ; un visiteur
+            # anonyme repart en 401 sans toucher Redis du tout.
             self._send(200 if u else 401,
-                       json.dumps({"user": u} if u else {"error": "anonyme"}).encode(),
+                       json.dumps({"user": u, "scale": _user_scale(self, u)} if u
+                                  else {"error": "anonyme"}).encode(),
                        "application/json")
             return
 
@@ -3088,6 +3160,7 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, json.dumps({
                 "user": me, "email": u.get("email", ""), "created": u.get("created", ""),
                 "apikey": apikey, "apikey_state": state,
+                "scale": u.get("scale") or "fut",
             }).encode(), "application/json")
             return
 
@@ -3745,6 +3818,10 @@ class handler(BaseHTTPRequestHandler):
             interval = (qs0.get("interval", ["5m"])[0] or "5m")
             if interval not in CHART_INTERVALS:
                 interval = "5m"
+            # Échelle d'affichage : "fut" (défaut, inchangé) ou "idx" pour
+            # l'indice cash (NAS100/US500). Opt-in strict : sans le paramètre,
+            # la réponse est identique au caractère près à avant.
+            want_idx = (qs0.get("scale", ["fut"])[0] or "fut").lower() == "idx"
             try:
                 # /api/quote n'a besoin que de meta.regularMarketPrice : inutile
                 # de télécharger 5 jours de bougies 5m (~1150 chandelles) à
@@ -3864,9 +3941,17 @@ class handler(BaseHTTPRequestHandler):
                                                      "source": source, "pending": next_pending}
                     except Exception:
                         pass
+                    # Échelle indice demandée (NAS100/US500) : on convertit
+                    # TOUT À LA FIN, une fois le prix future arrêté. Le garde
+                    # de continuité ci-dessus et le correctif de basis
+                    # travaillent donc toujours sur la même échelle qu'avant
+                    # -- aucune de leur logique n'est touchée.
+                    if want_idx and price is not None:
+                        price = round(price - _calibrated_basis(target), 2)
                     body = json.dumps({
                         "target": target, "price": price,
                         "time": ptime, "source": source,
+                        "scale": "idx" if want_idx else "fut",
                     }).encode()
                     max_age = 2
                 else:
@@ -3993,9 +4078,26 @@ class handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
                     bars = _clean_bars(bars)
+                    # Conversion en échelle indice APRÈS tout le reste : le
+                    # montage future/ETF, la correction de basis par bougie et
+                    # le nettoyage travaillent sur l'échelle historique, donc
+                    # aucune de leur logique ne change. On retranche ensuite la
+                    # basis calibrée, qui est par définition l'écart
+                    # future -> indice.
+                    px_meta = meta.get("regularMarketPrice")
+                    if want_idx:
+                        cb = _calibrated_basis(target)
+                        bars = [{"time": b["time"],
+                                 "open": round(b["open"] - cb, 2),
+                                 "high": round(b["high"] - cb, 2),
+                                 "low": round(b["low"] - cb, 2),
+                                 "close": round(b["close"] - cb, 2)} for b in bars]
+                        if px_meta is not None:
+                            px_meta = round(float(px_meta) - cb, 2)
                     body = json.dumps({"target": target, "interval": interval,
                                        "bars": bars, "src": src_flag,
-                                       "price": meta.get("regularMarketPrice")}).encode()
+                                       "scale": "idx" if want_idx else "fut",
+                                       "price": px_meta}).encode()
                     max_age = 12
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

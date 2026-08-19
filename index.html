@@ -1423,6 +1423,93 @@ let TARGET = "NQ";
 try{ TARGET = localStorage.getItem("gexTarget") || "NQ"; }catch(_){}
 if (!["NQ","ES","SPX","GC","XAU"].includes(TARGET)) TARGET = "NQ";
 
+/* ═══ ÉCHELLE D'AFFICHAGE : future (NQ/ES) ou indice cash (NAS100/US500) ═══
+   Beaucoup de membres ne tradent pas le future mais le CFD indice. L'écart
+   entre les deux, c'est la basis -- même situation que GC vs XAUUSD. Le
+   moteur calcule DÉJÀ tout en échelle indice (les strikes CBOE sont des
+   strikes d'indice) et n'ajoute la basis qu'en dernière étape : afficher
+   l'indice, c'est retirer cette étape, pas recalculer.
+
+   Réglage porté par le COMPTE (page profil), miroir en localStorage pour
+   qu'il s'applique dès la première frame -- sinon le chart s'afficherait en
+   NQ puis basculerait en NAS100 quand /api/auth répond, saut très visible.
+
+   Restreint à NQ et ES : SPX suit déjà l'indice cash (^GSPC) et l'or a son
+   propre sélecteur GC/XAUUSD. Appliquer une basis là n'aurait aucun sens. */
+let SCALE = "fut";
+try{ SCALE = localStorage.getItem("gexScale") || "fut"; }catch(_){}
+if (SCALE !== "idx") SCALE = "fut";
+const IDX_LABEL = {NQ: "NAS100", ES: "US500"};
+function scaleOn(tgt){ return SCALE === "idx" && !!IDX_LABEL[tgt || TARGET]; }
+function scaleLabel(tgt){
+  return scaleOn(tgt) ? IDX_LABEL[tgt || TARGET] : (tgt || TARGET);
+}
+
+/* Basis GELÉE : celle en vigueur quand les niveaux ont été calculés, et NON
+   d.basis (top-niveau) qui, lui, continue de bouger à chaque refresh
+   intraday. Décaler des niveaux gelés par une basis vivante les ferait
+   dériver toute la séance -- exactement ce que _freeze_levels (api/gex.py)
+   existe pour empêcher, et la régression que CLAUDE.md qualifie de plus
+   grave possible (string Pine qui change en séance). anchor et anchor_idx
+   sont figés ENSEMBLE par le même verrou : leur écart EST la basis du
+   moment du calcul. */
+function frozenBasis(d){
+  const em = d && d.expected_move;
+  if (em && em.anchor != null && em.anchor_idx != null) return em.anchor - em.anchor_idx;
+  return (d && d.basis) || 0;
+}
+const r1 = v => Math.round(v * 10) / 10;
+
+/* Décale la string Pine (format "prix,libellé,type;...") par la basis gelée.
+   Gelée moins gelée = tout aussi gelée : la string reste stable toute la
+   séance, elle est juste exprimée dans l'échelle du membre. */
+function shiftPine(pine, fb){
+  if (!pine) return pine;
+  return pine.split(";").map(row => {
+    const p = row.split(",");
+    if (p.length < 3) return row;
+    const v = parseFloat(p[0]);
+    if (!isFinite(v)) return row;
+    return [ (v - fb).toFixed(1), p[1], p[2] ].join(",");
+  }).join(";");
+}
+
+/* Copie d'AFFICHAGE du payload. Le payload d'origine n'est jamais modifié :
+   les valeurs canoniques restent en échelle future côté serveur. */
+function toDisplayScale(d){
+  if (!d || !scaleOn(d.target)) return d;
+  const fb = frozenBasis(d), lb = d.basis || 0;
+  const o = Object.assign({}, d);
+  if (o.nq_price != null) o.nq_price = r1(o.nq_price - lb);
+  if (Array.isArray(d.levels)){
+    o.levels = d.levels.map(L => Object.assign({}, L, {price_nq: r1(L.price_nq - fb)}));
+  }
+  if (d.expected_move){
+    const em = Object.assign({}, d.expected_move);
+    if (em.anchor != null) em.anchor = r1(em.anchor - fb);
+    if (Array.isArray(em.bands)){
+      em.bands = em.bands.map(b => Object.assign({}, b, {
+        high: b.high != null ? r1(b.high - fb) : b.high,
+        low:  b.low  != null ? r1(b.low  - fb) : b.low,
+      }));
+    }
+    o.expected_move = em;
+  }
+  if (d.open_grid){
+    const g = Object.assign({}, d.open_grid);
+    if (g.anchor != null) g.anchor = r1(g.anchor - fb);
+    if (Array.isArray(g.levels)){
+      g.levels = g.levels.map(x => Object.assign({}, x, {
+        up:   x.up   != null ? r1(x.up   - fb) : x.up,
+        down: x.down != null ? r1(x.down - fb) : x.down,
+      }));
+    }
+    o.open_grid = g;
+  }
+  o.pine = shiftPine(d.pine, fb);
+  return o;
+}
+
 function el(tag, attrs, parent){
   const e = document.createElementNS(NS, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -1439,6 +1526,13 @@ function paintTabs(){
             || (b.dataset.t === "GC" && IS_GOLD(TARGET));
     b.classList.toggle("on", on);
     b.setAttribute("aria-selected", on);
+  });
+  // Libellé de l'onglet en échelle indice : un membre qui a réglé NAS100 il y
+  // a trois semaines doit VOIR pourquoi son prix ne colle pas au future. Le
+  // réglage vit dans le profil, l'onglet en est le seul rappel permanent.
+  document.querySelectorAll("#tabs button[data-t]").forEach(b => {
+    const k = b.dataset.t;
+    if (IDX_LABEL[k]) b.textContent = scaleOn(k) ? IDX_LABEL[k] : k;
   });
   const sel = $("goldSel");
   if (sel){
@@ -1720,6 +1814,17 @@ async function authSubmit(){
   fetch("/api/auth").then(r => r.ok ? r.json() : null).then(d => {
     AUTH_USER = d && d.user ? d.user : null;
     authPaint();
+    // Échelle du COMPTE : fait autorité sur le miroir localStorage, qui n'est
+    // là que pour éviter un basculement visible au chargement. Si elle diffère
+    // (autre navigateur, réglage changé ailleurs), on recharge la vue une
+    // seule fois pour repartir sur la bonne échelle.
+    const sv = d && d.scale === "idx" ? "idx" : "fut";
+    if (AUTH_USER && sv !== SCALE){
+      SCALE = sv;
+      try{ localStorage.setItem("gexScale", sv); }catch(_){}
+      paintTabs();
+      loadTarget();
+    }
     if (!AUTH_USER && new URL(location.href).searchParams.get("login")) authOpen("login");
   }).catch(() => authPaint());
 })();
@@ -1913,10 +2018,14 @@ function ensureChart(){
 // Renvoie une paire {ok, d} pour chacun, jamais un rejet -- loadBars()
 // n'a qu'à lire le résultat, jamais à gérer une exception réseau ici.
 function prefetchBars(target, iv){
-  const chart = fetch(`/api/chart?target=${target}&interval=${iv}`)
+  // Les bougies et la cotation sont converties CÔTÉ SERVEUR (?scale=idx) et
+  // non ici : elles portent la correction de basis par bougie, que le client
+  // ne sait pas défaire. Cf. /api/chart dans api/gex.py.
+  const sc = scaleOn(target) ? "&scale=idx" : "";
+  const chart = fetch(`/api/chart?target=${target}&interval=${iv}${sc}`)
     .then(async r => ({ok: r.ok, d: await r.json()}))
     .catch(e => ({ok: false, d: {error: e.message}}));
-  const quote = fetch(`/api/quote?target=${target}`)
+  const quote = fetch(`/api/quote?target=${target}${sc}`)
     .then(async r => ({ok: r.ok, d: await r.json()}))
     .catch(() => ({ok: false, d: null}));
   return Promise.all([chart, quote]);
@@ -2337,7 +2446,8 @@ async function pollQuote(){
   if (!CHART.series || !CHART.lastBar || document.hidden) return;
   refreshBadges();      // même cadence, cf. définition -- ne bloque pas sur sa réponse
   try{
-    const r = await fetch(`/api/quote?target=${TARGET}`);
+    const r = await fetch(`/api/quote?target=${TARGET}`
+                          + (scaleOn(TARGET) ? "&scale=idx" : ""));
     const d = await r.json();
     if (!r.ok || d.price == null){
       liveBadge("live: réponse invalide (" + r.status + ")", false);
@@ -2438,7 +2548,7 @@ function renderBadges(d){
   const tgt = d.target || "NQ";
 
   const stats = [
-    [tgt, fmt(currentPrice(d)), "price"],
+    [scaleLabel(tgt), fmt(currentPrice(d)), "price"],
     [t("stBasis"), (d.basis>=0?"+":"") + fmt(d.basis) + ' <span class="src">' + (
       {manual:t("bManual"), index:t("bIndex"), "last-known":t("bLast"), none:"—"}[d.basis_source] || t("bMarket")) + "</span>", ""],
     [t("stNet"), (d.net_gex_bn>=0?"+":"") + fmt(d.net_gex_bn,2), d.net_gex_bn>=0?"pos":"neg"],
@@ -2496,6 +2606,14 @@ async function refreshBadges(){
     const d = await r.json();
     if (tgt !== TARGET || d.target !== TARGET) return;   // cible changée entretemps
     for (const k of BADGE_LIVE_FIELDS) LAST_D[k] = d[k];
+    // LAST_D est en échelle d'AFFICHAGE (cf. show/toDisplayScale) alors que
+    // le payload frais arrive toujours en échelle future : seul nq_price est
+    // une valeur de prix parmi les champs recopiés, il doit donc être
+    // reconverti. Les autres (basis, net gex, régime, P/C, IV) ne sont pas
+    // des prix et restent tels quels.
+    if (scaleOn(tgt) && LAST_D.nq_price != null){
+      LAST_D.nq_price = r1(LAST_D.nq_price - (d.basis || 0));
+    }
     renderBadges(LAST_D);
   }catch(_){}
 }
@@ -2504,10 +2622,14 @@ async function show(d, barsFetch){
   $("status").style.display = "none";
   $("app").style.display = "block";
 
+  // Point d'entrée UNIQUE de la conversion d'échelle : tout ce qui suit
+  // (badges, niveaux, EM, grille Open, Pine, flux) travaille ensuite sur
+  // une seule et même échelle, sans avoir à y penser.
+  d = toDisplayScale(d);
   LAST_D = d;
   const tgt = d.target || "NQ";
-  $("hdrDate").textContent = d.date + " · " + tgt + " (" + d.symbol + ")";
-  $("levelsTitle").textContent = t("levels")(tgt);
+  $("hdrDate").textContent = d.date + " · " + scaleLabel(tgt) + " (" + d.symbol + ")";
+  $("levelsTitle").textContent = t("levels")(scaleLabel(tgt));
 
   renderBadges(d);
 
