@@ -97,6 +97,7 @@
      navigation dans une seule rangee : le bouton Soutenir s'y perdait
      alors que c'est le seul element qui demande une action. */
   .hdr-id{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .hdr-id-g1, .hdr-id-g2{display:contents}
   .hdr-bar{display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap}
   /* Discord/TradingView/Doc : composant partagé (#community, cf.
      shell.js .appcommunity), plus la même famille de liens que sur les
@@ -127,6 +128,10 @@
   .hdr-more-chk{position:absolute; opacity:0; pointer-events:none}
   .hdr-more-btn{display:none}
   .hdr-more{display:contents}
+  /* Discord/TradingView compacts (identite mobile, cf. media 640px plus
+     bas) : masques par defaut, #community (le trio complet, avec Doc)
+     reste la version affichee au-dessus du seuil mobile. */
+  #communityMobile{display:none}
 
   /* Palier intermédiaire (tablette / fenêtre réduite) : entre le plein
      desktop et le seuil mobile (640px plus bas), rien ne gouvernait la
@@ -603,15 +608,35 @@
     header{gap:10px; padding:12px 14px 14px}
     .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
-    /* Mark+brand+compte tiennent deja sur une seule rangee (~328px sur
-       362px dispo) : l'appel au don n'y a plus sa place et bascule donc
-       TOUJOURS seul en dessous. Avec margin-left:auto seul, ce
-       basculement se lisait comme un accident -- une pastille flottante
-       a droite, deconnectee de la rangee du dessus. Pleine largeur et
-       centre, c'est desormais une deuxieme rangee ASSUMEE, pas un
-       repli : le CTA le plus important du header merite mieux qu'un
-       coin. */
-    .cta-support{width:100%; margin:6px 0 0; justify-content:center; min-height:40px}
+    /* Un testeur exterieur n'a pas retrouve le lien Discord (range dans
+       le tiroir "..."), et le CTA Soutenir en pleine largeur ("gros
+       bouton") prenait toute une rangee a lui seul. Identite retravaillee
+       en DEUX rangees deliberees (.hdr-id-g1/-g2, cf. HTML) plutot qu'un
+       flex-wrap organique a 5 enfants : la largeur de l'avatar de compte
+       varie ("Connexion" vs une initiale), ce qui faisait basculer
+       Discord/TradingView tantot sur la 1ere ligne (grand vide a droite),
+       tantot seuls sur une 2e (repli disgracieux) selon l'etat de
+       connexion -- deux rangees fixes eliminent cette dependance :
+       - g1 (identite) : nom de page a cote de "GexDash" retire (deja
+         lisible via l'onglet actif de la nav juste en dessous) ; libelle
+         du compte retire, l'avatar seul suffit (initiale du pseudo deja
+         en teal quand connecte, cf. authPaint()) ;
+       - g2 (actions) : Discord/TradingView en icones compactes a gauche
+         (texte conserve en accessibilite, juste visuellement masque),
+         Soutenir en puce compacte ancree a droite -- plus de banniere
+         pleine largeur. */
+    .hdr-id-g1{display:flex; align-items:center; gap:10px; width:100%}
+    .hdr-id-g2{display:flex; align-items:center; gap:8px; width:100%; margin-top:6px}
+    .pgwrap{display:none}
+    .authChip{margin-left:0}
+    #authBtn{padding:6px 8px}
+    #authLbl{display:none}
+    #communityMobile{display:flex; align-items:center; gap:2px}
+    #communityMobile a{font-size:0; padding:8px; min-height:40px; min-width:40px; justify-content:center}
+    #communityMobile a.doc{display:none}
+    #communityMobile .dot{width:9px; height:9px}
+    #communityMobile .cdiv{display:none}
+    .cta-support{margin-left:auto; min-height:40px}
     #pineTopBtn{flex:none; padding:9px 12px; margin-left:0}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
@@ -962,6 +987,15 @@
        Le compte et le don sont colles a la marque plutot que renvoyes a
        l'autre bout de la barre : c'est ce qui creait le decalage. -->
   <div class="hdr-id">
+  <!-- Deux groupes explicites (identite / actions) plutot que cinq
+       enfants livres au flex-wrap organique : sur mobile, la largeur de
+       l'avatar de compte varie ("Connexion" vs une simple initiale) et
+       decidait au hasard si Discord/TradingView rejoignaient la
+       premiere ligne ou la seconde, laissant tantot un grand vide,
+       tantot un repli disgracieux. display:contents neutralise ces
+       wrappers en desktop -- les enfants restent des enfants directs de
+       .hdr-id, comportement identique a avant ce changement. -->
+  <div class="hdr-id-g1">
   <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
     <g stroke="var(--gold)" stroke-width="6" fill="none">
       <line x1="50" y1="50" x2="50" y2="16"/><line x1="50" y1="50" x2="79" y2="33"/>
@@ -971,7 +1005,7 @@
     <circle cx="50" cy="50" r="13" fill="var(--gold)"/>
   </svg>
   <div class="brand">
-    <h1><b>Gex</b>Dash · <span class="pg">Terminal</span></h1>
+    <h1><b>Gex</b>Dash<span class="pgwrap"> · <span class="pg">Terminal</span></span></h1>
     <span class="sub" id="hdrDate">—</span>
   </div>
 
@@ -991,9 +1025,24 @@
       </button>
     </div>
   </div>
+  </div>
+
+  <div class="hdr-id-g2">
+    <!-- Discord/TradingView compacts, visibles uniquement sur telephone
+         (cf. media 640px) : un testeur en conditions reelles n'a pas
+         trouve le lien Discord, range dans le tiroir "..." avec le
+         reste des reglages. Deuxieme montage du meme composant partage
+         (Shell.mountCommunity supporte plusieurs instances, cf.
+         SHELL_COMM_EL dans shell.js) plutot qu'un lien code en dur : la
+         surcharge d'URL admin (/api/links) et la traduction suivent
+         automatiquement, sans logique dupliquee. Doc reste masque ici
+         (cf. CSS) -- il garde sa place dans le tiroir, seuls Discord et
+         TradingView demandaient une decouverte immediate. -->
+    <div id="communityMobile"></div>
 
     <a id="donateLink" class="cta-support" target="_blank" rel="noopener" hidden
        href="#"><span class="hrt" aria-hidden="true">♥</span><span id="donLbl">Soutenir</span></a>
+  </div>
   </div>
 
   <!-- Bande 2 : navigation a gauche, outils a droite. Les regler sur la
@@ -1682,7 +1731,7 @@ function applyLang(){
   $("pineNote").textContent = t("pineNote");
   $("copyBtn").textContent = t("copy");
   $("pineTopBtn").textContent = t("pineTop");
-  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.setLang(LANG);
+  Shell.mount("appnav"); Shell.mountCommunity("community"); Shell.mountCommunity("communityMobile"); Shell.setLang(LANG);
   const dl = $("darkLbl"); if (dl) dl.textContent = t("dCtxLbl");
   if (LAST_DARK && !$("dpCtx").hidden) renderDark(LAST_DARK);   // re-rend en FR/EN
   authPaint();
