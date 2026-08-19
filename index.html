@@ -603,8 +603,15 @@
     header{gap:10px; padding:12px 14px 14px}
     .brand h1{font-size:var(--fs-md)}
     .brand .sub{font-size:10px}
-    /* L'appel au don ferme la rangee et reste pleine cible tactile. */
-    .cta-support{margin-left:auto; min-height:40px}
+    /* Mark+brand+compte tiennent deja sur une seule rangee (~328px sur
+       362px dispo) : l'appel au don n'y a plus sa place et bascule donc
+       TOUJOURS seul en dessous. Avec margin-left:auto seul, ce
+       basculement se lisait comme un accident -- une pastille flottante
+       a droite, deconnectee de la rangee du dessus. Pleine largeur et
+       centre, c'est desormais une deuxieme rangee ASSUMEE, pas un
+       repli : le CTA le plus important du header merite mieux qu'un
+       coin. */
+    .cta-support{width:100%; margin:6px 0 0; justify-content:center; min-height:40px}
     #pineTopBtn{flex:none; padding:9px 12px; margin-left:0}
     .tabs button{padding:10px 0; flex:1; min-width:64px}
     .tabs{display:flex; width:100%}
