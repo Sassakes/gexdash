@@ -1628,6 +1628,45 @@ def _links():
     return {**DEFAULT_LINKS, **{k: v for k, v in stored.items() if v}}
 
 
+# --------------------------------------------------------------------------- #
+# Auto-level : indicateurs prets a poser (TradingView = extension Chrome,     #
+# lien seul ; Quantower/MotiveWave = fichier binaire uploade par l'admin).    #
+# --------------------------------------------------------------------------- #
+# Meme forme de stockage que LINKS_KEY (un seul blob JSON en clair) -- pas de
+# schema signe, ce n'est pas un secret cryptographique. TradingView est un
+# lien VALIDE (URL Chrome Web Store), pas un fichier : traite a part de
+# AUTOLEVEL_PLATFORMS, qui ne couvre que les deux plateformes a fichier.
+AUTOLEVEL_KEY = "gex:autolevel"
+AUTOLEVEL_DEFAULT_TV_URL = ("https://chromewebstore.google.com/detail/"
+                            "the-hub-%E2%80%94-gex-levels-for/cjgojmkgocbahkenanplgcehikcoigdc")
+AUTOLEVEL_PLATFORMS = ("quantower", "motivewave")
+# 2 Mo decodes : tres large pour un indicateur compile (.dll/.jar, typiquement
+# quelques centaines de Ko), tout en restant loin de la limite de payload
+# Vercel (~4.5 Mo) une fois re-inflate par le base64 (~+33%) + l'enveloppe JSON.
+AUTOLEVEL_MAX_FILE_BYTES = 2 * 1024 * 1024
+
+
+def _autolevel():
+    try:
+        stored = json.loads(kv_get(AUTOLEVEL_KEY) or "{}")
+    except Exception:
+        stored = {}
+    return stored if isinstance(stored, dict) else {}
+
+
+def _autolevel_meta():
+    """Vue jamais accompagnee de data_b64 -- tout ce qu'il faut pour peindre
+    un bouton de telechargement ou un lien, jamais le contenu du fichier."""
+    stored = _autolevel()
+    tv = stored.get("tradingview") or {}
+    out = {"tradingview": {"url": tv.get("url") or AUTOLEVEL_DEFAULT_TV_URL}}
+    for p in AUTOLEVEL_PLATFORMS:
+        f = stored.get(p)
+        out[p] = ({"filename": f.get("filename"), "size": f.get("size"),
+                   "uploaded_at": f.get("uploaded_at")} if f else None)
+    return out
+
+
 VALID_HOOK_PREFIXES = ("https://discord.com/api/webhooks/",
                        "https://discordapp.com/api/webhooks/",
                        "https://ptb.discord.com/api/webhooks/",
@@ -2282,6 +2321,84 @@ class handler(BaseHTTPRequestHandler):
             ok = kv_set(LINKS_KEY, json.dumps(stored))
             self._send(200 if ok else 500,
                        json.dumps({"saved": ok, "links": _links()}).encode(), "application/json")
+            return
+
+        # ---- admin: gestion des indicateurs auto-level (TradingView =
+        # lien Chrome Web Store ; Quantower/MotiveWave = fichier) ----
+        if path == "/api/autolevel":
+            if not self._auth_key():
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            # Content-Length verifie AVANT de lire rfile : un fichier depasse
+            # AUTOLEVEL_MAX_FILE_BYTES une fois decode, mais le corps JSON+b64
+            # qui le porte est deja ~1.4x plus gros -- rejeter tot evite de
+            # bloquer le worker sur une lecture couteuse pour rien.
+            try:
+                n = int(self.headers.get("Content-Length", 0) or 0)
+            except Exception:
+                n = 0
+            if n > int(AUTOLEVEL_MAX_FILE_BYTES * 1.5):
+                self._send(413, json.dumps(
+                    {"error": f"fichier trop volumineux (max {AUTOLEVEL_MAX_FILE_BYTES // (1024*1024)} Mo)"}
+                ).encode(), "application/json")
+                return
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                body = {}
+            platform = (body.get("platform") or "").strip()
+            action = (body.get("action") or "").strip()
+            stored = _autolevel()
+
+            if platform == "tradingview":
+                if action == "set_url":
+                    url = (body.get("url") or "").strip()
+                    if not url.startswith("https://chromewebstore.google.com/"):
+                        self._send(400, json.dumps(
+                            {"error": "URL invalide (Chrome Web Store attendu)"}
+                        ).encode(), "application/json")
+                        return
+                    stored["tradingview"] = {"url": url}
+                elif action == "delete":
+                    stored.pop("tradingview", None)
+                else:
+                    self._send(400, json.dumps({"error": "action invalide"}).encode(), "application/json")
+                    return
+            elif platform in AUTOLEVEL_PLATFORMS:
+                if action == "set_file":
+                    filename = (body.get("filename") or "").strip()
+                    data_b64 = body.get("data_b64") or ""
+                    if not filename or not data_b64:
+                        self._send(400, json.dumps(
+                            {"error": "filename et data_b64 requis"}
+                        ).encode(), "application/json")
+                        return
+                    try:
+                        raw = base64.b64decode(data_b64, validate=True)
+                    except Exception:
+                        self._send(400, json.dumps({"error": "data_b64 invalide"}).encode(), "application/json")
+                        return
+                    if len(raw) > AUTOLEVEL_MAX_FILE_BYTES:
+                        self._send(413, json.dumps(
+                            {"error": f"fichier trop volumineux (max {AUTOLEVEL_MAX_FILE_BYTES // (1024*1024)} Mo)"}
+                        ).encode(), "application/json")
+                        return
+                    stored[platform] = {
+                        "filename": filename, "size": len(raw), "data_b64": data_b64,
+                        "uploaded_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                    }
+                elif action == "delete":
+                    stored.pop(platform, None)
+                else:
+                    self._send(400, json.dumps({"error": "action invalide"}).encode(), "application/json")
+                    return
+            else:
+                self._send(400, json.dumps({"error": "platform invalide"}).encode(), "application/json")
+                return
+
+            ok = kv_set(AUTOLEVEL_KEY, json.dumps(stored))
+            self._send(200 if ok else 500,
+                       json.dumps({"saved": ok, "autolevel": _autolevel_meta()}).encode(), "application/json")
             return
 
         if path == "/api/webhooks/test":
@@ -3795,6 +3912,56 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+
+        # ---- auto-level : metadonnees (jamais le contenu du fichier).
+        # Ouvert aux membres connectes (page /profile) ET a l'admin (panel
+        # d'upload) -- les deux consomment la meme forme, cf. _autolevel_meta.
+        if path == "/api/autolevel":
+            qs0 = parse_qs(parsed.query)
+            if not (self._current_user() or self._auth_key(qs0)):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            self._send(200, json.dumps({"autolevel": _autolevel_meta()}).encode(), "application/json")
+            return
+
+        # ---- auto-level : telechargement du fichier (Quantower/MotiveWave).
+        # Meme garde que la metadonnee ci-dessus ; jamais de cache (fichier
+        # remplacable a tout moment par l'admin, et reponse potentiellement
+        # volumineuse -- un edge cache n'a rien a y gagner). ----
+        if path == "/api/autolevel/download":
+            qs0 = parse_qs(parsed.query)
+            if not (self._current_user() or self._auth_key(qs0)):
+                self._send(401, json.dumps({"error": "unauthorized"}).encode(), "application/json")
+                return
+            platform = (qs0.get("platform", [""])[0] or "").strip()
+            if platform not in AUTOLEVEL_PLATFORMS:
+                self._send(400, json.dumps({"error": "platform invalide"}).encode(), "application/json")
+                return
+            f = _autolevel().get(platform)
+            if not f or not f.get("data_b64"):
+                self._send(404, json.dumps({"error": "aucun fichier disponible"}).encode(), "application/json")
+                return
+            try:
+                raw = base64.b64decode(f["data_b64"])
+            except Exception:
+                self._send(500, json.dumps({"error": "fichier corrompu"}).encode(), "application/json")
+                return
+            filename = f.get("filename") or f"{platform}.bin"
+            # Assainissement minimal (pas d'injection d'en-tete via un nom de
+            # fichier stocke) + variante UTF-8 pour les noms non-ASCII, cf.
+            # RFC 6266 -- l'admin est un acteur de confiance mais un en-tete
+            # HTTP mal forme casserait quand meme le telechargement.
+            safe_ascii = "".join(c if (32 <= ord(c) < 127 and c != '"') else "_" for c in filename)
+            from urllib.parse import quote as _urlquote
+            disp = f'attachment; filename="{safe_ascii}"; filename*=UTF-8\'\'{_urlquote(filename)}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", disp)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         # ---- admin: current webhook config (masked) ----
