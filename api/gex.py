@@ -63,6 +63,8 @@ MACRO_DISPATCH_GUARD_KEY = "gex:cron:macro_dispatch_guard"
 MACRO_GH_REPO = "Sassakes/gexdash"
 FINNHUB_CACHE_S = 2.5
 _BASIS_ADJ = {}          # cache mémoire du correctif de basis (par marché)
+_QUOTE_GUARD = {}        # dernier prix "confirmé" /api/quote (par marché) --
+                          # filtre les prints isolés aberrants (cf. usage plus bas)
 _GOLD_OFF = {"v": None, "at": 0.0}
 
 
@@ -3791,6 +3793,34 @@ class handler(BaseHTTPRequestHandler):
                                     except Exception:
                                         pass
                                     price, ptime, source = derived, et, src2
+                    except Exception:
+                        pass
+                    # Garde-fou de continuité : un print isolé aberrant (Finnhub
+                    # ou ETF Yahoo) crée une grosse mèche fantôme sur la bougie
+                    # M1 en cours côté client (pollQuote étire high/low sur CE
+                    # prix), mèche qui disparaît au refresh puisque le chart
+                    # historique ne l'a jamais vue (bug vu en prod le
+                    # 2026-08-19). Un saut implausible vs le dernier prix
+                    # confirmé n'est accepté qu'une fois répété au tir suivant
+                    # (~3s plus tard) -- un vrai mouvement rapide passe donc
+                    # avec ~3s de retard, imperceptible ; un print isolé, lui,
+                    # ne se répète pas et reste filtré.
+                    try:
+                        if price is not None:
+                            prev = _QUOTE_GUARD.get(target)
+                            next_pending = None
+                            if prev and prev.get("price"):
+                                delta = abs(price - prev["price"])
+                                threshold = max(prev["price"] * 0.003, 20)
+                                if delta > threshold:
+                                    pend = prev.get("pending")
+                                    if pend is not None and abs(price - pend) <= max(price * 0.001, 5):
+                                        pass   # confirmé 2 fois d'affilée -> mouvement réel, on accepte
+                                    else:
+                                        next_pending = price   # 1re fois : on retient, sans l'appliquer
+                                        price, ptime, source = prev["price"], prev["t"], prev.get("source", source)
+                            _QUOTE_GUARD[target] = {"price": price, "t": ptime,
+                                                     "source": source, "pending": next_pending}
                     except Exception:
                         pass
                     body = json.dumps({
