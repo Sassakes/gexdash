@@ -3874,16 +3874,26 @@ class handler(BaseHTTPRequestHandler):
                                 # supposerait une basis nulle, ce qui n'est vrai
                                 # qu'à l'ouverture, pas en cours de séance.
                                 fmap = {b["time"]: b["close"] for b in bars}
-                                guard = ebars[-1]["close"] * 0.002 if ebars else 0
+                                # Garde-fou à 0,4 % (~118 pts sur NQ), pas 0,2 % :
+                                # l'écart future/ETF à l'ouverture cash (13h30
+                                # UTC) atteint couramment 65-100 pts -- un effet
+                                # de liquidité/découverte de prix systématique,
+                                # pas une aberration. À 0,2 % ce résidu légitime
+                                # basculait de manière quasi aléatoire au-dessus
+                                # ou en dessous du seuil d'un refresh à l'autre
+                                # (la mesure est recalculée à chaque requête),
+                                # ce qui faisait flotter le chart entre deux
+                                # niveaux de prix différents (bug vu en prod le
+                                # 2026-08-19). Un vrai print aberrant reste
+                                # rejeté au-delà de ce seuil relevé.
+                                guard = ebars[-1]["close"] * 0.004 if ebars else 0
                                 last_diff = None
                                 new_ebars = []
                                 for e in ebars:
                                     t = e["time"]
                                     if t in fmap:
                                         d = fmap[t] - e["close"]
-                                        # Garde-fou (0,2 % ~ 59 pts sur NQ) : un
-                                        # print aberrant ponctuel ne doit pas
-                                        # décaler cette bougie -- on garde le
+                                        # print aberrant ponctuel : on garde le
                                         # dernier écart valide plutôt que de
                                         # l'ignorer purement (ce qui créerait un
                                         # trou/notch local au lieu d'un saut).
