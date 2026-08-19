@@ -1550,6 +1550,9 @@ YCHART = {"NQ": "NQ=F", "ES": "ES=F", "SPX": "^GSPC", "GC": "GC=F",
 # ETF servant de proxy temps réel pendant la séance US (le future est différé)
 YETF = {"NQ": "QQQ", "ES": "SPY", "SPX": "SPY", "GC": "GLD", "XAU": "GLD"}
 CHART_INTERVALS = {"1m": "1d", "5m": "5d", "15m": "5d"}  # interval -> range
+# Dernière matrice gamma connue bonne, par cible (repli de /api/matrix quand
+# la chaîne CBOE ne répond pas — cf. le handler pour le raisonnement).
+MATRIX_LAST_KEY = "gex:matrix:last:{tgt}"
 
 
 def _clean_bars(bars):
@@ -3580,6 +3583,15 @@ class handler(BaseHTTPRequestHandler):
                     "cols": cols, "rows": rows,
                     "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
                 }).encode()
+                # Dernière matrice CONNUE BONNE, pour le repli ci-dessous.
+                # Coût maîtrisé : cet endpoint est mis en cache 300 s côté
+                # edge, donc la fonction ne s'exécute au plus qu'une fois
+                # par cible et par tranche de 5 min -> un SET par calcul
+                # réussi, pas un par visiteur.
+                try:
+                    kv_set(MATRIX_LAST_KEY.format(tgt=tgt), body.decode(), ex=86400)
+                except Exception:
+                    pass
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Cache-Control", "public, s-maxage=300, max-age=0")
@@ -3587,6 +3599,35 @@ class handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
             except Exception as e:
+                # REPLI : la chaîne CBOE est refetchée en direct à chaque
+                # calcul, donc un hoquet de la source renvoyait un 502 sec —
+                # et la heatmap se vidait. Une matrice gamma de quelques
+                # minutes reste parfaitement lisible (les niveaux du jour
+                # sont de toute façon gelés après 15h25, cf. CLAUDE.md) :
+                # bien meilleur qu'une page blanche. Marquée `stale` pour que
+                # le client puisse le signaler, et cache edge court (30 s au
+                # lieu de 300) pour ne pas figer le repli une fois la source
+                # revenue.
+                try:
+                    last = kv_get(MATRIX_LAST_KEY.format(tgt=tgt))
+                except Exception:
+                    last = None
+                if last:
+                    try:
+                        d0 = json.loads(last)
+                        d0["stale"] = True
+                        d0["stale_reason"] = str(e)[:200]
+                        body = json.dumps(d0).encode()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Cache-Control", "public, s-maxage=30, max-age=0")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    except Exception:
+                        pass
                 self._send(502, json.dumps({"error": str(e)}).encode(),
                            "application/json")
             return

@@ -227,6 +227,7 @@ const T = {
     live:"LIVE · RTH", pre:"PRÉ-MARCHÉ", post:"AFTER-HOURS", closed:"MARCHÉ FERMÉ",
     globex:"GLOBEX", noise:"Zones fortes", today:"Niveaux du jour",
     pxLive:"live", pxDelay:"différé", dUnit:"j", hUnit:"h", snap:"snap", upd:"maj", unavail:"Indisponible",
+    retrying:"reconnexion…", stale:"données figées — reconnexion…",
     helpTitle:"Lire la heatmap",
     helpIntro:"Chaque cellule = gamma net des dealers à ce strike × échéance. La couleur donne le signe et l'intensité ; les puces marquent les niveaux GEX clés. Scrolle dans la grille pour voir les strikes au-dessus / en dessous.",
     helpLive:"Le prix est différé en dehors de la séance US et ne passe LIVE que pendant la séance (RTH, 9h30–16h ET). Le compte à rebours indique le temps restant avant la prochaine ouverture.",
@@ -239,6 +240,7 @@ const T = {
     live:"LIVE · RTH", pre:"PRE-MARKET", post:"AFTER-HOURS", closed:"MARKET CLOSED",
     globex:"GLOBEX", noise:"Strong zones", today:"Today's levels",
     pxLive:"live", pxDelay:"delayed", dUnit:"d", hUnit:"h", snap:"snap", upd:"upd", unavail:"Unavailable",
+    retrying:"reconnecting…", stale:"frozen data — reconnecting…",
     helpTitle:"Reading the heatmap",
     helpIntro:"Each cell = dealer net gamma at that strike × expiry. Colour shows sign and intensity; chips mark the key GEX levels. Scroll inside the grid to see strikes above / below.",
     helpLive:"The price is delayed outside the US session and only flips LIVE during the session (RTH, 9:30–16:00 ET). The countdown shows the time left until the next open.",
@@ -362,7 +364,14 @@ function tickStates(){ TARGETS.forEach(tg => { if (PREFS.assets.has(tg)) paintSt
 function render(tgt, center){
   if (!PREFS.assets.has(tgt)) return;
   const c = CACHE[tgt], panel = $("#p" + tgt), host = panel.querySelector(".tblwrap");
-  if (!c || !c.matrix || c.matrix.error){ if (host) host.innerHTML = `<div class="err">${t("unavail")}</div>`; return; }
+  // N'arrive plus que si cette cible n'a JAMAIS chargé (cf. hmLoadOnce : un
+  // échec ne remplace plus une grille déjà peuplée). « reconnexion… » tant
+  // qu'une reprise est réellement programmée, sinon « Indisponible ».
+  if (!c || !c.matrix || c.matrix.error){
+    if (host) host.innerHTML =
+      `<div class="err">${RETRY_T[tgt] ? t("retrying") : t("unavail")}</div>`;
+    return;
+  }
   const d = c.matrix, price = (c.quote && c.quote.price) || d.spot;
 
   $("#px" + tgt).textContent = num(price);
@@ -480,18 +489,90 @@ function applyLang(){
 // visible, jamais recouverte d'un spinner.
 const LOAD_SHOWN = new Set();
 
-async function loadStatic(tgt){
+/* ═══ ROBUSTESSE DU RAFRAÎCHISSEMENT ═══════════════════════════════════
+   Un rafraîchissement qui échoue ne doit JAMAIS effacer ce qui est déjà à
+   l'écran. C'est exactement ce qui faisait « se vider puis revenir » la
+   page : /api/matrix recalcule la chaîne CBOE EN DIRECT à chaque appel
+   (aucun cache applicatif, seulement l'edge Vercel à 300 s), donc un
+   simple hoquet côté CBOE le fait répondre 502 — ou pas du tout. L'ancien
+   code écrivait alors `null` (ou `{error}`) dans CACHE, et render()
+   remplaçait la grille par « Indisponible » jusqu'au cycle suivant, cinq
+   minutes plus tard.
+
+   Trois garanties désormais :
+     1. on ne remplace une valeur en cache que par une valeur EXPLOITABLE ;
+        un échec laisse la précédente en place, la grille reste lisible ;
+     2. on retente tout de suite (2,5 s puis 8 s) au lieu d'attendre le
+        cycle de 5 min — une coupure d'une seconde ne se voit plus ;
+     3. l'horodatage « maj » n'avance QUE sur un succès, et un bandeau
+        signale l'état figé : afficher une heure fraîche sur des données
+        qui n'ont pas bougé serait pire que le bug d'origine. */
+const STALE = new Set();      // cibles dont le dernier rafraîchissement a échoué
+const RETRY_T = {};           // cible -> minuteur de reprise en cours
+let LAST_OK = "";             // heure du dernier rafraîchissement RÉUSSI
+
+function hmUsable(x, kind){
+  if (!x || x.error) return false;
+  // la matrice doit porter une grille exploitable, pas seulement du JSON
+  return kind !== "matrix" || (Array.isArray(x.rows) && Array.isArray(x.cols));
+}
+
+async function hmJson(url){
+  try{
+    const r = await fetch(url);
+    if (!r.ok) return null;          // 502/404 : traité comme une absence
+    return await r.json();
+  }catch(_){ return null; }          // réseau coupé, JSON illisible, abandon
+}
+
+function paintUpd(){
+  const el = $("#upd"); if (!el) return;
+  const stale = [...STALE].filter(x => PREFS.assets.has(x));
+  el.textContent = (LAST_OK ? t("upd") + " " + LAST_OK : "")
+                 + (stale.length ? " · ⚠ " + t("stale") : "");
+  el.style.color = stale.length ? C.gold : "";
+}
+
+// Signature volontairement à UN argument : loadStatic est passée telle
+// quelle à TARGETS.forEach(...), qui fournirait sinon l'index en 2e
+// paramètre — un compteur de reprise parasite, faux pour toutes les
+// cibles sauf la première.
+async function loadStatic(tgt){ return hmLoadOnce(tgt, 0); }
+
+async function hmLoadOnce(tgt, attempt){
   const firstLoad = !LOAD_SHOWN.has(tgt);
   const host = firstLoad ? $("#p" + tgt).querySelector(".tblwrap") : null;
   const _t0 = host ? PageLoader.begin(host) : null;
   const [m, l] = await Promise.all([
-    fetch(`/api/matrix?target=${tgt}`).then(r => r.json()).catch(() => null),
-    fetch(`levels.json?target=${tgt}`).then(r => r.json()).catch(() => null),
+    hmJson(`/api/matrix?target=${tgt}`),
+    hmJson(`levels.json?target=${tgt}`),
   ]);
-  CACHE[tgt] = Object.assign(CACHE[tgt] || {}, { matrix:m, levels:l });
-  if (!PREFS.cols && m && m.cols) buildExpiries(m.cols);
-  const first = !centered.has(tgt); render(tgt, first); if (m && !m.error) centered.add(tgt);
-  $("#upd").textContent = t("upd") + " " + new Date().toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US", {hour:"2-digit", minute:"2-digit"});
+  const c = (CACHE[tgt] = CACHE[tgt] || {});
+  const okM = hmUsable(m, "matrix"), okL = hmUsable(l, "levels");
+  if (okM) c.matrix = m;             // sinon on CONSERVE la valeur précédente
+  if (okL) c.levels = l;
+
+  if (okM){
+    STALE.delete(tgt);
+    clearTimeout(RETRY_T[tgt]); delete RETRY_T[tgt];
+  } else {
+    STALE.add(tgt);
+    // Reprise rapide bornée : 2,5 s puis 8 s. Au-delà, le cycle de 5 min
+    // reprend la main — inutile de marteler une source déjà en difficulté.
+    const wait = attempt === 0 ? 2500 : attempt === 1 ? 8000 : 0;
+    if (wait){
+      clearTimeout(RETRY_T[tgt]);
+      RETRY_T[tgt] = setTimeout(() => hmLoadOnce(tgt, attempt + 1), wait);
+    }
+  }
+
+  if (!PREFS.cols && c.matrix && c.matrix.cols) buildExpiries(c.matrix.cols);
+  const first = !centered.has(tgt); render(tgt, first); if (okM) centered.add(tgt);
+  if (okM || okL){
+    LAST_OK = new Date().toLocaleTimeString(LANG === "fr" ? "fr-FR" : "en-US",
+                                            {hour:"2-digit", minute:"2-digit"});
+  }
+  paintUpd();
   if (host){ LOAD_SHOWN.add(tgt); await PageLoader.end(host, _t0); }
 }
 const LAST_PX = {};
