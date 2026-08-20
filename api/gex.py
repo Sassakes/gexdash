@@ -2741,7 +2741,7 @@ class handler(BaseHTTPRequestHandler):
                         "🔄 **GEX Terminal** — Daily Open recalé ("
                         + paris_hhmm() + " Paris · open Globex)"
                         + ("\n" + px if px else "")
-                        + "\nhttps://gexdash.wealthbuilders.group")
+                        + "\nhttps://www.dash.gexdash.app")
                 journal("ok daily-only changed=%d news=%s" % (len(changed_any), news))
                 self._send(200, json.dumps({
                     "date": today, "daily_only": True,
@@ -2764,10 +2764,10 @@ class handler(BaseHTTPRequestHandler):
                     kv_set(start_guard, "1", ex=16 * 3600)
                     flux_ping = discord_news(
                         "🚀 **FLUX lancée** — " + paris_hhmm() + " Paris"
-                        "\nhttps://gexdash.wealthbuilders.group/flux")
+                        "\nhttps://www.dash.gexdash.app/flux")
                     horizon_ping = discord_news(
                         "🚀 **Horizon lancé** — " + paris_hhmm() + " Paris"
-                        "\nhttps://gexdash.wealthbuilders.group/horizon",
+                        "\nhttps://www.dash.gexdash.app/horizon",
                         key="horizon")
                     journal_flow(f"start ping flux={flux_ping} horizon={horizon_ping}")
             force = "force" in qs
@@ -3056,7 +3056,7 @@ class handler(BaseHTTPRequestHandler):
                     title
                     + paris_hhmm() + " Paris · " + slot + ")"
                     + ("\n" + px if px else "")
-                    + "\nhttps://gexdash.wealthbuilders.group")
+                    + "\nhttps://www.dash.gexdash.app")
             # Tir intrajournalier (?intraday=1) : resume routine, cadence 5-10
             # min toute la seance -- vers le journal Flux dedie (cf.
             # FLOW_CRON_LOG_KEY), jamais le journal principal.

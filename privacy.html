@@ -113,15 +113,15 @@ fr: {
   title:"Confidentialité", term:"Terminal", doc:"Doc",
   eyebrow:"Politique de confidentialité",
   heroT:"gexdash (TheHub) & extension Chrome",
-  heroP:"Ce que gexdash.wealthbuilders.group et l'extension Chrome « TheHub — GEX Levels Autofill » font des données, et — c'est souvent plus parlant — ce qu'ils ne font jamais.",
+  heroP:"Ce que www.dash.gexdash.app et l'extension Chrome « TheHub — GEX Levels Autofill » font des données, et — c'est souvent plus parlant — ce qu'ils ne font jamais.",
   upd:"Dernière mise à jour : 13 août 2026",
   foot:"gexdash · TheHub — pour toute question sur cette page, passe par le Discord ci-dessous.",
   secs:[
     {id:"who", t:"Qui exploite ce service", b:[
       {t:"p", x:"gexdash (« TheHub ») est un outil indépendant de niveaux d'exposition gamma (GEX) pour NQ, ES, SPX et l'or, exploité par ses auteurs (Max &amp; Micka). Le contact se fait via le <a href=\""+DISCORD+"\" target=\"_blank\" rel=\"noopener\">serveur Discord</a> — il n'existe pas d'adresse e-mail de support séparée."},
-      {t:"note", x:"Cette page couvre deux surfaces distinctes : le <b>site web</b> gexdash.wealthbuilders.group, et l'<b>extension Chrome</b> « TheHub — GEX Levels Autofill ». Les sections ci-dessous les traitent séparément."}]},
+      {t:"note", x:"Cette page couvre deux surfaces distinctes : le <b>site web</b> www.dash.gexdash.app, et l'<b>extension Chrome</b> « TheHub — GEX Levels Autofill ». Les sections ci-dessous les traitent séparément."}]},
 
-    {id:"site", t:"Le site gexdash.wealthbuilders.group", b:[
+    {id:"site", t:"Le site www.dash.gexdash.app", b:[
       {t:"p", x:"Un compte est optionnel — le terminal public ne demande rien. Créer un compte (identifiant, e-mail, mot de passe, code d'invitation) sert à obtenir une <b>clé API personnelle</b> et à accéder à des pages réservées (profil, news)."},
       {t:"ul", items:[
         "<b>Mot de passe</b> — jamais stocké en clair : haché par PBKDF2-HMAC-SHA256 (200 000 itérations, sel unique par compte).",
@@ -133,7 +133,7 @@ fr: {
     {id:"ext", t:"L'extension Chrome « TheHub — GEX Levels Autofill »", b:[
       {t:"p", x:"L'extension remplit automatiquement l'indicateur TradingView « GEX Daily Levels » avec les niveaux publiés sur ton compte gexdash. Elle traite deux types de données, toutes deux limitées strictement à cet usage :"},
       {t:"ul", items:[
-        "<b>Clé API personnelle</b> — saisie dans la popup de l'extension, stockée uniquement dans le stockage local du navigateur (<code>chrome.storage.local</code>), jamais dans le code de l'extension ni dans un journal. Envoyée en paramètre d'URL à <code>gexdash.wealthbuilders.group/api/mylevels</code> pour récupérer tes niveaux, et à aucun autre destinataire.",
+        "<b>Clé API personnelle</b> — saisie dans la popup de l'extension, stockée uniquement dans le stockage local du navigateur (<code>chrome.storage.local</code>), jamais dans le code de l'extension ni dans un journal. Envoyée en paramètre d'URL à <code>www.dash.gexdash.app/api/mylevels</code> pour récupérer tes niveaux, et à aucun autre destinataire.",
         "<b>Contenu de la page TradingView</b> — l'extension lit et modifie le DOM de la fenêtre de paramètres de l'indicateur GEX Daily Levels sur tradingview.com, uniquement pour y écrire les 5 chaînes de niveaux. Aucune autre partie de la page n'est lue, collectée ni transmise."]},
       {t:"note", x:"L'extension ne demande aucune permission d'inspection réseau ni de débogage du navigateur : le remplissage automatique passe uniquement par des interactions standard avec la page (lecture/écriture du DOM), rien de plus."}]},
 
@@ -157,15 +157,15 @@ en: {
   title:"Privacy", term:"Terminal", doc:"Doc",
   eyebrow:"Privacy policy",
   heroT:"gexdash (TheHub) & Chrome extension",
-  heroP:"What gexdash.wealthbuilders.group and the \"TheHub — GEX Levels Autofill\" Chrome extension do with data — and, often more telling, what they never do.",
+  heroP:"What www.dash.gexdash.app and the \"TheHub — GEX Levels Autofill\" Chrome extension do with data — and, often more telling, what they never do.",
   upd:"Last updated: August 13, 2026",
   foot:"gexdash · TheHub — for any question about this page, reach us on Discord below.",
   secs:[
     {id:"who", t:"Who runs this service", b:[
       {t:"p", x:"gexdash (\"TheHub\") is an independent dealer gamma exposure (GEX) levels tool for NQ, ES, SPX and gold, run by its authors (Max &amp; Micka). Contact goes through the <a href=\""+DISCORD+"\" target=\"_blank\" rel=\"noopener\">Discord server</a> — there is no separate support email."},
-      {t:"note", x:"This page covers two distinct surfaces: the <b>gexdash.wealthbuilders.group website</b>, and the <b>Chrome extension</b> \"TheHub — GEX Levels Autofill\". The sections below address each separately."}]},
+      {t:"note", x:"This page covers two distinct surfaces: the <b>www.dash.gexdash.app website</b>, and the <b>Chrome extension</b> \"TheHub — GEX Levels Autofill\". The sections below address each separately."}]},
 
-    {id:"site", t:"The gexdash.wealthbuilders.group website", b:[
+    {id:"site", t:"The www.dash.gexdash.app website", b:[
       {t:"p", x:"An account is optional — the public terminal asks for nothing. Creating an account (username, email, password, invitation code) gets you a <b>personal API key</b> and access to member pages (profile, news)."},
       {t:"ul", items:[
         "<b>Password</b> — never stored in plaintext: hashed with PBKDF2-HMAC-SHA256 (200,000 iterations, per-account salt).",
@@ -177,7 +177,7 @@ en: {
     {id:"ext", t:"The \"TheHub — GEX Levels Autofill\" Chrome extension", b:[
       {t:"p", x:"The extension automatically fills the TradingView \"GEX Daily Levels\" indicator with the levels published on your gexdash account. It processes two kinds of data, both strictly limited to that purpose:"},
       {t:"ul", items:[
-        "<b>Personal API key</b> — entered in the extension popup, stored only in the browser's local storage (<code>chrome.storage.local</code>), never in the extension's source code or in a log. Sent as a URL parameter to <code>gexdash.wealthbuilders.group/api/mylevels</code> to fetch your levels, and nowhere else.",
+        "<b>Personal API key</b> — entered in the extension popup, stored only in the browser's local storage (<code>chrome.storage.local</code>), never in the extension's source code or in a log. Sent as a URL parameter to <code>www.dash.gexdash.app/api/mylevels</code> to fetch your levels, and nowhere else.",
         "<b>TradingView page content</b> — the extension reads and modifies the DOM of the GEX Daily Levels indicator's settings dialog on tradingview.com, only to write the 5 level strings into it. No other part of the page is read, collected, or transmitted."]},
       {t:"note", x:"The extension requests no network-inspection or browser-debugging permission: autofill relies solely on standard page interactions (reading/writing the DOM), nothing more."}]},
 

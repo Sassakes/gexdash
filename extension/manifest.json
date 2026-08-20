@@ -5,7 +5,7 @@
   "description": "Auto-fills your GEX Daily Levels indicator on TradingView. Walls, gamma flip, expected move — updated without copy-pasting.",
   "permissions": ["storage", "alarms", "notifications", "clipboardWrite"],
   "host_permissions": [
-    "https://gexdash.wealthbuilders.group/*",
+    "https://www.dash.gexdash.app/*",
     "https://*.tradingview.com/*"
   ],
   "background": {

@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     title: 'TheHub — GexDashboard · Live Gamma Exposure Levels',
     description: 'Read the gamma, trade the levels. Live GEX walls and flip across NQ, ES, SPX and Gold.',
     type: 'website',
-    url: 'https://gexdash.wealthbuilders.group',
+    url: 'https://www.gexdash.app',
     siteName: 'TheHub',
   },
   twitter: {

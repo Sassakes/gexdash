@@ -6,8 +6,8 @@ import { RevealText } from "@/components/reveal-text"
 import { MobileNav } from "@/components/mobile-nav"
 import { GexHeroBackground } from "@/components/gex-hero-background"
 
-const DASHBOARD_URL = "https://gexdash.wealthbuilders.group"
-const LIBRARY_URL = "https://thehub.wealthbuilders.group"
+const DASHBOARD_URL = "https://www.dash.gexdash.app"
+const LIBRARY_URL = "https://thehub.gexdash.app"
 
 // ─── Intersection Observer hook ──────────────────────────────────────────────
 function useInView(threshold = 0.15) {
@@ -79,7 +79,7 @@ const MARKETS = [
   { sym: "GOLD", name: "Gold Futures",       px: "2,668.40",  chg: "+0.94%", up: true,  call: "2,700",  flip: "2,655",  put: "2,600"  },
 ]
 
-// ─── The Hub library categories (from thehub.wealthbuilders.group) ──────────────
+// ─── The Hub library categories (from thehub.gexdash.app) ──────────────
 const LIBRARY = [
   { cat: "FOOT PRINT", accent: ACCENT.green, items: ["Breakout Mastery", "Footprint Execution ICT", "Breakout Mastery 2"] },
   { cat: "ORDER FLOW", accent: ACCENT.cyan,  items: ["Orderflow Fondamentaux", "Orderflow Open US"] },
