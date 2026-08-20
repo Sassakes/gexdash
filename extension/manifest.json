@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "The Hub — GEX Levels for TradingView",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Auto-fills your GEX Daily Levels indicator on TradingView. Walls, gamma flip, expected move — updated without copy-pasting.",
   "permissions": ["storage", "alarms", "notifications", "clipboardWrite"],
   "host_permissions": [
