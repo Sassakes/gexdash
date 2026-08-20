@@ -10,7 +10,7 @@ const NAV_LINKS = [
   { label: "Access",   href: "#access" },
 ]
 
-const DASHBOARD_URL = "https://gexdash.wealthbuilders.group"
+const DASHBOARD_URL = "https://www.dash.gexdash.app"
 
 const NAV_STYLE = {
   backdropFilter: "blur(16px)",

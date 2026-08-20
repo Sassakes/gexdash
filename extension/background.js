@@ -5,7 +5,7 @@
  */
 "use strict";
 
-const API_BASE = "https://gexdash.wealthbuilders.group";
+const API_BASE = "https://www.dash.gexdash.app";
 const POLL_ALARM = "gex-mylevels-poll";
 const POLL_MINUTES = 5;
 const TV_URL_PATTERNS = ["*://*.tradingview.com/*"];
@@ -89,7 +89,7 @@ async function notify(id, title, message) {
   try {
     await chrome.notifications.create(id, {
       type: "basic",
-      iconUrl: "https://gexdash.wealthbuilders.group/thehub-mark.png",
+      iconUrl: "https://www.dash.gexdash.app/thehub-mark.png",
       title,
       message,
       priority: 2,

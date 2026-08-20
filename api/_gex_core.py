@@ -1251,7 +1251,7 @@ def save_api_keys(cfg):
 # Discord notification                                                         #
 # --------------------------------------------------------------------------- #
 def discord_send(url, payload, note=None,
-                 dashboard_url="https://gexdash.wealthbuilders.group"):
+                 dashboard_url="https://www.dash.gexdash.app"):
     """Post ONE payload's embed to a SPECIFIC webhook URL — no routing, no
     fallback. Used by the admin per-row Test button. Never raises."""
     try:
@@ -1281,7 +1281,7 @@ def discord_news(text, key="news"):
         return False
 
 
-def discord_notify(payloads, dashboard_url="https://gexdash.wealthbuilders.group"):
+def discord_notify(payloads, dashboard_url="https://www.dash.gexdash.app"):
     """Post published levels to a Discord webhook (env DISCORD_WEBHOOK_URL).
     Accepts one payload dict or a list (one embed per target, single message).
     No-op when unset. Never raises. Returns True on success."""

@@ -141,7 +141,7 @@ namespace GexDashLevels
         // Domaine de production gexdash — meme base que l'extension Chrome
         // "TheHub GEX Levels Autofill" (extension/background.js), qui suit
         // exactement le meme contrat d'API.
-        private const string API_BASE = "https://gexdash.wealthbuilders.group";
+        private const string API_BASE = "https://www.dash.gexdash.app";
         private const double POLL_MINUTES = 5.0;
         private const double BACKOFF_CAP_MINUTES = 60.0;
 

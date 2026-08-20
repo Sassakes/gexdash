@@ -1,9 +1,9 @@
 /*!
  * TheHub Flux Widget — embeddable gamma/vanna/charm dealer-flow projection.
- * https://gexdash.wealthbuilders.group/
+ * https://www.dash.gexdash.app/
  *
  * Usage:
- *   <script src="https://gexdash.wealthbuilders.group/widget/flux-widget.js"></script>
+ *   <script src="https://www.dash.gexdash.app/widget/flux-widget.js"></script>
  *   <div id="chart"></div>
  *   <script>
  *     const w = new TheHubFluxWidget(document.getElementById('chart'), {
@@ -42,7 +42,7 @@
 (function(){
 "use strict";
 
-const API_BASE_DEFAULT = "https://gexdash.wealthbuilders.group";
+const API_BASE_DEFAULT = "https://www.dash.gexdash.app";
 const POLL_MS_DEFAULT = 120000;   // 2 min, matches the terminal's own cadence
 const ANIM_MS = 1000;             // cross-fade duration between two cron ticks
 

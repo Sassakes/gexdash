@@ -16,7 +16,7 @@ d'ouvrir gexdash pour copier-coller la string Pine à chaque séance.
 ## Prérequis
 
 - Un compte gexdash avec une **clé API personnelle** — disponible sur
-  [gexdash.wealthbuilders.group/profile](https://gexdash.wealthbuilders.group/profile),
+  [www.dash.gexdash.app/profile](https://www.dash.gexdash.app/profile),
   section « Clé API personnelle » (bouton *Copier*, ou *Régénérer* si besoin
   d'une nouvelle clé).
 - L'indicateur **GEX Daily Levels** doit déjà être posé sur le graphique
