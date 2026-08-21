@@ -1445,18 +1445,25 @@ function scaleLabel(tgt){
   return scaleOn(tgt) ? IDX_LABEL[tgt || TARGET] : (tgt || TARGET);
 }
 
-/* ═══ Bougie live NQ via TradingView (api/gex.py _tv_live_quote), UNIQUEMENT
+/* ═══ Bougie live via TradingView (api/gex.py _tv_live_quote), UNIQUEMENT
    pour l'affichage de la bougie courante -- niveaux/régime/EM/P·C/IV/Pine
    restent intégralement sur le pipeline existant (payload publié), aucun
-   calcul ne change. Portée volontairement étroite : seulement TARGET==="NQ"
-   (seul symbole testé/licencié côté TradingView) et seulement pendant la
-   séance cash US -- 9h30-16h ET, PAS 8h30 (FLUX_SESSION_START_ET couvre les
-   macro-releases pre-market, notion différente, ne pas confondre, cf.
-   CLAUDE.md). Hors de cette fenêtre (soir, nuit, week-end, autre marché,
-   TradingView indisponible), pollQuote() reprend seul la main sans aucun
-   changement de comportement -- cf. garde LIVECHART.on dans pollQuote(). */
+   calcul ne change. Portée volontairement étroite : seulement les symboles
+   testés/licenciés côté TradingView (LIVE_SYMBOLS, cf. TV_ALLOWED_SYMBOLS
+   côté serveur) et seulement pendant la séance cash US -- 9h30-16h ET, PAS
+   8h30 (FLUX_SESSION_START_ET couvre les macro-releases pre-market, notion
+   différente, ne pas confondre, cf. CLAUDE.md). Hors de cette fenêtre (soir,
+   nuit, week-end, autre marché, TradingView indisponible), pollQuote()
+   reprend seul la main sans aucun changement de comportement -- cf. garde
+   LIVECHART.on dans pollQuote(). */
+const LIVE_SYMBOLS = {NQ: "CME_MINI:NQ1!", ES: "CME_MINI:ES1!", SPX: "SP:SPX"};
 let LIVECHART = {on: false};
-let LIVE_BASIS = 0;   // écart NQ/NAS100 courant, alimenté par refreshBadges() (d.basis)
+// Écart future/indice courant (NQ/ES uniquement, cf. scaleOn) -- alimenté
+// par refreshBadges() (d.basis) pour la cible ACTIVE, se ré-actualise donc
+// tout seul au switch de marché. SPX n'a pas de projection (suit déjà
+// l'indice cash, cf. CLAUDE.md toDisplayScale), LIVE_BASIS n'est alors
+// simplement jamais lu (scaleOn(TARGET) vaut toujours false pour SPX).
+let LIVE_BASIS = 0;
 function usCashSessionOpenNow(){
   const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
       weekday: "short", hour: "2-digit", minute: "2-digit"})
@@ -1466,12 +1473,13 @@ function usCashSessionOpenNow(){
   return mins >= 9 * 60 + 30 && mins <= 16 * 60;
 }
 async function liveChartTick(){
-  if (document.hidden || TARGET !== "NQ" || !CHART.series || !CHART.lastBar || !usCashSessionOpenNow()){
+  const sym = LIVE_SYMBOLS[TARGET];
+  if (document.hidden || !sym || !CHART.series || !CHART.lastBar || !usCashSessionOpenNow()){
     LIVECHART.on = false;
     return;
   }
   try{
-    const r = await fetch("/api/nqlive");
+    const r = await fetch("/api/nqlive?symbol=" + encodeURIComponent(sym));
     const d = await r.json();
     if (!r.ok || d.error || d.update_mode !== "streaming" || d.price == null){
       LIVECHART.on = false;
@@ -1506,7 +1514,7 @@ function armLiveChart(){
   clearInterval(CHART.livePoll);
   CHART.livePoll = null;
   LIVECHART.on = false;
-  if (TARGET === "NQ" && usCashSessionOpenNow()){
+  if (LIVE_SYMBOLS[TARGET] && usCashSessionOpenNow()){
     CHART.livePoll = setInterval(liveChartTick, 1000);
     liveChartTick();
   }
@@ -2527,7 +2535,8 @@ async function pollQuote(){
     LIVE_PRICE = d.price; LIVE_PRICE_T = Date.now(); LIVE_PRICE_TARGET = TARGET;
     if (LAST_D){ renderBadges(LAST_D); renderLevels(LAST_D); }
     const sec = CHART.ivSec[CHART.iv], p = d.price;
-    // Bougie live NQ (TradingView) active : LIVECHART.on possède seul
+    // Bougie live (TradingView, NQ/ES/SPX -- cf. LIVE_SYMBOLS) active :
+    // LIVECHART.on possède seul
     // CHART.lastBar/le rendu de la bougie pendant la séance cash US, cf.
     // liveChartTick()/armLiveChart() -- deux sources sur la même bougie
     // produiraient un flicker (l'une écrasant l'autre à chaque tick). Tout

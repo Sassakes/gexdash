@@ -360,6 +360,16 @@ def _us_cash_session_now():
     return start <= now_et <= end
 
 
+# Symboles TradingView autorises via /api/nqlive et /api/nqohlc -- sans
+# allowlist, ces routes (aucune auth cote appelant) seraient un proxy
+# ouvert vers N'IMPORTE QUEL symbole TradingView via notre session
+# authentifiee. NQ/ES en echelle future (le terminal les affiche aussi en
+# echelle indice via LIVE_BASIS cote client, cf. index.html) ; SPX suit
+# deja l'indice cash, pas de projection necessaire (meme raison que
+# CLAUDE.md pour toDisplayScale : "SPX suit deja l'indice cash").
+TV_ALLOWED_SYMBOLS = {"CME_MINI:NQ1!", "CME_MINI:ES1!", "SP:SPX"}
+
+
 def _tv_quote_shared(symbol):
     """Cache Redis PARTAGE entre toutes les instances Vercel (contrairement
     a _news_cached, memoire locale a un process) -- sous charge reelle
@@ -4042,6 +4052,10 @@ class handler(BaseHTTPRequestHandler):
                 return
             qsl = parse_qs(parsed.query)
             symbol = (qsl.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
+            if symbol not in TV_ALLOWED_SYMBOLS:
+                self._send(400, json.dumps({"error": "symbol not allowed"}).encode(),
+                           "application/json")
+                return
             try:
                 v = _tv_quote_shared(symbol)
             except Exception as e:
@@ -4081,6 +4095,10 @@ class handler(BaseHTTPRequestHandler):
                 return
             qso = parse_qs(parsed.query)
             symbol = (qso.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
+            if symbol not in TV_ALLOWED_SYMBOLS:
+                self._send(400, json.dumps({"error": "symbol not allowed"}).encode(),
+                           "application/json")
+                return
             interval = (qso.get("interval", ["5m"])[0] or "5m")
             resolution = {"1m": "1", "5m": "5", "15m": "15"}.get(interval, "5")
             try:
