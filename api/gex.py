@@ -34,7 +34,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from api._gex_core import (TARGETS, build_payload, discord_news,
-                           discord_notify, discord_send, et_today,
+                           discord_notify, discord_send, et_today, ET,
                            fetch_webhooks, kv_get, kv_set, kv_set_nx, kv_del,
                            refresh_daily_anchor, save_webhooks, parse_chain, per_strike_gex, fetch_cboe, atm_iv, build_pine, yahoo_spot, _stooq_spot, _goldapi_spot,
                            flow_gamma_matrix, flow_gamma_sanity, flow_volume_context,
@@ -343,6 +343,62 @@ def _tv_ohlc_bars(symbol, resolution, n_bars=300):
             ws.close()
     key = f"tv:ohlc:{symbol}:{resolution}:{n_bars}"
     return _news_cached(key, 10, fetch)
+
+
+def _us_cash_session_now():
+    """Vrai pendant la seance cash US (9h30-16h ET, lun-ven) -- PAS 8h30
+    (FLUX_SESSION_START_ET, notion differente : couvre les macro-releases
+    pre-market, cf. flux-panel.js/CLAUDE.md, ne pas confondre). Limite le
+    scraping TradingView a la fenetre demandee cote SERVEUR, independamment
+    de tout ce que fait le client -- filet de securite si un bug/onglet
+    oublie appelle /api/nqlive hors seance ou le week-end."""
+    now_et = dt.datetime.now(ET)
+    if now_et.weekday() >= 5:
+        return False
+    start = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    end = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+    return start <= now_et <= end
+
+
+def _tv_quote_shared(symbol):
+    """Cache Redis PARTAGE entre toutes les instances Vercel (contrairement
+    a _news_cached, memoire locale a un process) -- sous charge reelle
+    (plusieurs utilisateurs simultanes en seance), toutes les instances
+    lisent le meme prix au lieu d'ouvrir chacune leur propre connexion
+    TradingView. Une connexion totale par fenetre de 2s, quel que soit le
+    nombre d'utilisateurs regardant le chart en meme temps."""
+    key = f"gex:tvquote:{symbol}"
+    cached = kv_get(key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+    v = _tv_live_quote(symbol)
+    if v:
+        try:
+            kv_set(key, json.dumps(v), ex=2)
+        except Exception:
+            pass
+    return v
+
+
+def _tv_ohlc_shared(symbol, resolution, n_bars=300):
+    """Meme principe que _tv_quote_shared, pour l'historique de bougies."""
+    key = f"gex:tvohlc:{symbol}:{resolution}:{n_bars}"
+    cached = kv_get(key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+    bars = _tv_ohlc_bars(symbol, resolution, n_bars)
+    if bars:
+        try:
+            kv_set(key, json.dumps(bars), ex=10)
+        except Exception:
+            pass
+    return bars
 
 
 def _news_finnhub(path_, params, key, ttl):
@@ -3974,14 +4030,20 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
-        # ── /api/nqlive : cf. _tv_live_quote ci-dessus. Route dediee a /test
-        # uniquement (non repertoriee). GET seul, lecture au sens large --
-        # ouvre/ferme un websocket TradingView a chaque appel. ──
+        # ── /api/nqlive : cf. _tv_quote_shared ci-dessus. GET seul, lecture
+        # au sens large -- cache Redis partage entre instances, jamais plus
+        # d'une connexion TradingView reelle par fenetre de 2s. Gardee par
+        # _us_cash_session_now() : hors seance cash US, JAMAIS de tentative
+        # de connexion TradingView, peu importe qui appelle cette route. ──
         if path == "/api/nqlive":
+            if not _us_cash_session_now():
+                self._send(503, json.dumps({"error": "outside live window (9h30-16h ET, lun-ven)"}).encode(),
+                           "application/json")
+                return
             qsl = parse_qs(parsed.query)
             symbol = (qsl.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
             try:
-                v = _tv_live_quote(symbol)
+                v = _tv_quote_shared(symbol)
             except Exception as e:
                 self._send(503, json.dumps({"error": f"tv unavailable: {e}"}).encode(),
                            "application/json")
@@ -4011,15 +4073,18 @@ class handler(BaseHTTPRequestHandler):
             return
 
         # ── /api/nqohlc : historique de bougies via TradingView (cf.
-        # _tv_ohlc_bars), pour que /test cesse de dependre de Yahoo (delayed)
-        # meme pour les bougies passees. Route dediee a /test, non repertoriee.
+        # _tv_ohlc_shared), meme garde de seance que /api/nqlive ci-dessus. ──
         if path == "/api/nqohlc":
+            if not _us_cash_session_now():
+                self._send(503, json.dumps({"error": "outside live window (9h30-16h ET, lun-ven)"}).encode(),
+                           "application/json")
+                return
             qso = parse_qs(parsed.query)
             symbol = (qso.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
             interval = (qso.get("interval", ["5m"])[0] or "5m")
             resolution = {"1m": "1", "5m": "5", "15m": "15"}.get(interval, "5")
             try:
-                bars = _tv_ohlc_bars(symbol, resolution, 300)
+                bars = _tv_ohlc_shared(symbol, resolution, 300)
             except Exception as e:
                 self._send(503, json.dumps({"error": f"tv unavailable: {e}"}).encode(),
                            "application/json")

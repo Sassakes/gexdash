@@ -1445,6 +1445,73 @@ function scaleLabel(tgt){
   return scaleOn(tgt) ? IDX_LABEL[tgt || TARGET] : (tgt || TARGET);
 }
 
+/* ═══ Bougie live NQ via TradingView (api/gex.py _tv_live_quote), UNIQUEMENT
+   pour l'affichage de la bougie courante -- niveaux/régime/EM/P·C/IV/Pine
+   restent intégralement sur le pipeline existant (payload publié), aucun
+   calcul ne change. Portée volontairement étroite : seulement TARGET==="NQ"
+   (seul symbole testé/licencié côté TradingView) et seulement pendant la
+   séance cash US -- 9h30-16h ET, PAS 8h30 (FLUX_SESSION_START_ET couvre les
+   macro-releases pre-market, notion différente, ne pas confondre, cf.
+   CLAUDE.md). Hors de cette fenêtre (soir, nuit, week-end, autre marché,
+   TradingView indisponible), pollQuote() reprend seul la main sans aucun
+   changement de comportement -- cf. garde LIVECHART.on dans pollQuote(). */
+let LIVECHART = {on: false};
+let LIVE_BASIS = 0;   // écart NQ/NAS100 courant, alimenté par refreshBadges() (d.basis)
+function usCashSessionOpenNow(){
+  const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
+      weekday: "short", hour: "2-digit", minute: "2-digit"})
+    .formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  if (p.weekday === "Sat" || p.weekday === "Sun") return false;
+  const mins = (+p.hour % 24) * 60 + (+p.minute);
+  return mins >= 9 * 60 + 30 && mins <= 16 * 60;
+}
+async function liveChartTick(){
+  if (document.hidden || TARGET !== "NQ" || !CHART.series || !CHART.lastBar || !usCashSessionOpenNow()){
+    LIVECHART.on = false;
+    return;
+  }
+  try{
+    const r = await fetch("/api/nqlive");
+    const d = await r.json();
+    if (!r.ok || d.error || d.update_mode !== "streaming" || d.price == null){
+      LIVECHART.on = false;
+      return;
+    }
+    LIVECHART.on = true;
+    const p = scaleOn(TARGET) ? d.price - LIVE_BASIS : d.price;
+    const sec = CHART.ivSec[CHART.iv];
+    const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
+    if (bucket > CHART.lastBar.time){
+      if (CHART._anim){ cancelAnimationFrame(CHART._anim); CHART._anim = null; }
+      const prevClose = CHART.lastBar.close;
+      CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
+                       low: Math.min(prevClose, p), close: p};
+      CHART.series.update(CHART.lastBar);
+      if (FLUX_ON) drawFlux();
+    }else{
+      CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
+      CHART.lastBar.low = Math.min(CHART.lastBar.low, p);
+      // Anim raccourcie (700ms vs 1100ms pour pollQuote) : cadence 1s ici
+      // contre ~3s pour pollQuote, une anim aussi longue ferait s'empiler
+      // les glissements au lieu de coller au prix.
+      animatePrice(CHART, CHART.series, CHART.lastBar, p, 700, FLUX_ON ? drawFlux : null);
+    }
+    if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
+  }catch(_){ LIVECHART.on = false; }
+}
+// Armé/désarmé depuis loadBars() (armPoll/_pollWatch, même cycle de vie que
+// pollQuote) -- réévalué chaque minute, donc la bascule 13h30/16h ET est
+// automatique sans rechargement de page.
+function armLiveChart(){
+  clearInterval(CHART.livePoll);
+  CHART.livePoll = null;
+  LIVECHART.on = false;
+  if (TARGET === "NQ" && usCashSessionOpenNow()){
+    CHART.livePoll = setInterval(liveChartTick, 1000);
+    liveChartTick();
+  }
+}
+
 /* Basis GELÉE : celle en vigueur quand les niveaux ont été calculés, et NON
    d.basis (top-niveau) qui, lui, continue de bouger à chaque refresh
    intraday. Décaler des niveaux gelés par une basis vivante les ferait
@@ -2252,9 +2319,11 @@ async function loadBars(prefetch){
       }
     }
     armPoll();
+    armLiveChart();
     clearInterval(CHART._pollWatch);
     CHART._pollWatch = setInterval(() => {
       if (marketPollMs() !== CHART._pollMs) armPoll(true);
+      armLiveChart();
     }, 60000);
   }catch(e){
     setChartNote(t("chartFail")(e.message));
@@ -2458,27 +2527,35 @@ async function pollQuote(){
     LIVE_PRICE = d.price; LIVE_PRICE_T = Date.now(); LIVE_PRICE_TARGET = TARGET;
     if (LAST_D){ renderBadges(LAST_D); renderLevels(LAST_D); }
     const sec = CHART.ivSec[CHART.iv], p = d.price;
-    // bucket temporel de la bougie courante, basé sur l'HORLOGE (pas sur le
-    // time Yahoo différé) : la bougie live suit l'heure réelle, plus de décalage
-    const nowSec = Date.now() / 1000;
-    const bucket = Math.floor(tzShift(nowSec) / sec) * sec;
-    if (bucket > CHART.lastBar.time){
-      // nouvelle bougie : on fige la précédente à son close, on ouvre la neuve
-      if (CHART._anim){ cancelAnimationFrame(CHART._anim); CHART._anim = null; }
-      const prevClose = CHART.lastBar.close;
-      CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
-                       low: Math.min(prevClose, p), close: p};
-      CHART.series.update(CHART.lastBar);
-      if (FLUX_ON) drawFlux();      // pas de glissement ici, un seul redessin suffit
-    }else{
-      // bougie courante qui VIT : high/low s'étendent, close glisse vers p —
-      // le repère de prix du canevas Flux suit CE MÊME glissement (onFrame),
-      // au lieu de sauter d'un coup au tick suivant.
-      CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
-      CHART.lastBar.low  = Math.min(CHART.lastBar.low, p);
-      animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100, FLUX_ON ? drawFlux : null);
+    // Bougie live NQ (TradingView) active : LIVECHART.on possède seul
+    // CHART.lastBar/le rendu de la bougie pendant la séance cash US, cf.
+    // liveChartTick()/armLiveChart() -- deux sources sur la même bougie
+    // produiraient un flicker (l'une écrasant l'autre à chaque tick). Tout
+    // le reste de pollQuote (badges, LIVE_PRICE, niveaux, régime) continue
+    // de tourner normalement au-dessus, rien d'autre ne change.
+    if (!LIVECHART.on){
+      // bucket temporel de la bougie courante, basé sur l'HORLOGE (pas sur le
+      // time Yahoo différé) : la bougie live suit l'heure réelle, plus de décalage
+      const nowSec = Date.now() / 1000;
+      const bucket = Math.floor(tzShift(nowSec) / sec) * sec;
+      if (bucket > CHART.lastBar.time){
+        // nouvelle bougie : on fige la précédente à son close, on ouvre la neuve
+        if (CHART._anim){ cancelAnimationFrame(CHART._anim); CHART._anim = null; }
+        const prevClose = CHART.lastBar.close;
+        CHART.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
+                         low: Math.min(prevClose, p), close: p};
+        CHART.series.update(CHART.lastBar);
+        if (FLUX_ON) drawFlux();      // pas de glissement ici, un seul redessin suffit
+      }else{
+        // bougie courante qui VIT : high/low s'étendent, close glisse vers p —
+        // le repère de prix du canevas Flux suit CE MÊME glissement (onFrame),
+        // au lieu de sauter d'un coup au tick suivant.
+        CHART.lastBar.high = Math.max(CHART.lastBar.high, p);
+        CHART.lastBar.low  = Math.min(CHART.lastBar.low, p);
+        animatePrice(CHART, CHART.series, CHART.lastBar, p, 1100, FLUX_ON ? drawFlux : null);
+      }
+      if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
     }
-    if (CHART.draw) CHART.draw.pushTime(CHART.lastBar.time);
     // Synthèse texte du Flux : une fois par tick (pas par frame d'anim, ça
     // ferait clignoter les chiffres) ; la matrice elle-même ne bouge qu'au
     // recalcul intrajournalier, seule la position du prix dedans vit ici.
@@ -2606,6 +2683,7 @@ async function refreshBadges(){
     const d = await r.json();
     if (tgt !== TARGET || d.target !== TARGET) return;   // cible changée entretemps
     for (const k of BADGE_LIVE_FIELDS) LAST_D[k] = d[k];
+    if (d.basis != null) LIVE_BASIS = d.basis;   // cf. liveChartTick() -- écart NQ/NAS100 courant
     // LAST_D est en échelle d'AFFICHAGE (cf. show/toDisplayScale) alors que
     // le payload frais arrive toujours en échelle future : seul nq_price est
     // une valeur de prix parmi les champs recopiés, il doit donc être
