@@ -1456,7 +1456,7 @@ function scaleLabel(tgt){
    nuit, week-end, autre marché, TradingView indisponible), pollQuote()
    reprend seul la main sans aucun changement de comportement -- cf. garde
    LIVECHART.on dans pollQuote(). */
-const LIVE_SYMBOLS = {NQ: "CME_MINI:NQ1!", ES: "CME_MINI:ES1!", SPX: "SP:SPX"};
+const LIVE_SYMBOLS = {NQ: "CME_MINI:NQ1!", ES: "CME_MINI:ES1!", SPX: "CBOE:SPX"};
 let LIVECHART = {on: false};
 // Écart future/indice courant (NQ/ES uniquement, cf. scaleOn) -- alimenté
 // par refreshBadges() (d.basis) pour la cible ACTIVE, se ré-actualise donc

@@ -367,7 +367,7 @@ def _us_cash_session_now():
 # echelle indice via LIVE_BASIS cote client, cf. index.html) ; SPX suit
 # deja l'indice cash, pas de projection necessaire (meme raison que
 # CLAUDE.md pour toDisplayScale : "SPX suit deja l'indice cash").
-TV_ALLOWED_SYMBOLS = {"CME_MINI:NQ1!", "CME_MINI:ES1!", "SP:SPX"}
+TV_ALLOWED_SYMBOLS = {"CME_MINI:NQ1!", "CME_MINI:ES1!", "CBOE:SPX"}
 
 
 def _tv_quote_shared(symbol):
