@@ -1464,6 +1464,20 @@ let LIVECHART = {on: false};
 // l'indice cash, cf. CLAUDE.md toDisplayScale), LIVE_BASIS n'est alors
 // simplement jamais lu (scaleOn(TARGET) vaut toujours false pour SPX).
 let LIVE_BASIS = 0;
+// Cible pour laquelle LIVE_BASIS est à jour -- BUG corrigé : sans ce garde,
+// un switch vers la vue indice (NAS100) pouvait peindre un tick avec
+// LIVE_BASIS=0 (valeur initiale, pas encore rafraîchie par refreshBadges()
+// qui tourne ~3s après) AVANT que le vrai écart soit connu, affichant le
+// prix future BRUT (~29000) dans une série censée être en échelle indice
+// (~21000) -- la bougie du moment héritait alors d'un high/low aberrant qui
+// restait figé dans les données jusqu'au prochain rechargement complet
+// (loadBars ne tourne pas en continu), écrasant l'échelle de tout le chart.
+// C'était le symptôme "le switch ne marche pas bien, charts affichées
+// mauvaises" -- armLiveChart() sème maintenant LIVE_BASIS de façon
+// SYNCHRONE depuis LAST_D.basis (déjà disponible, cf. show()) à chaque
+// armement, et liveChartTick() refuse de peindre tant que ce garde ne
+// correspond pas à TARGET.
+let LIVE_BASIS_TARGET = null;
 function usCashSessionOpenNow(){
   const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
       weekday: "short", hour: "2-digit", minute: "2-digit"})
@@ -1482,6 +1496,13 @@ async function liveChartTick(){
     const r = await fetch("/api/nqlive?symbol=" + encodeURIComponent(sym));
     const d = await r.json();
     if (!r.ok || d.error || d.update_mode !== "streaming" || d.price == null){
+      LIVECHART.on = false;
+      return;
+    }
+    // Vue indice mais écart pas encore confirmé pour CETTE cible : mieux
+    // vaut ne rien peindre cette frame (pollQuote reprend, déjà correct via
+    // /api/quote?scale=idx côté serveur) qu'un prix en mauvaise échelle.
+    if (scaleOn(TARGET) && LIVE_BASIS_TARGET !== TARGET){
       LIVECHART.on = false;
       return;
     }
@@ -1514,6 +1535,15 @@ function armLiveChart(){
   clearInterval(CHART.livePoll);
   CHART.livePoll = null;
   LIVECHART.on = false;
+  // Sème LIVE_BASIS de façon SYNCHRONE depuis LAST_D.basis (déjà là, cf.
+  // show() : LAST_D est posé avant loadBars()/armLiveChart()) au lieu
+  // d'attendre le premier refreshBadges() (~3s plus tard, cf. pollQuote) --
+  // sans ça la toute première frame en vue indice peignait avec
+  // LIVE_BASIS=0, cf. le commentaire au-dessus de sa déclaration.
+  if (LAST_D && LAST_D.basis != null){
+    LIVE_BASIS = LAST_D.basis;
+    LIVE_BASIS_TARGET = TARGET;
+  }
   if (LIVE_SYMBOLS[TARGET] && usCashSessionOpenNow()){
     CHART.livePoll = setInterval(liveChartTick, 1000);
     liveChartTick();
@@ -2692,7 +2722,9 @@ async function refreshBadges(){
     const d = await r.json();
     if (tgt !== TARGET || d.target !== TARGET) return;   // cible changée entretemps
     for (const k of BADGE_LIVE_FIELDS) LAST_D[k] = d[k];
-    if (d.basis != null) LIVE_BASIS = d.basis;   // cf. liveChartTick() -- écart NQ/NAS100 courant
+    // cf. liveChartTick() -- écart NQ/NAS100 courant ; tgt===TARGET est déjà
+    // garanti ici par la garde anti-course juste au-dessus.
+    if (d.basis != null){ LIVE_BASIS = d.basis; LIVE_BASIS_TARGET = tgt; }
     // LAST_D est en échelle d'AFFICHAGE (cf. show/toDisplayScale) alors que
     // le payload frais arrive toujours en échelle future : seul nq_price est
     // une valeur de prix parmi les champs recopiés, il doit donc être
