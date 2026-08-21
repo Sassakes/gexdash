@@ -2,7 +2,7 @@
 name = "gexdash"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["numpy", "requests", "tzdata"]
+dependencies = ["numpy", "requests", "tzdata", "websocket-client"]
 
 [tool.vercel]
 entrypoint = "api.gex:handler"

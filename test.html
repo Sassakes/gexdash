@@ -139,7 +139,28 @@ function makeHolder(hostId, target, scaleQ){
 const NQ = makeHolder("chartNQ", "NQ", "");
 const IDX = makeHolder("chartIdx", "NQ", "&scale=idx");
 
+/* Historique : /api/nqohlc (TradingView, cf. api/gex.py _tv_ohlc_bars) --
+   plus /api/chart (Yahoo, delayed ~10min). NQ et NAS100 partagent la même
+   source CME_MINI:NQ1! ; NAS100 est juste décalé du BASIS courant (même
+   principe que le tick live, cf. plus bas). Si nqohlc échoue (cookie
+   expiré, etc.), on retombe sur /api/chart pour ne pas laisser le chart
+   vide -- dégradé, mais pas cassé. */
 async function loadBars(h){
+  try{
+    const r = await fetch(`/api/nqohlc?interval=${h.iv}`);
+    const d = await r.json();
+    if (r.ok && !d.error && d.bars && d.bars.length){
+      let bars = d.bars.map(b => ({time: tzShift(b.time), open: b.open, high: b.high,
+                                    low: b.low, close: b.close}));
+      if (h === IDX) bars = bars.map(b => ({...b, open: b.open - BASIS, high: b.high - BASIS,
+                                             low: b.low - BASIS, close: b.close - BASIS}));
+      if (h._anim){ cancelAnimationFrame(h._anim); h._anim = null; }
+      h.series.setData(bars);
+      h.lastBar = bars[bars.length - 1] || null;
+      return;
+    }
+  }catch(_){}
+  // Fallback Yahoo (delayed) -- même logique que la version précédente.
   try{
     const [chartRes, quoteRes] = await Promise.all([
       fetch(`/api/chart?target=${h.target}&interval=${h.iv}${h.scaleQ}`).then(r => r.json()),
@@ -147,8 +168,6 @@ async function loadBars(h){
     ]);
     if (chartRes.error || !chartRes.bars) return;
     let bars = chartRes.bars.map(b => ({...b, time: tzShift(b.time)}));
-    // Synthétise la bougie du bucket courant si la dernière est en retard,
-    // pour que l'axe reste à l'heure réelle (même logique que index.html).
     if (quoteRes && quoteRes.price != null && bars.length){
       const sec = IV_SEC[h.iv];
       const nowB = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
@@ -227,10 +246,11 @@ document.querySelectorAll(".seg[data-chart]").forEach(seg => {
   });
 });
 
-loadBars(NQ);
-loadBars(IDX);
-refreshBasis();
-setInterval(() => { if (!document.hidden){ loadBars(NQ); loadBars(IDX); refreshBasis(); } }, 30000);
+// refreshBasis() d'abord : le premier loadBars(IDX) doit décaler avec un
+// BASIS déjà à jour, pas 0 (sinon flash NAS100 affichant les valeurs NQ
+// brutes le temps du premier resync).
+(async () => { await refreshBasis(); loadBars(NQ); loadBars(IDX); })();
+setInterval(() => { if (!document.hidden){ refreshBasis().then(() => { loadBars(NQ); loadBars(IDX); }); } }, 30000);
 setInterval(() => { if (!NQ_LIVE_OK){ pollQuoteFallback(NQ); pollQuoteFallback(IDX); } }, 2000);
 
 /* Bandeau live NQ1! + source du tick des deux charts : un seul poll

@@ -280,6 +280,71 @@ def _tv_live_quote(symbol):
     return _news_cached(f"tv:quote:{symbol}", 1, fetch)
 
 
+def _tv_ohlc_bars(symbol, resolution, n_bars=300):
+    """Historique de bougies via le meme websocket TradingView (chart_session,
+    pas quote_session) -- pour que /test cesse de dependre de Yahoo (delayed
+    ~10min) pour tout sauf la derniere bougie. resolution : "1"/"5"/"15"
+    (minutes, format TradingView). Cache memoire 10s : une connexion complete
+    par requete non cachee serait lourde si plusieurs onglets pollent."""
+    def fetch():
+        import re
+        import json as _json
+        from websocket import create_connection
+        token = _tv_auth_token() or "unauthorized_user_token"
+        ws = create_connection(
+            "wss://data.tradingview.com/socket.io/websocket?from=chart%2F",
+            header=["Origin: https://www.tradingview.com"],
+            timeout=8,
+        )
+        try:
+            def send(func, params):
+                body = _json.dumps({"m": func, "p": params}, separators=(",", ":"))
+                ws.send(f"~m~{len(body)}~m~{body}")
+            cs = "cs_" + secrets.token_hex(6)
+            send("set_auth_token", [token])
+            send("set_locale", ["en", "US"])
+            send("chart_create_session", [cs, ""])
+            resolve = _json.dumps({"adjustment": "splits", "symbol": symbol})
+            send("resolve_symbol", [cs, "sds_sym_1", f"={resolve}"])
+            send("create_series", [cs, "sds_1", "s1", "sds_sym_1", resolution, n_bars, ""])
+
+            bars = {}
+            got_series_at = None
+            deadline = time.time() + 8
+            while time.time() < deadline:
+                raw = ws.recv()
+                if re.match(r"~m~\d+~m~~h~\d+$", raw):
+                    ws.send(raw)
+                    continue
+                for item in [x for x in re.split(r"~m~\d+~m~", raw) if x]:
+                    try:
+                        packet = _json.loads(item)
+                    except Exception:
+                        continue
+                    if not isinstance(packet, dict):
+                        continue
+                    if packet.get("m") in ("timescale_update", "du"):
+                        payload = (packet.get("p") or [None, {}])[1] or {}
+                        for row in (payload.get("sds_1") or {}).get("s", []):
+                            v = row.get("v")
+                            if v and len(v) >= 5:
+                                t = int(v[0])
+                                bars[t] = {"time": t, "open": v[1], "high": v[2],
+                                           "low": v[3], "close": v[4]}
+                        got_series_at = got_series_at or time.time()
+                    elif packet.get("m") == "series_completed":
+                        got_series_at = got_series_at or time.time()
+                # petite fenetre de grace apres le premier paquet de serie :
+                # laisse arriver un eventuel 2e batch avant de couper court
+                if got_series_at and time.time() - got_series_at > 0.6:
+                    break
+            return sorted(bars.values(), key=lambda b: b["time"])
+        finally:
+            ws.close()
+    key = f"tv:ohlc:{symbol}:{resolution}:{n_bars}"
+    return _news_cached(key, 10, fetch)
+
+
 def _news_finnhub(path_, params, key, ttl):
     def fetch():
         import requests
@@ -3931,6 +3996,32 @@ class handler(BaseHTTPRequestHandler):
                 "update_mode": v.get("update_mode"), "lp_time": v.get("lp_time"),
                 "server_time": time.time(),
             }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # ── /api/nqohlc : historique de bougies via TradingView (cf.
+        # _tv_ohlc_bars), pour que /test cesse de dependre de Yahoo (delayed)
+        # meme pour les bougies passees. Route dediee a /test, non repertoriee.
+        if path == "/api/nqohlc":
+            qso = parse_qs(parsed.query)
+            symbol = (qso.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
+            interval = (qso.get("interval", ["5m"])[0] or "5m")
+            resolution = {"1m": "1", "5m": "5", "15m": "15"}.get(interval, "5")
+            try:
+                bars = _tv_ohlc_bars(symbol, resolution, 300)
+            except Exception as e:
+                self._send(503, json.dumps({"error": f"tv unavailable: {e}"}).encode(),
+                           "application/json")
+                return
+            if not bars:
+                self._send(503, json.dumps({"error": "no bars (cookie env vars missing/expired?)"}).encode(),
+                           "application/json")
+                return
+            body = json.dumps({"symbol": symbol, "interval": interval, "bars": bars}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-store")
