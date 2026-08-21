@@ -605,6 +605,24 @@ const IVSEC = {"1m":60, "5m":300, "15m":900};
 /* ---- chaque carte est INDÉPENDANTE : ses couleurs, ses filtres,
         son timer et ses lignes vivent sur son élément DOM ---- */
 
+/* Bougie live via TradingView (api/gex.py _tv_live_quote), UNIQUEMENT pour
+   l'affichage de la bougie courante -- même principe et même portée que le
+   terminal (index.html : LIVE_SYMBOLS/usCashSessionOpenNow/liveChartTick),
+   copié ici plutôt que factorisé car chaque carte a son propre lastBar/host
+   (dash.html n'a pas de CHART unique) -- cf. CLAUDE.md sur flux-panel.js/
+   widget/flux-widget.js pour la même logique de deux copies non unifiées.
+   Niveaux/régime/EM/Pine de chaque carte restent sur le pipeline existant,
+   aucun calcul ne change, seule la bougie courante de la carte est concernée. */
+const LIVE_SYMBOLS = {NQ: "CME_MINI:NQ1!", ES: "CME_MINI:ES1!", SPX: "CBOE:SPX"};
+function usCashSessionOpenNow(){
+  const p = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false,
+      weekday: "short", hour: "2-digit", minute: "2-digit"})
+    .formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  if (p.weekday === "Sat" || p.weekday === "Sun") return false;
+  const mins = (+p.hour % 24) * 60 + (+p.minute);
+  return mins >= 9 * 60 + 30 && mins <= 16 * 60;
+}
+
 const pxTxt = p => Math.round(p).toLocaleString("fr-FR").replace(/[\u202f\u00a0]/g, " ");
 const IS_TOUCH = matchMedia("(hover: none), (pointer: coarse)").matches;
 const LV_MAJOR = ["res","sup","flip","res0","sup0","hgex"];
@@ -905,6 +923,8 @@ async function mountCard(cfg, host){
   // tout premier fetch de la carte, plutôt que de laisser un chart nu.
   const _t0 = PageLoader.begin(box);
   let lastBar = null;
+  let liveOn = false;                    // cf. liveChartTick plus bas
+  const liveSym = LIVE_SYMBOLS[cfg.t];   // undefined pour GC/XAU -- pas de flux live pour l'or
 
   // Bougies + cotation courante, en parallèle (même mécanisme que loadBars()
   // côté terminal, index.html) : on synthétise la bougie du bucket ACTUEL si
@@ -975,28 +995,84 @@ async function mountCard(cfg, host){
       const d = await r.json();
       if (!r.ok || d.price == null) return;
       const sec = IVSEC[cfg.iv], p = d.price;
-      // bucket sur l'HORLOGE, jamais sur d.time (parfois le regularMarketTime
-      // du future différé ~10 min) -- même raison que pollQuote() côté
-      // terminal : la bougie live doit suivre l'heure réelle, pas la source.
+      // Bougie live TradingView active sur cette carte (liveOn) : elle seule
+      // possède lastBar/le rendu le temps de la séance cash US, cf.
+      // liveChartTick ci-dessous -- deux sources sur la même bougie
+      // produiraient un flicker. Tout le reste de tick() (aucun ici à part
+      // la bougie) n'a rien d'autre à préserver pour une carte.
+      if (!liveOn){
+        // bucket sur l'HORLOGE, jamais sur d.time (parfois le regularMarketTime
+        // du future différé ~10 min) -- même raison que pollQuote() côté
+        // terminal : la bougie live doit suivre l'heure réelle, pas la source.
+        const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
+        if (bucket > lastBar.time){
+          if (host._anim) cancelAnimationFrame(host._anim);
+          host._anim = null;
+          // nouvelle bougie : on fige la précédente à son close, on ouvre la
+          // neuve dessus -- pas un doji plat au prix courant (même logique que
+          // pollQuote() côté terminal).
+          const prevClose = lastBar.close;
+          lastBar = {time:bucket, open:prevClose, high:Math.max(prevClose, p),
+                     low:Math.min(prevClose, p), close:p};
+          series.update(lastBar);
+        } else {
+          animatePrice(host, series, lastBar, p, 900);
+        }
+        if (host._draw) host._draw.pushTime(lastBar.time);
+        if (host._times && lastBar.time > host._times[host._times.length - 1])
+          host._times.push(lastBar.time);
+      }
+    }catch(_){}
+  };
+
+  // Bougie live TradingView (NQ/ES/SPX, cf. LIVE_SYMBOLS) : même mécanique
+  // que tick() ci-dessus mais alimentée par /api/nqlive au lieu de
+  // /api/quote (Yahoo, delayed). Uniquement pendant la séance cash US --
+  // hors fenêtre, tick() reprend seul la main sans aucun changement de
+  // comportement (garde liveOn ci-dessus).
+  const liveChartTick = async () => {
+    if (document.hidden || !liveSym || !lastBar || !usCashSessionOpenNow()){
+      liveOn = false;
+      return;
+    }
+    try{
+      const r = await fetch("/api/nqlive?symbol=" + encodeURIComponent(liveSym));
+      const d = await r.json();
+      if (!r.ok || d.error || d.update_mode !== "streaming" || d.price == null){
+        liveOn = false;
+        return;
+      }
+      liveOn = true;
+      const sec = IVSEC[cfg.iv], p = d.price;
       const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
       if (bucket > lastBar.time){
         if (host._anim) cancelAnimationFrame(host._anim);
         host._anim = null;
-        // nouvelle bougie : on fige la précédente à son close, on ouvre la
-        // neuve dessus -- pas un doji plat au prix courant (même logique que
-        // pollQuote() côté terminal).
         const prevClose = lastBar.close;
         lastBar = {time:bucket, open:prevClose, high:Math.max(prevClose, p),
                    low:Math.min(prevClose, p), close:p};
         series.update(lastBar);
       } else {
-        animatePrice(host, series, lastBar, p, 900);
+        // Anim raccourcie (700ms vs 900ms pour tick()) : cadence 1s ici
+        // contre plusieurs secondes pour tick(), une anim trop longue ferait
+        // s'empiler les glissements au lieu de coller au prix.
+        animatePrice(host, series, lastBar, p, 700);
       }
       if (host._draw) host._draw.pushTime(lastBar.time);
       if (host._times && lastBar.time > host._times[host._times.length - 1])
         host._times.push(lastBar.time);
-    }catch(_){}
+    }catch(_){ liveOn = false; }
   };
+  const armLiveCard = () => {
+    clearInterval(host._livePoll);
+    host._livePoll = null;
+    liveOn = false;
+    if (liveSym && usCashSessionOpenNow()){
+      host._livePoll = setInterval(liveChartTick, 1000);
+      liveChartTick();
+    }
+  };
+
   // départ décalé par carte : pas de rafale simultanée quand la grille est pleine
   const offset = (Array.prototype.indexOf.call(board.children, host) % 8) * 250;
   host._timer = null;
@@ -1013,12 +1089,17 @@ async function mountCard(cfg, host){
       if (reopen && !prevMs) loadBars(true).catch(() => {});
       tick(); host._timer = setInterval(tick, host._pollMs);
     }
+    armLiveCard();
   };
-  setTimeout(() => { if (host.isConnected) armCard(); }, offset);
+  setTimeout(() => { if (host.isConnected){ armCard(); } }, offset);
   clearInterval(host._pollWatch);
   host._pollWatch = setInterval(() => {
-    if (!host.isConnected){ clearInterval(host._pollWatch); clearInterval(host._timer); return; }
+    if (!host.isConnected){
+      clearInterval(host._pollWatch); clearInterval(host._timer); clearInterval(host._livePoll);
+      return;
+    }
     if (marketPollMs() !== host._pollMs) armCard(true);
+    armLiveCard();
   }, 60000);
 }
 
