@@ -3995,6 +3995,13 @@ class handler(BaseHTTPRequestHandler):
                 "chp": v.get("chp"), "volume": v.get("volume"),
                 "update_mode": v.get("update_mode"), "lp_time": v.get("lp_time"),
                 "server_time": time.time(),
+                # Diagnostic sans rien de sensible (ni cookie ni token) --
+                # pour distinguer "vars absentes" de "vars presentes mais
+                # auth refusee" sans avoir a relire le cookie en clair.
+                "diag": {
+                    "env_present": bool(os.environ.get("TV_SESSIONID")) and bool(os.environ.get("TV_SESSIONID_SIGN")),
+                    "authed": (_tv_auth_token() or "unauthorized_user_token") != "unauthorized_user_token",
+                },
             }).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
