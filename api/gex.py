@@ -3566,6 +3566,20 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, fpath.read_bytes(), "text/html; charset=utf-8")
             return
 
+        # ── /test : page NON REPERTORIEE (pas de lien dans la nav, pas dans
+        # STATIC), sans garde de session -- juste non listee, cf. /horizon
+        # pour le pendant garde-par-login. Bac a sable Lightweight Charts +
+        # widget Flux public (widget/flux-widget.js), aucun calcul serveur
+        # propre a cette page. ──
+        if path == "/test":
+            fpath = ROOT / "test.html"
+            if not fpath.is_file():
+                self._send(404, json.dumps({"error": "test.html absent"}).encode(),
+                           "application/json")
+                return
+            self._send(200, fpath.read_bytes(), "text/html; charset=utf-8", cache="no-store")
+            return
+
         # ── /demo : export statique Next.js (demo/out, cf. demo/next.config.mjs
         #    basePath:"/demo") -- volontairement non lie depuis la nav du site,
         #    juste un chemin direct pour travailler dessus "underground" avant

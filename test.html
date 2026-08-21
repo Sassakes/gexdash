@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>GexDash — Test</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+<!-- Palette partagée, cf. CLAUDE.md : ne pas redéclarer de token couleur ici. -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/theme.js"></script>
+<style>
+  /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
+  [hidden]{display:none !important}
+  *{box-sizing:border-box; margin:0}
+  body{background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh}
+
+  header{display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--surface),#0E0E11); font-family:var(--mono)}
+  header h1{font-size:14px; font-weight:600; letter-spacing:.02em}
+  header h1 b{color:var(--gold)}
+  header span{font-size:10.5px; color:var(--faint)}
+
+  main{max-width:960px; margin:0 auto; padding:20px; display:flex; flex-direction:column; gap:20px}
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .panel h2{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
+    padding:12px 14px 0}
+  #fluxHost{padding:10px}
+  #chartBox{position:relative; width:100%; height:420px}
+</style>
+</head>
+<body>
+<header>
+  <h1><b>Gex</b>Dash · Test</h1>
+  <span>page non référencée — flux temps réel NQ + chart NAS100</span>
+</header>
+
+<main>
+  <div class="panel">
+    <h2>Flux — NQ</h2>
+    <div id="fluxHost"></div>
+  </div>
+
+  <div class="panel">
+    <h2>NAS100 (NQ)</h2>
+    <div id="chartBox"></div>
+  </div>
+</main>
+
+<script src="/widget/flux-widget.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+"use strict";
+
+/* Flux NQ temps réel : widget public en mode same-origin (apiBase:"",
+   pas de clé) -- même route /api/flow que le terminal, cf. widget/flux-widget.js. */
+new TheHubFluxWidget(document.getElementById("fluxHost"), {
+  target: "NQ", mode: "gamma", lang: "fr",
+  apiBase: "", showBadge: false, height: 280, advanced: true,
+});
+
+/* Chart NAS100 (NQ) : Lightweight Charts, bougies 5m via /api/chart, même
+   endpoint que index.html (cf. CHART.ensureChart/loadBars). Version minimale
+   -- pas d'outils de dessin, pas de niveaux CW/PW/Flip, juste les bougies. */
+const COL = {up: THEME.teal, dn: THEME.red, muted: THEME.muted, line: THEME.line, faint: THEME.faint};
+const box = document.getElementById("chartBox");
+const chart = LightweightCharts.createChart(box, {
+  layout:{background:{type:"solid", color:"transparent"}, textColor:COL.muted,
+          fontFamily:"IBM Plex Mono, monospace", fontSize:10},
+  grid:{vertLines:{color:"rgba(255,255,255,.03)"}, horzLines:{color:"rgba(255,255,255,.03)"}},
+  rightPriceScale:{borderColor:COL.line},
+  timeScale:{borderColor:COL.line, timeVisible:true, secondsVisible:false},
+  crosshair:{mode:LightweightCharts.CrosshairMode.Normal,
+    vertLine:{color:COL.faint, width:1, style:LightweightCharts.LineStyle.Dashed},
+    horzLine:{color:COL.faint, width:1, style:LightweightCharts.LineStyle.Dashed}},
+});
+const series = chart.addCandlestickSeries({
+  upColor:COL.up, downColor:COL.dn, borderVisible:false,
+  wickUpColor:COL.up, wickDownColor:COL.dn,
+});
+new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
+  .observe(box);
+
+async function loadBars(){
+  try{
+    const [chartRes, quoteRes] = await Promise.all([
+      fetch("/api/chart?target=NQ&interval=5m").then(r => r.json()),
+      fetch("/api/quote?target=NQ").then(r => r.json()).catch(() => null),
+    ]);
+    if (chartRes.error || !chartRes.bars) return;
+    let bars = chartRes.bars;
+    // Synthétise la bougie du bucket courant si la dernière est en retard,
+    // pour que l'axe reste à l'heure réelle (même logique que index.html).
+    if (quoteRes && quoteRes.price != null && bars.length){
+      const sec = 300;
+      const nowB = Math.floor(Date.now() / 1000 / sec) * sec;
+      const lastB = bars[bars.length - 1];
+      if (lastB && nowB > lastB.time){
+        bars = bars.concat([{time: nowB, open: quoteRes.price, high: quoteRes.price,
+                              low: quoteRes.price, close: quoteRes.price}]);
+      }
+    }
+    series.setData(bars);
+  }catch(_){}
+}
+loadBars();
+setInterval(() => { if (!document.hidden) loadBars(); }, 15000);
+</script>
+</body>
+</html>
