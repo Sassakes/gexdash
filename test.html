@@ -166,26 +166,54 @@ async function loadBars(h){
 
 /* Tick léger : un seul /api/quote, jamais /api/chart -- la bougie courante
    glisse vers le nouveau prix (ou une nouvelle bougie s'ouvre si le bucket
-   a changé), sans jamais recharger tout l'historique. */
-async function pollQuote(h){
+   a changé), sans jamais recharger tout l'historique. Source du tick :
+   /api/nqlive (TradingView, ~1 update/s) quand il répond -- BEAUCOUP plus
+   proche du prix réel que /api/quote (Yahoo, delayed ~10min, cf.
+   conversation) qui ne sert plus qu'au resync périodique et au fallback si
+   nqlive tombe. */
+function applyTick(h, p){
+  if (!h.series || !h.lastBar || p == null || !isFinite(p)) return;
+  const sec = IV_SEC[h.iv];
+  const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
+  if (bucket > h.lastBar.time){
+    if (h._anim){ cancelAnimationFrame(h._anim); h._anim = null; }
+    const prevClose = h.lastBar.close;
+    h.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
+                 low: Math.min(prevClose, p), close: p};
+    h.series.update(h.lastBar);
+  }else{
+    h.lastBar.high = Math.max(h.lastBar.high, p);
+    h.lastBar.low = Math.min(h.lastBar.low, p);
+    // Anim raccourcie (700ms) vs le terminal (900-1100ms) : la cadence de
+    // tick est ~2-3x plus rapide ici (1s), une anim trop longue ferait
+    // s'empiler les glissements au lieu de coller au prix.
+    animatePrice(h, h.series, h.lastBar, p, 700);
+  }
+}
+
+/* Fallback /api/quote (Yahoo) par chart -- ne tourne QUE si /api/nqlive est
+   indisponible (NQ_LIVE_OK=false), pour ne jamais faire lutter deux sources
+   de prix sur la même bougie. */
+async function pollQuoteFallback(h){
   if (!h.series || !h.lastBar || document.hidden) return;
   try{
     const r = await fetch(`/api/quote?target=${h.target}${h.scaleQ}`);
     const d = await r.json();
-    if (!r.ok || d.price == null) return;
-    const sec = IV_SEC[h.iv], p = d.price;
-    const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
-    if (bucket > h.lastBar.time){
-      if (h._anim){ cancelAnimationFrame(h._anim); h._anim = null; }
-      const prevClose = h.lastBar.close;
-      h.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
-                   low: Math.min(prevClose, p), close: p};
-      h.series.update(h.lastBar);
-    }else{
-      h.lastBar.high = Math.max(h.lastBar.high, p);
-      h.lastBar.low = Math.min(h.lastBar.low, p);
-      animatePrice(h, h.series, h.lastBar, p, 900);
-    }
+    if (r.ok && d.price != null) applyTick(h, d.price);
+  }catch(_){}
+}
+
+// Écart future/indice (NQ - NAS100), recalé à chaque resync (30s) --
+// bouge lentement (portage), donc l'appliquer à un prix NQ vieux d'1s max
+// reste juste (même principe que la "basis gelée" du terminal, CLAUDE.md).
+let BASIS = 0;
+async function refreshBasis(){
+  try{
+    const [fut, idx] = await Promise.all([
+      fetch("/api/quote?target=NQ").then(r => r.json()).catch(() => null),
+      fetch("/api/quote?target=NQ&scale=idx").then(r => r.json()).catch(() => null),
+    ]);
+    if (fut && fut.price != null && idx && idx.price != null) BASIS = fut.price - idx.price;
   }catch(_){}
 }
 
@@ -201,24 +229,27 @@ document.querySelectorAll(".seg[data-chart]").forEach(seg => {
 
 loadBars(NQ);
 loadBars(IDX);
-// Resync complet peu fréquent (rattrape tout écart/trou) ; le glissement
-// tick-à-tick, lui, tourne bien plus vite via pollQuote ci-dessous.
-setInterval(() => { if (!document.hidden){ loadBars(NQ); loadBars(IDX); } }, 30000);
-setInterval(() => { pollQuote(NQ); pollQuote(IDX); }, 2000);
+refreshBasis();
+setInterval(() => { if (!document.hidden){ loadBars(NQ); loadBars(IDX); refreshBasis(); } }, 30000);
+setInterval(() => { if (!NQ_LIVE_OK){ pollQuoteFallback(NQ); pollQuoteFallback(IDX); } }, 2000);
 
-/* Bandeau live NQ1! : poll /api/nqlive (websocket TradingView cote serveur,
-   cf. api/gex.py _tv_live_quote). Experimental -- pas de garantie de dispo,
-   pas branche aux charts ci-dessus. */
-let liveLast = null;
+/* Bandeau live NQ1! + source du tick des deux charts : un seul poll
+   /api/nqlive (websocket TradingView côté serveur, cf. api/gex.py
+   _tv_live_quote) alimente le badge ET applyTick(NQ/IDX) -- plus la cadence
+   distincte à 1500ms d'avant, qui laissait les charts en retard sur le
+   bandeau alors que la même donnée était déjà là. */
+let liveLast = null, NQ_LIVE_OK = false;
 async function pollLive(){
+  const badge = document.getElementById("liveBadge");
   try{
     const r = await fetch("/api/nqlive");
     const d = await r.json();
-    const badge = document.getElementById("liveBadge");
     if (!r.ok || d.error || d.price == null){
+      NQ_LIVE_OK = false;
       badge.textContent = "off"; badge.className = "livebadge off";
       return;
     }
+    NQ_LIVE_OK = d.update_mode === "streaming";
     const priceEl = document.getElementById("livePrice");
     priceEl.textContent = d.price.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
     priceEl.className = "liveprice" + (liveLast != null ? (d.price > liveLast ? " up" : d.price < liveLast ? " down" : "") : "");
@@ -227,13 +258,17 @@ async function pollLive(){
     document.getElementById("liveVol").textContent = d.volume != null ? Math.round(d.volume).toLocaleString() : "—";
     badge.textContent = d.update_mode || "?";
     badge.className = "livebadge " + (d.update_mode === "streaming" ? "streaming" : "delayed");
+    if (NQ_LIVE_OK){
+      applyTick(NQ, d.price);
+      applyTick(IDX, d.price - BASIS);
+    }
   }catch(_){
-    const badge = document.getElementById("liveBadge");
+    NQ_LIVE_OK = false;
     badge.textContent = "off"; badge.className = "livebadge off";
   }
 }
 pollLive();
-setInterval(() => { if (!document.hidden) pollLive(); }, 1500);
+setInterval(() => { if (!document.hidden) pollLive(); }, 1000);
 </script>
 </body>
 </html>
