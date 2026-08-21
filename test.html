@@ -11,6 +11,7 @@
 <!-- Palette partagée, cf. CLAUDE.md : ne pas redéclarer de token couleur ici. -->
 <link rel="stylesheet" href="/theme.css">
 <script src="/theme.js"></script>
+<script src="/ui.js"></script>
 <style>
   /* GARDE-FOU : l'attribut hidden doit toujours l'emporter (cf. CLAUDE.md). */
   [hidden]{display:none !important}
@@ -23,25 +24,22 @@
   header h1 b{color:var(--gold)}
   header span{font-size:10.5px; color:var(--faint)}
 
-  .toolbar{display:flex; align-items:center; gap:12px; padding:9px 20px; border-bottom:1px solid var(--line);
-    font-family:var(--mono)}
-  .seg{display:flex; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; background:var(--surface2)}
-  .seg button{font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--muted); background:transparent;
-    border:0; padding:6px 14px; cursor:pointer; letter-spacing:.03em; transition:background .12s,color .12s; min-height:36px}
-  .seg button+button{border-left:1px solid var(--line-strong)}
-  .seg button.on{background:var(--teal-soft); color:var(--teal)}
-
   main{max-width:960px; margin:0 auto; padding:20px; display:flex; flex-direction:column; gap:20px}
   .panel{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden}
-  .panel h2{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
-    padding:12px 14px}
+  .panelhead{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px}
+  .panelhead h2{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+  .seg{display:flex; border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; background:var(--surface2); font-family:var(--mono)}
+  .seg button{font-family:var(--mono); font-size:10.5px; font-weight:600; color:var(--muted); background:transparent;
+    border:0; padding:5px 11px; cursor:pointer; letter-spacing:.03em; transition:background .12s,color .12s; min-height:30px}
+  .seg button+button{border-left:1px solid var(--line-strong)}
+  .seg button.on{background:var(--teal-soft); color:var(--teal)}
   .chartBox{position:relative; width:100%; height:360px}
 
   /* Bandeau live NQ1! (/api/nqlive) -- experimental, cf. conversation :
      websocket TradingView authentifie cote serveur (env TV_SESSIONID/
      TV_SESSIONID_SIGN), jamais de cookie cote client. */
   .livebar{display:flex; align-items:baseline; gap:16px; padding:14px 16px; font-family:var(--mono)}
-  .liveprice{font-size:28px; font-weight:600; color:var(--text)}
+  .liveprice{font-size:28px; font-weight:600; color:var(--text); transition:color .15s}
   .liveprice.up{color:var(--teal)} .liveprice.down{color:var(--red)}
   .livemeta{display:flex; gap:14px; font-size:11px; color:var(--muted)}
   .livemeta b{color:var(--text)}
@@ -57,17 +55,9 @@
   <span>page non référencée — charts NQ / NAS100</span>
 </header>
 
-<div class="toolbar">
-  <div class="seg" id="segIv">
-    <button data-iv="1m">M1</button>
-    <button data-iv="5m" class="on">M5</button>
-    <button data-iv="15m">M15</button>
-  </div>
-</div>
-
 <main>
   <div class="panel">
-    <h2>NQ1! — live (TradingView, expérimental)</h2>
+    <div class="panelhead"><h2>NQ1! — live (TradingView, expérimental)</h2></div>
     <div class="livebar">
       <span class="liveprice" id="livePrice">—</span>
       <span class="livemeta">
@@ -79,12 +69,26 @@
   </div>
 
   <div class="panel">
-    <h2>NQ (future)</h2>
+    <div class="panelhead">
+      <h2>NQ (future)</h2>
+      <div class="seg" data-chart="NQ">
+        <button data-iv="1m">M1</button>
+        <button data-iv="5m" class="on">M5</button>
+        <button data-iv="15m">M15</button>
+      </div>
+    </div>
     <div class="chartBox" id="chartNQ"></div>
   </div>
 
   <div class="panel">
-    <h2>NAS100 (indice cash)</h2>
+    <div class="panelhead">
+      <h2>NAS100 (indice cash)</h2>
+      <div class="seg" data-chart="IDX">
+        <button data-iv="1m">M1</button>
+        <button data-iv="5m" class="on">M5</button>
+        <button data-iv="15m">M15</button>
+      </div>
+    </div>
     <div class="chartBox" id="chartIdx"></div>
   </div>
 </main>
@@ -93,16 +97,23 @@
 <script>
 "use strict";
 
-const COL = {up: THEME.teal, dn: THEME.red, muted: THEME.muted, line: THEME.line, faint: THEME.faint};
+const COL = {up: PREFS.up, dn: PREFS.dn, muted: THEME.muted, line: THEME.line, faint: THEME.faint};
 const IV_SEC = {"1m": 60, "5m": 300, "15m": 900};
-let IV = "5m";
 
 /* Deux charts basiques Lightweight Charts : NQ en échelle future (payload
    brut de /api/chart) et NAS100 en échelle indice (?scale=idx, cf.
    index.html/prefetchBars -- la conversion basis est faite CÔTÉ SERVEUR,
    le client ne sait pas la défaire). Même endpoint, même données sources,
-   juste deux échelles d'affichage du même NQ. */
-function makeChart(hostId){
+   juste deux échelles d'affichage du même NQ.
+
+   Fluidité : même mécanique que le terminal (index.html pollQuote /
+   dash.html mountCard.tick) -- un setData() complet UNIQUEMENT au
+   changement d'intervalle / resync périodique, et entre-temps un
+   series.update() par tick sur la seule bougie courante, glissée vers le
+   nouveau prix via animatePrice() (ui.js, easeOutCubic) au lieu d'un saut
+   sec. C'est ce glissement qui donne l'effet "prix qui coule" du terminal
+   au lieu d'un téléport à chaque poll. */
+function makeHolder(hostId, target, scaleQ){
   const box = document.getElementById(hostId);
   const chart = LightweightCharts.createChart(box, {
     layout:{background:{type:"solid", color:"transparent"}, textColor:COL.muted,
@@ -117,51 +128,83 @@ function makeChart(hostId){
   const series = chart.addCandlestickSeries({
     upColor:COL.up, downColor:COL.dn, borderVisible:false,
     wickUpColor:COL.up, wickDownColor:COL.dn,
+    priceLineColor:PREFS.px, priceLineWidth:2,
+    priceLineStyle:LightweightCharts.LineStyle.Dashed,
   });
+  const h = {chart, series, box, target, scaleQ, iv:"5m", lastBar:null, _anim:null};
   new ResizeObserver(() => chart.applyOptions({width: box.clientWidth, height: box.clientHeight}))
     .observe(box);
-  return {chart, series, box};
+  return h;
 }
-const NQ = makeChart("chartNQ");
-const IDX = makeChart("chartIdx");
+const NQ = makeHolder("chartNQ", "NQ", "");
+const IDX = makeHolder("chartIdx", "NQ", "&scale=idx");
 
-async function loadOne(target, scaleQ, out){
+async function loadBars(h){
   try{
     const [chartRes, quoteRes] = await Promise.all([
-      fetch(`/api/chart?target=${target}&interval=${IV}${scaleQ}`).then(r => r.json()),
-      fetch(`/api/quote?target=${target}${scaleQ}`).then(r => r.json()).catch(() => null),
+      fetch(`/api/chart?target=${h.target}&interval=${h.iv}${h.scaleQ}`).then(r => r.json()),
+      fetch(`/api/quote?target=${h.target}${h.scaleQ}`).then(r => r.json()).catch(() => null),
     ]);
     if (chartRes.error || !chartRes.bars) return;
-    let bars = chartRes.bars;
+    let bars = chartRes.bars.map(b => ({...b, time: tzShift(b.time)}));
     // Synthétise la bougie du bucket courant si la dernière est en retard,
     // pour que l'axe reste à l'heure réelle (même logique que index.html).
     if (quoteRes && quoteRes.price != null && bars.length){
-      const sec = IV_SEC[IV];
-      const nowB = Math.floor(Date.now() / 1000 / sec) * sec;
+      const sec = IV_SEC[h.iv];
+      const nowB = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
       const lastB = bars[bars.length - 1];
       if (lastB && nowB > lastB.time){
         bars = bars.concat([{time: nowB, open: quoteRes.price, high: quoteRes.price,
                               low: quoteRes.price, close: quoteRes.price}]);
       }
     }
-    out.series.setData(bars);
+    if (h._anim){ cancelAnimationFrame(h._anim); h._anim = null; }
+    h.series.setData(bars);
+    h.lastBar = bars[bars.length - 1] || null;
   }catch(_){}
 }
 
-function loadAll(){
-  loadOne("NQ", "", NQ);
-  loadOne("NQ", "&scale=idx", IDX);
+/* Tick léger : un seul /api/quote, jamais /api/chart -- la bougie courante
+   glisse vers le nouveau prix (ou une nouvelle bougie s'ouvre si le bucket
+   a changé), sans jamais recharger tout l'historique. */
+async function pollQuote(h){
+  if (!h.series || !h.lastBar || document.hidden) return;
+  try{
+    const r = await fetch(`/api/quote?target=${h.target}${h.scaleQ}`);
+    const d = await r.json();
+    if (!r.ok || d.price == null) return;
+    const sec = IV_SEC[h.iv], p = d.price;
+    const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
+    if (bucket > h.lastBar.time){
+      if (h._anim){ cancelAnimationFrame(h._anim); h._anim = null; }
+      const prevClose = h.lastBar.close;
+      h.lastBar = {time: bucket, open: prevClose, high: Math.max(prevClose, p),
+                   low: Math.min(prevClose, p), close: p};
+      h.series.update(h.lastBar);
+    }else{
+      h.lastBar.high = Math.max(h.lastBar.high, p);
+      h.lastBar.low = Math.min(h.lastBar.low, p);
+      animatePrice(h, h.series, h.lastBar, p, 900);
+    }
+  }catch(_){}
 }
 
-document.querySelectorAll("#segIv button").forEach(b => b.onclick = () => {
-  if (b.dataset.iv === IV) return;
-  IV = b.dataset.iv;
-  document.querySelectorAll("#segIv button").forEach(x => x.classList.toggle("on", x === b));
-  loadAll();
+document.querySelectorAll(".seg[data-chart]").forEach(seg => {
+  const h = seg.dataset.chart === "NQ" ? NQ : IDX;
+  seg.querySelectorAll("button").forEach(b => b.onclick = () => {
+    if (b.dataset.iv === h.iv) return;
+    h.iv = b.dataset.iv;
+    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    loadBars(h);
+  });
 });
 
-loadAll();
-setInterval(() => { if (!document.hidden) loadAll(); }, 15000);
+loadBars(NQ);
+loadBars(IDX);
+// Resync complet peu fréquent (rattrape tout écart/trou) ; le glissement
+// tick-à-tick, lui, tourne bien plus vite via pollQuote ci-dessous.
+setInterval(() => { if (!document.hidden){ loadBars(NQ); loadBars(IDX); } }, 30000);
+setInterval(() => { pollQuote(NQ); pollQuote(IDX); }, 2000);
 
 /* Bandeau live NQ1! : poll /api/nqlive (websocket TradingView cote serveur,
    cf. api/gex.py _tv_live_quote). Experimental -- pas de garantie de dispo,
