@@ -1487,7 +1487,13 @@ function usCashSessionOpenNow(){
   return mins >= 9 * 60 + 30 && mins <= 16 * 60;
 }
 async function liveChartTick(){
-  const sym = LIVE_SYMBOLS[TARGET];
+  // Cible figée AU MOMENT DE L'APPEL, même raison que pollQuote() -- sans
+  // ça un tick déjà parti pour NQ pouvait revenir et se peindre sur le
+  // chart d'ES/SPX affiché entretemps (switchTarget() coupe déjà
+  // l'intervalle au clic ; ce garde couvre le seul cas restant, une requête
+  // déjà partie avant le clic).
+  const reqTarget = TARGET;
+  const sym = LIVE_SYMBOLS[reqTarget];
   if (document.hidden || !sym || !CHART.series || !CHART.lastBar || !usCashSessionOpenNow()){
     LIVECHART.on = false;
     return;
@@ -1495,6 +1501,7 @@ async function liveChartTick(){
   try{
     const r = await fetch("/api/nqlive?symbol=" + encodeURIComponent(sym));
     const d = await r.json();
+    if (reqTarget !== TARGET){ LIVECHART.on = false; return; }
     if (!r.ok || d.error || d.update_mode !== "streaming" || d.price == null){
       LIVECHART.on = false;
       return;
@@ -1502,12 +1509,12 @@ async function liveChartTick(){
     // Vue indice mais écart pas encore confirmé pour CETTE cible : mieux
     // vaut ne rien peindre cette frame (pollQuote reprend, déjà correct via
     // /api/quote?scale=idx côté serveur) qu'un prix en mauvaise échelle.
-    if (scaleOn(TARGET) && LIVE_BASIS_TARGET !== TARGET){
+    if (scaleOn(reqTarget) && LIVE_BASIS_TARGET !== reqTarget){
       LIVECHART.on = false;
       return;
     }
     LIVECHART.on = true;
-    const p = scaleOn(TARGET) ? d.price - LIVE_BASIS : d.price;
+    const p = scaleOn(reqTarget) ? d.price - LIVE_BASIS : d.price;
     const sec = CHART.ivSec[CHART.iv];
     const bucket = Math.floor(tzShift(Date.now() / 1000) / sec) * sec;
     if (bucket > CHART.lastBar.time){
@@ -1996,6 +2003,19 @@ async function load(){
   const switchTarget = (t) => {
     TARGET = t;
     try{ localStorage.setItem("gexTarget", TARGET); }catch(_){}
+    // Coupe IMMÉDIATEMENT les tickers de l'ANCIEN marché : entre ce clic et
+    // la fin du chargement du nouveau (loadTarget est async), pollQuote()/
+    // liveChartTick() continuaient sinon de tourner sur leur minuteur
+    // existant -- lisant TARGET (déjà réassigné juste au-dessus) ils
+    // fetchaient le prix du NOUVEAU marché et le peignaient sur les bougies
+    // de l'ANCIEN encore affichées. Échelles très différentes selon les
+    // paires (ES ~7700 peint sur un chart NQ ~29000, par ex.) => pic
+    // aberrant, d'autant plus visible en M1 où le point courant domine
+    // l'échelle Y. Réarmés proprement par armPoll()/armLiveChart() à la fin
+    // du loadBars() du nouveau marché, comme avant.
+    clearInterval(CHART.poll); clearInterval(CHART.livePoll);
+    if (CHART._anim){ cancelAnimationFrame(CHART._anim); CHART._anim = null; }
+    LIVECHART.on = false;
     loadTarget();
     loadDark();
     if (FLUX_ON) loadFlux();       // la matrice est spécifique au marché
@@ -2551,11 +2571,20 @@ function liveBadge(msg, ok){
 
 async function pollQuote(){
   if (!CHART.series || !CHART.lastBar || document.hidden) return;
+  // Cible figée AU MOMENT DE L'APPEL : entre le départ de ce fetch et sa
+  // réponse, l'utilisateur peut avoir cliqué un autre marché (TARGET a déjà
+  // changé, cf. switchTarget()) -- sans ce garde, le prix du NOUVEAU marché
+  // se peignait sur les bougies de l'ANCIEN encore affichées (échelles très
+  // différentes, ex. ES ~7700 sur un chart NQ ~29000 = pic aberrant, très
+  // visible en M1). switchTarget() coupe déjà les intervalles au clic ; ce
+  // garde couvre le seul cas restant, une requête déjà partie avant le clic.
+  const reqTarget = TARGET;
   refreshBadges();      // même cadence, cf. définition -- ne bloque pas sur sa réponse
   try{
-    const r = await fetch(`/api/quote?target=${TARGET}`
-                          + (scaleOn(TARGET) ? "&scale=idx" : ""));
+    const r = await fetch(`/api/quote?target=${reqTarget}`
+                          + (scaleOn(reqTarget) ? "&scale=idx" : ""));
     const d = await r.json();
+    if (reqTarget !== TARGET) return;   // cible changée pendant l'aller-retour
     if (!r.ok || d.price == null){
       liveBadge("live: réponse invalide (" + r.status + ")", false);
       return;
