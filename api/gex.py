@@ -193,6 +193,93 @@ def _news_cached(key, ttl, fn):
     return data
 
 
+# ═══════════════ /api/nqlive : cotation NQ1! via le websocket public
+# TradingView (data.tradingview.com), page /test uniquement (non repertoriee).
+# Auth par cookie de session en variable d'environnement (TV_SESSIONID,
+# TV_SESSIONID_SIGN) -- JAMAIS dans le code/repo, jamais renvoye au client.
+# Vercel serverless ne peut pas garder un websocket ouvert entre deux
+# requetes : chaque appel ouvre, lit une poignee de frames, ferme. Usage
+# experimental assume avec le proprietaire du compte -- cf. conversation,
+# pas une source de donnees officielle/licenciee. ═══════════════
+def _tv_auth_token():
+    """Echange le cookie de session contre le auth_token JWT que TradingView
+    embarque dans la page d'accueil pour un visiteur connecte. Cache memoire
+    5 min : ce GET sur tradingview.com/ est trop lourd pour le refaire a
+    chaque poll client (/test poll /api/nqlive toutes les 1-2s)."""
+    def fetch():
+        import re
+        import requests
+        sid = os.environ.get("TV_SESSIONID")
+        sign = os.environ.get("TV_SESSIONID_SIGN")
+        if not sid or not sign:
+            return None
+        r = requests.get(
+            "https://www.tradingview.com/",
+            cookies={"sessionid": sid, "sessionid_sign": sign},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                    "Chrome/124.0.0.0 Safari/537.36"},
+            timeout=8,
+        )
+        m = re.search(r'"auth_token":"(.*?)"', r.text)
+        return m.group(1) if m else None
+    return _news_cached("tv:authtoken", 300, fetch)
+
+
+def _tv_live_quote(symbol):
+    """Une cotation quasi temps reel pour `symbol` (ex. CME_MINI:NQ1!).
+    Cache memoire 1s : deroute les polls concurrents (plusieurs onglets/
+    utilisateurs sur le meme process chaud) vers un seul aller-retour
+    websocket au lieu d'un par requete."""
+    def fetch():
+        import re
+        import json as _json
+        from websocket import create_connection
+        token = _tv_auth_token() or "unauthorized_user_token"
+        ws = create_connection(
+            "wss://data.tradingview.com/socket.io/websocket?from=screener%2F",
+            header=["Origin: https://www.tradingview.com"],
+            timeout=6,
+        )
+        try:
+            def send(func, params):
+                body = _json.dumps({"m": func, "p": params}, separators=(",", ":"))
+                ws.send(f"~m~{len(body)}~m~{body}")
+            qsess = "qs_" + secrets.token_hex(6)
+            send("set_auth_token", [token])
+            send("set_locale", ["en", "US"])
+            send("quote_create_session", [qsess])
+            send("quote_set_fields", [qsess, "ch", "chp", "lp", "lp_time",
+                                       "original_name", "update_mode", "volume",
+                                       "is_tradable"])
+            resolve = _json.dumps({"adjustment": "splits", "currency-id": "USD",
+                                    "session": "regular", "symbol": symbol})
+            send("quote_add_symbols", [qsess, f"={resolve}"])
+            send("quote_fast_symbols", [qsess, f"={resolve}"])
+
+            out = {}
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                raw = ws.recv()
+                if re.match(r"~m~\d+~m~~h~\d+$", raw):
+                    ws.send(raw)
+                    continue
+                for item in [x for x in re.split(r"~m~\d+~m~", raw) if x]:
+                    try:
+                        packet = _json.loads(item)
+                    except Exception:
+                        continue
+                    if isinstance(packet, dict) and packet.get("m") == "qsd":
+                        v = packet["p"][1].get("v", {})
+                        out.update(v)
+                if "lp" in out and "update_mode" in out:
+                    break
+            return out
+        finally:
+            ws.close()
+    return _news_cached(f"tv:quote:{symbol}", 1, fetch)
+
+
 def _news_finnhub(path_, params, key, ttl):
     def fetch():
         import requests
@@ -3818,6 +3905,35 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "public, s-maxage=120, max-age=0")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # ── /api/nqlive : cf. _tv_live_quote ci-dessus. Route dediee a /test
+        # uniquement (non repertoriee). GET seul, lecture au sens large --
+        # ouvre/ferme un websocket TradingView a chaque appel. ──
+        if path == "/api/nqlive":
+            qsl = parse_qs(parsed.query)
+            symbol = (qsl.get("symbol", ["CME_MINI:NQ1!"])[0] or "CME_MINI:NQ1!")
+            try:
+                v = _tv_live_quote(symbol)
+            except Exception as e:
+                self._send(503, json.dumps({"error": f"tv unavailable: {e}"}).encode(),
+                           "application/json")
+                return
+            if not v or "lp" not in v:
+                self._send(503, json.dumps({"error": "no quote (cookie env vars missing/expired?)"}).encode(),
+                           "application/json")
+                return
+            body = json.dumps({
+                "symbol": symbol, "price": v.get("lp"), "ch": v.get("ch"),
+                "chp": v.get("chp"), "volume": v.get("volume"),
+                "update_mode": v.get("update_mode"), "lp_time": v.get("lp_time"),
+                "server_time": time.time(),
+            }).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
             return

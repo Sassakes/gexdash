@@ -36,6 +36,19 @@
   .panel h2{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint);
     padding:12px 14px}
   .chartBox{position:relative; width:100%; height:360px}
+
+  /* Bandeau live NQ1! (/api/nqlive) -- experimental, cf. conversation :
+     websocket TradingView authentifie cote serveur (env TV_SESSIONID/
+     TV_SESSIONID_SIGN), jamais de cookie cote client. */
+  .livebar{display:flex; align-items:baseline; gap:16px; padding:14px 16px; font-family:var(--mono)}
+  .liveprice{font-size:28px; font-weight:600; color:var(--text)}
+  .liveprice.up{color:var(--teal)} .liveprice.down{color:var(--red)}
+  .livemeta{display:flex; gap:14px; font-size:11px; color:var(--muted)}
+  .livemeta b{color:var(--text)}
+  .livebadge{font-size:9.5px; padding:3px 8px; border-radius:20px; letter-spacing:.05em}
+  .livebadge.streaming{background:var(--teal-soft); color:var(--teal)}
+  .livebadge.delayed{background:var(--red-soft); color:var(--red)}
+  .livebadge.off{background:var(--surface2); color:var(--faint)}
 </style>
 </head>
 <body>
@@ -53,6 +66,18 @@
 </div>
 
 <main>
+  <div class="panel">
+    <h2>NQ1! — live (TradingView, expérimental)</h2>
+    <div class="livebar">
+      <span class="liveprice" id="livePrice">—</span>
+      <span class="livemeta">
+        <span>Chg <b id="liveCh">—</b></span>
+        <span>Vol <b id="liveVol">—</b></span>
+      </span>
+      <span class="livebadge off" id="liveBadge">off</span>
+    </div>
+  </div>
+
   <div class="panel">
     <h2>NQ (future)</h2>
     <div class="chartBox" id="chartNQ"></div>
@@ -137,6 +162,35 @@ document.querySelectorAll("#segIv button").forEach(b => b.onclick = () => {
 
 loadAll();
 setInterval(() => { if (!document.hidden) loadAll(); }, 15000);
+
+/* Bandeau live NQ1! : poll /api/nqlive (websocket TradingView cote serveur,
+   cf. api/gex.py _tv_live_quote). Experimental -- pas de garantie de dispo,
+   pas branche aux charts ci-dessus. */
+let liveLast = null;
+async function pollLive(){
+  try{
+    const r = await fetch("/api/nqlive");
+    const d = await r.json();
+    const badge = document.getElementById("liveBadge");
+    if (!r.ok || d.error || d.price == null){
+      badge.textContent = "off"; badge.className = "livebadge off";
+      return;
+    }
+    const priceEl = document.getElementById("livePrice");
+    priceEl.textContent = d.price.toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+    priceEl.className = "liveprice" + (liveLast != null ? (d.price > liveLast ? " up" : d.price < liveLast ? " down" : "") : "");
+    liveLast = d.price;
+    document.getElementById("liveCh").textContent = d.ch != null ? d.ch.toFixed(2) : "—";
+    document.getElementById("liveVol").textContent = d.volume != null ? Math.round(d.volume).toLocaleString() : "—";
+    badge.textContent = d.update_mode || "?";
+    badge.className = "livebadge " + (d.update_mode === "streaming" ? "streaming" : "delayed");
+  }catch(_){
+    const badge = document.getElementById("liveBadge");
+    badge.textContent = "off"; badge.className = "livebadge off";
+  }
+}
+pollLive();
+setInterval(() => { if (!document.hidden) pollLive(); }, 1500);
 </script>
 </body>
 </html>
